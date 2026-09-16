@@ -1,0 +1,174 @@
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('./assets/fonts/PressStart2P-Regular.ttf') format('truetype');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee 25s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Custom Scrollbars with edge containment */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.popup-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.popup-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.popup-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 6px 0;
+}
+
+.popup-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+
+.popup-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Syntax Highlighting Colors (Vercel / Geist Dark Minimalist Theme) */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: #52525b;
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: #71717a;
+}
+
+.token.keyword,
+.token.atrule,
+.token.tag,
+.token.selector {
+  color: #f43f5e;
+  font-weight: 500;
+}
+
+.token.function,
+.token.function-variable {
+  color: #38bdf8;
+}
+
+.token.class-name,
+.token.type,
+.token.builtin {
+  color: #7dd3fc;
+}
+
+.token.string,
+.token.char,
+.token.attr-value,
+.token.inserted {
+  color: #6ee7b7;
+}
+
+.token.number,
+.token.boolean,
+.token.constant,
+.token.symbol {
+  color: #fbbf24;
+}
+
+.token.property,
+.token.variable,
+.token.parameter {
+  color: #f4f4f5;
+}
+
+.token.operator,
+.token.entity,
+.token.url {
+  color: #a1a1aa;
+}
+
+.token.regex,
+.token.important {
+  color: #fda4af;
+}
+
+.token.deleted {
+  color: #ef4444;
+  opacity: 0.8;
+}
+
+@keyframes fluid-flow {
+  0% {
+    transform: rotate(0deg) scale(1);
+    filter: hue-rotate(0deg);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.12);
+    filter: hue-rotate(45deg);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+    filter: hue-rotate(0deg);
+  }
+}
+
+.animate-fluid-flow {
+  animation: fluid-flow 5s ease-in-out infinite;
+}
+
+
