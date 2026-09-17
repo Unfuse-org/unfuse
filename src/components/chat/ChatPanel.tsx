@@ -1,8 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageItem } from './MessageItem';
 import { ChatInput } from './ChatInput';
-import { Message, ActiveModelTarget, ClarificationRequest } from './types';
+import { Message, ActiveModelTarget, ClarificationRequest, ToolCall } from './types';
+import { ModelFamily } from '../rack/types';
 import { ServiceId } from '../../engine/integrations/types';
+import {
+  LLMClient,
+  PromptBuilder,
+  executeToolCall,
+  type ChatMessage,
+  type LLMConfig,
+  type InferenceProvider,
+} from '../../engine/llm';
 import {
   getServiceState,
   getDefaultWebSearchProvider,
@@ -102,6 +111,44 @@ export const RightPanelToggleIcon: React.FC<{ isOpen?: boolean; className?: stri
     )}
   </svg>
 );
+
+async function fetchLocalOllamaModels(): Promise<ActiveModelTarget[]> {
+  try {
+    const res = await fetch('http://127.0.0.1:11434/api/tags');
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data.models)) return [];
+
+    return data.models.map((m: any) => {
+      const name = m.name || m.model || '';
+      const lower = name.toLowerCase();
+      let family: ModelFamily = 'custom';
+      if (lower.includes('qwen')) family = 'qwen';
+      else if (lower.includes('deepseek')) family = 'deepseek';
+      else if (lower.includes('llama')) family = 'llama';
+      else if (lower.includes('mistral')) family = 'mistral';
+      else if (lower.includes('phi')) family = 'phi';
+      else if (lower.includes('gemma')) family = 'gemma';
+
+      let displayName = name;
+      if (lower.startsWith('qwen2.5-coder:7b')) displayName = 'Qwen 2.5 Coder 7B';
+      else if (lower.startsWith('qwen2.5-coder:32b')) displayName = 'Qwen 2.5 Coder 32B';
+      else if (lower.startsWith('llama3.2:3b')) displayName = 'Llama 3.2 3B';
+      else if (lower.startsWith('deepseek-r1:14b')) displayName = 'DeepSeek R1 14B';
+
+      return {
+        id: `ollama-${name}`,
+        name,
+        displayName,
+        provider: 'ollama' as const,
+        port: 11434,
+        family,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
 
 const SAMPLE_MODELS: ActiveModelTarget[] = [
   {
@@ -437,6 +484,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   const [isStreaming, setIsStreaming] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
   const [activeClarification, setActiveClarification] = useState<ClarificationRequest | null>(null);
+  const [discoveredModels, setDiscoveredModels] = useState<ActiveModelTarget[]>([]);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const effectiveModels = discoveredModels.length > 0 ? discoveredModels : loadedRackModels;
+
+  // Auto-discover local models running in Ollama
+  useEffect(() => {
+    fetchLocalOllamaModels().then((models) => {
+      if (models.length > 0) {
+        setDiscoveredModels(models);
+        setActiveModel((curr) => {
+          const exists = models.some((m) => m.name === curr.name);
+          if (exists) return curr;
+          const preferred = models.find((m) => m.name.includes('coder') || m.family === 'qwen') || models[0];
+          return preferred;
+        });
+      }
+    });
+  }, []);
+
+  const handleStopStreaming = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsStreaming(false);
+  };
 
   const handleClarificationSubmit = (response: { selectedOptions: string[]; customText?: string }) => {
     if (!activeClarification) return;
@@ -453,7 +527,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
     // Find the exact model that asked the clarification
     const queriedModel =
-      loadedRackModels.find((m) => m.family === activeClarification.modelFamily) ||
+      effectiveModels.find((m) => m.family === activeClarification.modelFamily) ||
       SAMPLE_MODELS.find((m) => m.family === activeClarification.modelFamily) ||
       activeModel;
 
@@ -475,19 +549,21 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     scrollToBottom();
   }, [messages, isStreaming]);
 
-  const handleSendMessage = (content: string, targetModel?: ActiveModelTarget) => {
+  const handleSendMessage = async (content: string, targetModel?: ActiveModelTarget) => {
+    if (isStreaming) return;
+
     let chosenModel = targetModel || activeModel;
     const lower = content.toLowerCase().trim();
 
     // 1. Detect exact model tagged with @
     if (lower.includes('@qwen') || lower.includes('@qwen2.5')) {
-      const found = loadedRackModels.find((m) => m.family === 'qwen') || SAMPLE_MODELS[0];
+      const found = effectiveModels.find((m) => m.family === 'qwen') || SAMPLE_MODELS[0];
       if (found) chosenModel = found;
     } else if (lower.includes('@deepseek') || lower.includes('@deepseek-r1')) {
-      const found = loadedRackModels.find((m) => m.family === 'deepseek') || SAMPLE_MODELS[1];
+      const found = effectiveModels.find((m) => m.family === 'deepseek') || SAMPLE_MODELS[1];
       if (found) chosenModel = found;
     } else if (lower.includes('@llama') || lower.includes('@llama3')) {
-      const found = loadedRackModels.find((m) => m.family === 'llama') || SAMPLE_MODELS[2];
+      const found = effectiveModels.find((m) => m.family === 'llama') || SAMPLE_MODELS[2];
       if (found) chosenModel = found;
     }
 
@@ -498,626 +574,248 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const assistantMsgId = `msg-${Date.now() + 1}`;
+    const assistantMsg: Message = {
+      id: assistantMsgId,
+      role: 'assistant',
+      modelName: chosenModel.displayName,
+      modelFamily: chosenModel.family,
+      provider: chosenModel.provider,
+      port: chosenModel.port,
+      content: '',
+      thought: '',
+      speedTokPerSec: 0,
+      status: 'streaming',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      toolCalls: [],
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
 
-    const isReasoning = chosenModel.family === 'deepseek';
-    const isClarificationResponse = content.startsWith('Clarification:');
-    const isCommand = lower.startsWith('#');
+    // Build chat history for PromptBuilder
+    const historyMessages: ChatMessage[] = [
+      ...messages
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      { role: 'user', content },
+    ];
 
-    // 2. ONLY Trigger clarification when user asks an architectural or strategy query to that model
-    const triggersClarification =
-      !isClarificationResponse &&
-      !isCommand &&
-      (lower.includes('how') ||
-        lower.includes('build') ||
-        lower.includes('implement') ||
-        lower.includes('optimize') ||
-        lower.includes('scaffold') ||
-        lower.includes('buffer') ||
-        lower.includes('stream') ||
-        lower.includes('design') ||
-        lower.includes('choice') ||
-        lower.includes('clarif') ||
-        lower.includes('question'));
+    const provider: InferenceProvider =
+      chosenModel.provider === 'ollama' ? 'ollama' : 'openai-compatible';
+    const baseUrl = `http://127.0.0.1:${chosenModel.port || (chosenModel.provider === 'ollama' ? 11434 : 1234)}`;
 
-    if (triggersClarification) {
-      setTimeout(() => {
-        setIsStreaming(false);
+    const config: LLMConfig = {
+      provider,
+      baseUrl,
+      model: chosenModel.name,
+      temperature: 0.2,
+      topP: 0.9,
+      maxTokens: 4096,
+      contextWindow: 32768,
+    };
 
-        if (chosenModel.family === 'deepseek') {
-          setActiveClarification({
-            id: `clarify-deepseek-${Date.now()}`,
-            modelName: chosenModel.displayName,
-            modelFamily: 'deepseek',
-            question: 'How should we handle Tokio Docker event stream backpressure under heavy container log bursts?',
-            options: [
-              {
-                id: 'opt-ring-buffer',
-                label: 'Circular Ring Buffer (Bounded mpsc + O(1) Fixed VecDeque)',
-                description: 'Zero allocations on 60fps render tick, drops oldest logs on burst',
-                recommended: true,
-              },
-              {
-                id: 'opt-rayon-pool',
-                label: 'Rayon Background Worker Pool',
-                description: 'Offloads JSON log parsing to dedicated worker threads',
-              },
-              {
-                id: 'opt-unbounded-stream',
-                label: 'Unbounded tokio::sync::broadcast',
-                description: 'Preserves 100% telemetry history with dynamic memory growth',
-              },
-            ],
-            allowCustomInput: true,
-            isMultiSelect: false,
-          });
-        } else if (chosenModel.family === 'qwen') {
-          setActiveClarification({
-            id: `clarify-qwen-${Date.now()}`,
-            modelName: chosenModel.displayName,
-            modelFamily: 'qwen',
-            question: 'Which terminal backend and event loop model should Qwen 2.5 Coder scaffold for Ratatui?',
-            options: [
-              {
-                id: 'opt-crossterm-async',
-                label: 'Crossterm EventStream + Tokio Async',
-                description: 'Non-blocking 60fps render tick decoupled from Docker socket IO',
-                recommended: true,
-              },
-              {
-                id: 'opt-termion',
-                label: 'Termion Raw Mode Synchronous',
-                description: 'Minimal zero-dependency Unix terminal driver',
-              },
-              {
-                id: 'opt-pancurses',
-                label: 'Pancurses C-FFI Bindings',
-                description: 'Legacy curses emulation with wide terminal support',
-              },
-            ],
-            allowCustomInput: true,
-            isMultiSelect: false,
-          });
-        } else {
-          setActiveClarification({
-            id: `clarify-llama-${Date.now()}`,
-            modelName: chosenModel.displayName,
-            modelFamily: chosenModel.family,
-            question: `How would you like ${chosenModel.displayName} to structure telemetry verification and issue tracking?`,
-            options: [
-              {
-                id: 'opt-linear-postgres',
-                label: 'PostgreSQL Telemetry + Linear Sprint Backlog',
-                description: 'Verify snapshots in PostgreSQL and open a Linear issue',
-                recommended: true,
-              },
-              {
-                id: 'opt-github-sqlite',
-                label: 'SQLite Local DB + GitHub PR Creation',
-                description: 'Embedded SQLite table introspection and draft PR',
-              },
-              {
-                id: 'opt-raw-git',
-                label: 'Local Git Commit Only',
-                description: 'Minimal version control commit without cloud tracker hooks',
-              },
-            ],
-            allowCustomInput: true,
-            isMultiSelect: false,
-          });
-        }
-      }, 400);
-      return;
-    }
+    const promptBuilder = new PromptBuilder();
+    const fullPromptMessages = promptBuilder.buildPrompt(historyMessages, '', config);
 
-    // 1. Check for specific integration commands
-    if (lower.startsWith('#github')) {
-      const ghState = getServiceState('github');
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 56.2,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Invoking GitHub VCS integration adapter
-• Authenticating via local Personal Access Token
-• Querying active repository: ${ghState.config.defaultRepo || 'lichi/unfuse'}`,
-          thoughtDurationSec: 0.9,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'github_api',
-              args: {
-                action: 'list_pull_requests',
-                repo: ghState.config.defaultRepo || 'lichi/unfuse',
-                state: 'open',
-              },
-              result: ghState.isConnected
-                ? `Fetched 3 open Pull Requests from ${ghState.config.defaultRepo || 'lichi/unfuse'}`
-                : 'GitHub not configured. Using local Git branch context.',
-              status: 'completed',
-              durationMs: 18,
-            },
-          ],
-          content: ghState.isConnected
-            ? `Here are the active pull requests from **${ghState.config.defaultRepo || 'lichi/unfuse'}**:
+    const client = new LLMClient();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
-1. **PR #42**: \`feat: add zero-cloud linear & sentry integrations manager\` (Author: @octocat, Status: In Review)
-2. **PR #41**: \`fix: strict clamp on frequency_penalty in provider payload adapter\` (Author: @developer, Status: CI Passed)
-3. **PR #39**: \`chore: upgrade tauri v2 core dependencies to latest stable\` (Author: @maintainer, Status: Ready to merge)
+    let accumulatedContent = '';
+    let accumulatedThought = '';
 
-Would you like me to inspect the Myers diff for PR #42 or create a review comment?`
-            : `GitHub is currently not connected. You can configure your GitHub Personal Access Token in the **Integrations Hub** to inspect PRs, review code, and manage issues.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
+    try {
+      await client.streamChat(
+        fullPromptMessages,
+        config,
+        {
+          onToken: (token) => {
+            accumulatedContent += token;
 
-    if (lower.startsWith('#linear')) {
-      const linState = getServiceState('linear');
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 54.0,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Invoking Linear GraphQL engine
-• Querying assigned sprint issues for Team: ${linState.config.defaultTeamKey || 'CORE'}`,
-          thoughtDurationSec: 0.8,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'linear_graphql',
-              args: {
-                query: '{ issues(filter: { state: { type: "started" } }) { id title priority } }',
-                team: linState.config.defaultTeamKey || 'CORE',
-              },
-              result: linState.isConnected
-                ? 'Retrieved 2 active in-progress issues from Linear workspace'
-                : 'Linear token not set. Running in local workspace mode.',
-              status: 'completed',
-              durationMs: 14,
-            },
-          ],
-          content: linState.isConnected
-            ? `Here are your assigned Linear issues for **Sprint 14**:
+            let displayContent = accumulatedContent;
+            let displayThought = accumulatedThought;
 
-- **CORE-104** [Urgent]: *Implement Myers AST Diff Visualizer with Prism.js token highlighting*
-- **CORE-108** [High]: *Add local PostgreSQL & SQLite reflection schema introspection tool*
+            // Live parse <think> tags if model emits them directly in content stream
+            if (displayContent.includes('<think>')) {
+              const thinkStart = displayContent.indexOf('<think>');
+              const thinkEnd = displayContent.indexOf('</think>');
+              if (thinkEnd !== -1) {
+                const thoughtPart = displayContent.slice(thinkStart + 7, thinkEnd).trim();
+                displayThought = (displayThought ? displayThought + '\n' : '') + thoughtPart;
+                displayContent = (displayContent.slice(0, thinkStart) + displayContent.slice(thinkEnd + 8)).trimStart();
+              } else {
+                const thoughtPart = displayContent.slice(thinkStart + 7).trim();
+                displayThought = (displayThought ? displayThought + '\n' : '') + thoughtPart;
+                displayContent = displayContent.slice(0, thinkStart);
+              }
+            }
 
-I can automatically synthesize code changes and attach the diff to either issue.`
-            : `Linear is not connected yet. Click **#integrations** to store your Linear Personal API Key securely on this device.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    if (lower.startsWith('#sentry')) {
-      const sentryState = getServiceState('sentry');
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 51.5,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Querying Sentry issue triage API
-• Analyzing unhandled production exceptions`,
-          thoughtDurationSec: 1.1,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'sentry_fetch_issues',
-              args: {
-                project: sentryState.config.projectSlug || 'desktop-app',
-                query: 'is:unresolved level:error',
-              },
-              result: 'Found 1 unresolved high-frequency exception',
-              status: 'completed',
-              durationMs: 22,
-            },
-          ],
-          content: `**Sentry Exception Triage Summary**:
-
-- **Issue**: \`TypeError: Cannot read properties of undefined (reading 'frequency_penalty')\`
-- **Culprit**: \`src/engine/runtimeAdapter.ts:69 in buildProviderPayload\`
-- **Events**: 34 occurrences in the last 24h
-- **Root Cause**: \`blade.repetitionPenalty\` was undefined during initial blade mounting before default fallbacks were applied.
-
-I've generated the fix with strict clamping and default fallback null-coalescing below:
-
-\`\`\`diff
-// src/engine/runtimeAdapter.ts
-- const repPenalty = blade.repetitionPenalty;
-+ const repPenalty = blade.repetitionPenalty ?? 1.1;
-\`\`\`
-
-Click **Accept** to apply this patch directly.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 750);
-      return;
-    }
-
-    // 1. Generic #search handler (routes dynamically to user's Default Search Provider)
-    if (lower.startsWith('#search')) {
-      const defaultProvider = getDefaultWebSearchProvider();
-      const query = content.replace(/^#search\s*/, '') || 'Rust Tauri v2 window vibrancy and local LLM runtime';
-
-      setTimeout(() => {
-        let toolName = 'ddg_instant_search';
-        let engineName = 'DuckDuckGo';
-        let thoughtDesc = '• Executing DuckDuckGo Instant Privacy search (Default Engine)\n• Zero tracking, direct HTML/API response parsed';
-        let citations = `- **Docs Reference**: \`tauri::generate_handler![...]\` IPC command registration.\n- **Zero Tracking**: Query executed via private zero-key proxy.`;
-
-        if (defaultProvider === 'tavily') {
-          toolName = 'tavily_search';
-          engineName = 'Tavily AI Search (Default)';
-          thoughtDesc = `• Invoking Tavily AI search engine (Default Engine)\n• Querying real-time web & documentation index for "${query}"`;
-          citations = `- **Citation 1**: Real-time developer documentation fetched directly from authoritative docs.\n- **Citation 2**: Verified GitHub release notes and code snippet benchmarks.`;
-        } else if (defaultProvider === 'brave') {
-          toolName = 'brave_web_search';
-          engineName = 'Brave Search (Default)';
-          thoughtDesc = `• Querying Brave Search zero-telemetry web index (Default Engine)\n• Searching: "${query}"`;
-          citations = `1. **Window Vibrancy**: Uses \`tauri_plugin_window_vibrancy\` in Rust \`setup()\`.
-2. **Transparent Canvas**: Set \`"macOS": { "transparent": true }\` in \`tauri.conf.json\`.`;
-        } else if (defaultProvider === 'exa') {
-          toolName = 'exa_neural_search';
-          engineName = 'Exa Neural Search (Default)';
-          thoughtDesc = `• Invoking Exa neural embeddings engine (Default Engine)\n• Running semantic similarity search for: "${query}"`;
-          citations = `- **Semantic Match**: \`tree-sitter-highlight\` crate with grammar bindings.\n- **Documentation**: Tree-sitter AST traversal and incremental Myers diff algorithm.`;
-        } else if (defaultProvider === 'google') {
-          toolName = 'google_custom_search';
-          engineName = 'Google Search (Default)';
-          thoughtDesc = `• Invoking Google Custom Search Engine (Default Engine)\n• Querying global index for: "${query}"`;
-          citations = `- **Citation 1**: \`tauri-plugin-window-vibrancy\` macOS documentation.\n- **Citation 2**: Official Tauri v2 background transparency configuration.`;
-        }
-
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 57.2,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: thoughtDesc,
-          thoughtDurationSec: 0.7,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: toolName,
-              args: { query },
-              result: `Retrieved results via ${engineName}`,
-              status: 'completed',
-              durationMs: 20,
-            },
-          ],
-          content: `**${engineName} Results** for *"${query}"*:
-
-${citations}
-
-Let me know if you would like me to synthesize these findings into your codebase.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 650);
-      return;
-    }
-
-    if (lower.startsWith('#tavily')) {
-      const query = content.replace(/^#tavily\s*/, '') || 'Next.js 15 server actions and streaming';
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 57.5,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Invoking Tavily AI search engine
-• Querying real-time web & documentation index for "${query}"`,
-          thoughtDurationSec: 0.8,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'tavily_search',
-              args: { query, search_depth: 'advanced' },
-              result: `Retrieved 5 high-relevance technical snippets via Tavily API`,
-              status: 'completed',
-              durationMs: 24,
-            },
-          ],
-          content: `**Tavily AI Search Results** for *"${query}"*:
-
-- **Citation 1**: Real-time developer documentation fetched directly from authoritative docs.
-- **Citation 2**: Verified GitHub release notes and code snippet benchmarks.
-
-Let me know if you would like me to synthesize these findings into your codebase.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    if (lower.startsWith('#ddg') || lower.startsWith('#duckduckgo')) {
-      const query = content.replace(/^#(ddg|duckduckgo)\s*/, '') || 'Rust Tauri v2 plugins and IPC commands';
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 56.8,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Executing DuckDuckGo Instant Privacy search
-• Zero tracking, direct HTML/API response parsed for: "${query}"`,
-          thoughtDurationSec: 0.6,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'ddg_instant_search',
-              args: { query },
-              result: `Fetched 4 instant documentation results via DuckDuckGo`,
-              status: 'completed',
-              durationMs: 16,
-            },
-          ],
-          content: `**DuckDuckGo Search Results** for *"${query}"*:
-
-- **Docs Reference**: \`tauri::generate_handler![...]\` IPC command registration.
-- **Zero Tracking**: Query executed via private zero-key proxy.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 650);
-      return;
-    }
-
-    if (lower.startsWith('#brave')) {
-      const query = content.replace(/^#brave\s*/, '') || 'Tauri v2 window vibrancy and local LLM runtime';
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 58.0,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Querying Brave Search zero-telemetry web index
-• Searching: "${query}"`,
-          thoughtDurationSec: 0.7,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'brave_web_search',
-              args: { query },
-              result: 'Fetched 4 authoritative documentation citations from docs.tauri.app',
-              status: 'completed',
-              durationMs: 19,
-            },
-          ],
-          content: `**Brave Search Results** for *"${query}"*:
-
-1. **Window Vibrancy**: Uses \`tauri_plugin_window_vibrancy::apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, ...)\` in Rust \`setup()\`.
-2. **Transparent Canvas**: Set \`"macOS": { "transparent": true, "titleBarStyle": "Overlay" }\` in \`tauri.conf.json\`.
-3. **Hardware Acceleration**: Metal-backed WKWebView guarantees 120Hz smooth scrolling for large code diffs.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    if (lower.startsWith('#exa')) {
-      const query = content.replace(/^#exa\s*/, '') || 'Rust AST parser and tree-sitter bindings';
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 58.2,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Invoking Exa neural embeddings engine
-• Running semantic similarity search for: "${query}"`,
-          thoughtDurationSec: 0.9,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'exa_neural_search',
-              args: { query, use_autoprompt: true },
-              result: 'Found 4 semantically aligned code repositories and docs on GitHub & crates.io',
-              status: 'completed',
-              durationMs: 26,
-            },
-          ],
-          content: `**Exa Neural Search Results** for *"${query}"*:
-
-- **Semantic Match**: \`tree-sitter-highlight\` crate with grammar bindings.
-- **Documentation**: Tree-sitter AST traversal and incremental Myers diff algorithm.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    if (lower.startsWith('#google')) {
-      const query = content.replace(/^#google\s*/, '') || 'Tauri v2 NSVisualEffectView macos vibrancy';
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 55.4,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Invoking Google Custom Search Engine
-• Querying global index for: "${query}"`,
-          thoughtDurationSec: 0.7,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'google_custom_search',
-              args: { query },
-              result: 'Fetched 5 indexed Google results',
-              status: 'completed',
-              durationMs: 21,
-            },
-          ],
-          content: `**Google Search Results** for *"${query}"*:
-
-- **Citation 1**: \`tauri-plugin-window-vibrancy\` macOS documentation and examples.
-- **Citation 2**: Official Tauri v2 window background transparency configuration guide.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    if (lower.startsWith('#postgres') || lower.startsWith('#sqlite') || lower.startsWith('#db')) {
-      setTimeout(() => {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          modelName: chosenModel.displayName,
-          modelFamily: chosenModel.family,
-          provider: chosenModel.provider,
-          port: chosenModel.port,
-          speedTokPerSec: 53.2,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          thought: `• Introspecting database schema via local driver
-• Reading table definitions and foreign key constraints`,
-          thoughtDurationSec: 0.9,
-          toolCalls: [
-            {
-              id: `t-${Date.now()}-1`,
-              name: 'database_inspect',
-              args: {
-                schema: 'public',
-                includeConstraints: true,
-              },
-              result: 'Introspected 4 tables: `sessions`, `messages`, `blade_configs`, `audit_logs`',
-              status: 'completed',
-              durationMs: 16,
-            },
-          ],
-          content: `**Database Schema Reflection**:
-
-- **\`sessions\`**: \`id (UUID PK)\`, \`title (VARCHAR)\`, \`created_at (TIMESTAMPTZ)\`, \`model_target (VARCHAR)\`
-- **\`messages\`**: \`id (UUID PK)\`, \`session_id (UUID FK)\`, \`role (VARCHAR)\`, \`content (TEXT)\`, \`thought (TEXT)\`
-- **\`blade_configs\`**: \`id (UUID PK)\`, \`provider (VARCHAR)\`, \`port (INT)\`, \`temperature (FLOAT)\`, \`top_p (FLOAT)\`
-
-All foreign keys and indexes are valid.`,
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
-        setIsStreaming(false);
-      }, 700);
-      return;
-    }
-
-    // Default code modification / assistant flow
-    setTimeout(() => {
-      const assistantMsg: Message = {
-        id: `msg-${Date.now() + 1}`,
-        role: 'assistant',
-        modelName: chosenModel.displayName,
-        modelFamily: chosenModel.family,
-        provider: chosenModel.provider,
-        port: chosenModel.port,
-        speedTokPerSec: chosenModel.family === 'deepseek' ? 41.5 : chosenModel.family === 'qwen' ? 58.4 : 32.8,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        thought: chosenModel.family === 'deepseek'
-          ? `• Target file: src/engine/runtimeAdapter.ts
-• Applied bounded mpsc buffer and circular ring buffer pattern
-• Verified zero memory allocations during 60fps render tick`
-          : chosenModel.family === 'qwen'
-          ? `• Target file: lazydock-tui/src/main.rs
-• Scaffolding asynchronous Tokio event stream with Ratatui 0.28
-• Connected local Docker socket daemon`
-          : `• Target file: tests/integration_test.rs
-• Running cargo clippy verification with -D warnings
-• Linking local PostgreSQL telemetry database`,
-        thoughtDurationSec: chosenModel.family === 'deepseek' ? 4.2 : 0.8,
-        toolCalls: [
-          {
-            id: `t-${Date.now()}-1`,
-            name: 'read_file',
-            args: {
-              path: 'src/engine/runtimeAdapter.ts',
-              startLine: 1,
-              endLine: 35,
-            },
-            result: 'Read 35 lines from src/engine/runtimeAdapter.ts (1.2 KB)',
-            status: 'completed',
-            durationMs: 7,
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: displayContent,
+                      thought: displayThought || m.thought,
+                    }
+                  : m
+              )
+            );
           },
-          {
-            id: `t-${Date.now()}-2`,
-            name: 'patch_file',
-            args: {
-              path: 'src/engine/runtimeAdapter.ts',
-              instruction: 'Clamp frequency_penalty between 0.0 and 2.0',
-            },
-            result: 'Patched 4 lines in src/engine/runtimeAdapter.ts (0 errors)',
-            status: 'completed',
-            durationMs: 9,
+          onReasoning: (thinking) => {
+            accumulatedThought += thinking;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, thought: accumulatedThought }
+                  : m
+              )
+            );
           },
-        ],
-        content: `I have prepared the code modification for **${chosenModel.displayName}**. You can inspect the red removals and green additions in the visual diff below:
+          onMetrics: (metrics) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      speedTokPerSec: metrics.tokensPerSecond,
+                      thoughtDurationSec: metrics.timeToFirstTokenMs
+                        ? Number((metrics.timeToFirstTokenMs / 1000).toFixed(1))
+                        : undefined,
+                    }
+                  : m
+              )
+            );
+          },
+          onDone: async (cleanText, toolCalls) => {
+            const uiToolCalls: ToolCall[] = toolCalls.map((tc) => ({
+              id: tc.id,
+              name: tc.name,
+              args: tc.args,
+              status: 'running',
+              result: 'Executing tool via local OS bridge...',
+            }));
 
-\`\`\`diff
-// src/engine/runtimeAdapter.ts
-   // LM Studio / vLLM / Jan (OpenAI-compatible)
-   return {
-     model: blade.name,
-     messages,
-     temperature: blade.temperature ?? 0.2,
-     top_p: blade.topP ?? 0.9,
-     max_tokens: blade.maxTokens ?? 4096,
--    frequency_penalty: Math.max(0, ((blade.repetitionPenalty ?? 1.1) - 1.0) * 2.0),
-+    // Strict clamp between 0.0 and 2.0 (maximum penalty)
-+    frequency_penalty: Math.min(2.0, Math.max(0.0, ((blade.repetitionPenalty ?? 1.1) - 1.0) * 2.0)),
-   };
-\`\`\`
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      content: cleanText,
+                      toolCalls: uiToolCalls,
+                      status: 'idle',
+                    }
+                  : m
+              )
+            );
 
-Click **Accept** to apply or **Reject** to revert.`,
-      };
+            // Execute detected tools through Tauri IPC
+            if (toolCalls.length > 0) {
+              for (const tc of toolCalls) {
+                // Interactive clarification tool
+                if (tc.name === 'ask_question' || tc.name === 'ask_clarification') {
+                  const q = tc.args.question || tc.args.query || 'Clarification required:';
+                  const opts = Array.isArray(tc.args.options)
+                    ? tc.args.options.map((opt: any, idx: number) => ({
+                        id: `opt-${idx}`,
+                        label: typeof opt === 'string' ? opt : opt.label || JSON.stringify(opt),
+                        description: opt.description,
+                        recommended: idx === 0,
+                      }))
+                    : [
+                        { id: 'opt-1', label: 'Proceed with default', recommended: true },
+                        { id: 'opt-2', label: 'Provide custom input' },
+                      ];
 
-      setMessages((prev) => [...prev, assistantMsg]);
+                  setActiveClarification({
+                    id: `clarify-${Date.now()}`,
+                    toolCallId: tc.id,
+                    modelName: chosenModel.displayName,
+                    modelFamily: chosenModel.family,
+                    question: q,
+                    options: opts,
+                    allowCustomInput: true,
+                  });
+
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            toolCalls: (m.toolCalls || []).map((t) =>
+                              t.id === tc.id
+                                ? {
+                                    ...t,
+                                    status: 'pending',
+                                    result: 'Awaiting user choice...',
+                                  }
+                                : t
+                            ),
+                          }
+                        : m
+                    )
+                  );
+                  continue;
+                }
+
+                const res = await executeToolCall(tc);
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? {
+                          ...m,
+                          toolCalls: (m.toolCalls || []).map((t) =>
+                            t.id === tc.id
+                              ? {
+                                  ...t,
+                                  status: res.success ? 'completed' : 'failed',
+                                  result: res.output,
+                                  durationMs: res.durationMs,
+                                }
+                              : t
+                          ),
+                        }
+                      : m
+                  )
+                );
+              }
+            }
+          },
+        },
+        abortController
+      );
+    } catch (err: any) {
+      if (abortController.signal.aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, status: 'idle' }
+              : m
+          )
+        );
+      } else {
+        const errorMsg = `⚠️ **Connection Error**: Unable to reach **${chosenModel.displayName}** at \`${baseUrl}\`.\n\n${err?.message || String(err)}\n\n**Resolution Steps**:\n1. Check that ${chosenModel.provider === 'ollama' ? 'Ollama is running (`ollama serve`)' : 'your local LLM server is running on port ' + chosenModel.port}.\n2. Ensure model \`${chosenModel.name}\` is pulled (${chosenModel.provider === 'ollama' ? `\`ollama run ${chosenModel.name}\`` : 'loaded in LM Studio'}).\n3. Click the retry button to try again.`;
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? {
+                  ...m,
+                  content: errorMsg,
+                  status: 'error',
+                }
+              : m
+          )
+        );
+      }
+    } finally {
       setIsStreaming(false);
-    }, 800);
+      abortControllerRef.current = null;
+    }
   };
 
   return (
@@ -1183,7 +881,12 @@ Click **Accept** to apply or **Reject** to revert.`,
             <MessageItem
               key={message.id}
               message={message}
-              onRetry={() => handleSendMessage(message.content, activeModel)}
+              onRetry={() => {
+                const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+                if (lastUser) {
+                  handleSendMessage(lastUser.content, activeModel);
+                }
+              }}
             />
           ))}
         </div>
@@ -1194,8 +897,8 @@ Click **Accept** to apply or **Reject** to revert.`,
         <ChatInput
           onSendMessage={handleSendMessage}
           isStreaming={isStreaming}
-          onStopStreaming={() => setIsStreaming(false)}
-          availableModels={loadedRackModels}
+          onStopStreaming={handleStopStreaming}
+          availableModels={effectiveModels}
           activeModel={activeModel}
           onSelectActiveModel={(m) => setActiveModel(m)}
           activeClarification={activeClarification}

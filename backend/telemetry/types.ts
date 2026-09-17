@@ -1,5 +1,5 @@
 /**
- * Hardware Telemetry & Performance Types for Unit 01
+ * Hardware Telemetry & Performance Types for Unfuse
  */
 
 export interface HardwareMetrics {

@@ -228,3 +228,4 @@ export function buildPlatformSearchCommand(query: string, path: string = '.'): s
 export function buildPlatformFindCommand(pattern: string, path: string = '.'): string {
   return `fd --hidden -E .git -E node_modules '${pattern}' ${path}`;
 }
+

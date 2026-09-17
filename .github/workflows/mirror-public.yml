@@ -1,0 +1,108 @@
+name: mirror-public-build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify-and-mirror:
+    name: Verify Pro Build, Strip Proprietary Code, and Mirror
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Private Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js & Dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Install Linux Desktop Dependencies (WebKitGTK, X11)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            xvfb
+
+      # 1. Verify that the private monorepo compiles with all Pro capabilities
+      - name: Verify Full Pro Build
+        run: |
+          npm run build
+          cargo check --manifest-path src-tauri/Cargo.toml --features pro
+          cargo test --manifest-path src-tauri/Cargo.toml --features pro
+
+      # 2. Strip the proprietary crate for the public mirror
+      - name: Strip Pro Crate & Reconfigure Cargo
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Remove proprietary crate directory
+          git rm -r --cached crates/unfuse-pro-core 2>/dev/null || true
+          rm -rf crates/unfuse-pro-core
+
+          # Strip optional pro dependency and feature from src-tauri/Cargo.toml
+          sed -i '/unfuse-pro-core/d' src-tauri/Cargo.toml
+          sed -i 's/pro = \["dep:unfuse-pro-core"\]/pro = []/g' src-tauri/Cargo.toml
+
+          git add src-tauri/Cargo.toml
+          git commit -m "chore: strip proprietary pro crate for public mirror" --allow-empty
+
+      # 3. Verify public build compiles STANDALONE with zero pro code
+      - name: Verify Public Build Compiles Standalone
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          cargo build --manifest-path src-tauri/Cargo.toml
+
+      # 4. Real Build-and-Boot Check (Headless X11)
+      - name: Verify Desktop Binary Boots Cleanly
+        run: |
+          set +e
+          timeout 8s xvfb-run ./src-tauri/target/debug/unfuse-desktop --verify-boot > /tmp/boot.log 2>&1
+          EXIT_CODE=$?
+          set -e
+
+          cat /tmp/boot.log
+
+          # Check for panics, missing symbol link errors, or unresolved crates
+          if grep -qiE "panic|cannot find module|undefined symbol|unresolved import" /tmp/boot.log; then
+            echo "::error::Public binary boot verification failed! Found critical runtime errors."
+            exit 1
+          fi
+
+          # Exit 124 = killed by timeout, which is expected since GUI app waits for user input
+          if [ "$EXIT_CODE" -ne 0 ] && [ "$EXIT_CODE" -ne 124 ]; then
+            echo "::error::App exited unexpectedly with code $EXIT_CODE"
+            exit 1
+          fi
+
+          echo "Public build verified clean — compiles and boots successfully with zero proprietary code."
+
+      # 5. Push clean stripped branch to public repository
+      - name: Push to Public Mirror Repository
+        env:
+          PUBLIC_REPO_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          git config --local --unset-all http.https://github.com/.extraheader
+          git remote add public https://x-access-token:${PUBLIC_REPO_TOKEN}@github.com/Unfuse-org/unfuse.git
+          git push public main --force

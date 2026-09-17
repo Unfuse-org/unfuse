@@ -1,5 +1,5 @@
 /**
- * Universal Tool Type Definitions for Unit 01 Agent Operations
+ * Universal Tool Type Definitions for Unfuse Agent Operations
  */
 
 export type ToolName =

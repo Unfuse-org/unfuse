@@ -48,10 +48,6 @@ export class UnfuseBackend {
   }
 }
 
-// Backwards-compatible alias
-export const Unit01Backend = UnfuseBackend;
-export type Unit01Backend = UnfuseBackend;
-
 export function createBackend(workspaceRoot?: string): UnfuseBackend {
   return new UnfuseBackend(workspaceRoot);
 }

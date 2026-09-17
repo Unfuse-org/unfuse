@@ -22,6 +22,10 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+.secrets/
+*.key
+*.pem
+license.key
 
 # OS Metadata
 .DS_Store

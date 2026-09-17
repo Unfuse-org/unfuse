@@ -17,7 +17,7 @@ export * from './repomap';
 export * from './budget_router';
 
 /**
- * Main Codebase Indexer Engine for Unit 01
+ * Main Codebase Indexer Engine for Unfuse
  * Coordinates file scanning, AST parsing, dependency graph, and adaptive prompt context
  */
 export class CodebaseIndexer {

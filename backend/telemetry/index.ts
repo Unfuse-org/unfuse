@@ -9,7 +9,7 @@ export * from './rolling_buffer';
 export * from './metrics_tracker';
 
 /**
- * Main Telemetry Engine for Unit 01
+ * Main Telemetry Engine for Unfuse
  * Coordinates real-time hardware polling and BTOP sparkline area data
  */
 export class TelemetryEngine {

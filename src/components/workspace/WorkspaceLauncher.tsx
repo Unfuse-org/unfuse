@@ -150,7 +150,7 @@ export const WORKSPACE_QUOTES: string[] = [
   'Your workstation, your rules, your neural empire.',
   'Code crafted locally, deployed everywhere.',
   'The weights are loaded. The rack is primed. Let us build.',
-  'Unit 01: 100% Local. Zero Cloud. Infinite Power.',
+  'Unfuse: 100% Local. Zero Cloud. Infinite Power.',
   'Never let a server outage halt your momentum.',
   'True privacy is having zero socket connections.',
   'All tokens are computed under your roof.',
@@ -208,7 +208,7 @@ export const WorkspaceLauncher: React.FC<WorkspaceLauncherProps> = ({
 
   const [recents, setRecents] = useState<RecentProject[]>(() => {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const stored = localStorage.getItem('unfuse_recent_projects') || localStorage.getItem('unit01_recent_projects');
+      const stored = localStorage.getItem('unfuse_recent_projects');
       if (stored) {
         try {
           return JSON.parse(stored);

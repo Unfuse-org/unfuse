@@ -7,7 +7,6 @@ import {
 } from './types';
 
 const STORAGE_KEY = 'unfuse_integrations_v1';
-const LEGACY_STORAGE_KEY = 'unit01_integrations_v1';
 
 export const SERVICE_METADATA: Record<ServiceId, ServiceMetadata> = {
   duckduckgo: {
@@ -86,7 +85,7 @@ export const SERVICE_METADATA: Record<ServiceId, ServiceMetadata> = {
     category: 'Observability',
     tagline: 'Live Error Triage & Stack Traces',
     description:
-      'Query unhandled production crashes, inspect exact stack frames, and let Unit 01 synthesize zero-shot bug fixes.',
+      'Query unhandled production crashes, inspect exact stack frames, and let Unfuse synthesize zero-shot bug fixes.',
     commandTag: '#sentry',
     docsUrl: 'https://sentry.io/settings/account/api/auth-tokens/',
   },
@@ -144,12 +143,11 @@ export function subscribeIntegrations(listener: Listener): () => void {
 }
 
 const DEFAULT_SEARCH_STORAGE_KEY = 'unfuse_default_web_search_v1';
-const LEGACY_DEFAULT_SEARCH_STORAGE_KEY = 'unit01_default_web_search_v1';
 
 export function getDefaultWebSearchProvider(): ServiceId {
   try {
     const saved = typeof window !== 'undefined' && window.localStorage
-      ? (localStorage.getItem(DEFAULT_SEARCH_STORAGE_KEY) || localStorage.getItem(LEGACY_DEFAULT_SEARCH_STORAGE_KEY))
+      ? localStorage.getItem(DEFAULT_SEARCH_STORAGE_KEY)
       : null;
     if (saved && ['duckduckgo', 'tavily', 'brave', 'exa', 'google'].includes(saved)) {
       return saved as ServiceId;
@@ -188,7 +186,7 @@ export function getAllServiceStates(): Record<ServiceId, ServiceState> {
 
   try {
     const raw = typeof window !== 'undefined' && window.localStorage
-      ? (localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY))
+      ? localStorage.getItem(STORAGE_KEY)
       : null;
     if (!raw) return defaultStates;
     const parsed = JSON.parse(raw);
@@ -460,7 +458,6 @@ export async function testServiceConnection<K extends ServiceId>(
 }
 
 const MCP_STORAGE_KEY = 'unfuse_mcp_servers_v1';
-const LEGACY_MCP_STORAGE_KEY = 'unit01_mcp_servers_v1';
 
 const DEFAULT_MCP_SERVERS: McpServerConfig[] = [
   {
@@ -498,7 +495,7 @@ const DEFAULT_MCP_SERVERS: McpServerConfig[] = [
 export function getMcpServers(): McpServerConfig[] {
   try {
     const raw = typeof window !== 'undefined' && window.localStorage
-      ? (localStorage.getItem(MCP_STORAGE_KEY) || localStorage.getItem(LEGACY_MCP_STORAGE_KEY))
+      ? localStorage.getItem(MCP_STORAGE_KEY)
       : null;
     if (!raw) return DEFAULT_MCP_SERVERS;
     const parsed = JSON.parse(raw);

@@ -1,5 +1,5 @@
 /**
- * Security Engine Types for Unit 01
+ * Security Engine Types for Unfuse
  */
 
 export type PathPermission = 'allow' | 'deny' | 'prompt';

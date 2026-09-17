@@ -9,7 +9,7 @@ export * from './command_guard';
 export * from './secret_redactor';
 
 /**
- * Main Security Engine for Unit 01
+ * Main Security Engine for Unfuse
  * Coordinates zero-trust path isolation, command safety, and secret redaction
  */
 export class SecurityEngine {

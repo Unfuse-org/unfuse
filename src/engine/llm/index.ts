@@ -7,6 +7,7 @@ export * from './types';
 export * from './client';
 export * from './tool_parser';
 export * from './prompt_builder';
+export * from './tool_executor';
 
 /**
  * Main LLM Engine for Unfuse
@@ -31,7 +32,7 @@ export class LLMEngine {
     config: LLMConfig,
     repoMapContext: string = '',
     callbacks: StreamCallbacks = {}
-  ): Promise<{ fullText: string; toolCalls: LLMToolCall[]; metrics: GenerationMetrics }> {
+  ): Promise<{ fullText: string; toolCalls: LLMToolCall[]; metrics: GenerationMetrics; thought?: string }> {
     const formattedMessages = this.promptBuilder.buildPrompt(messages, repoMapContext, config);
     return this.client.streamChat(formattedMessages, config, callbacks);
   }

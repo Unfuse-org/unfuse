@@ -1,5 +1,5 @@
 /**
- * Database & State Persistence Types for Unit 01
+ * Database & State Persistence Types for Unfuse
  */
 
 export interface SessionRecord {

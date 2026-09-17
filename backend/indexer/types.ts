@@ -1,5 +1,5 @@
 /**
- * Codebase Indexer & AST Types for Unit 01
+ * Codebase Indexer & AST Types for Unfuse
  */
 
 export type SymbolKind =

@@ -9,7 +9,7 @@ export * from './session_store';
 export * from './memory_store';
 
 /**
- * Main Database Engine for Unit 01
+ * Main Database Engine for Unfuse
  * Coordinates session threads, atomic shadow backups (/undo), and project memory
  */
 export class DatabaseEngine {

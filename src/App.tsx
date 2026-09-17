@@ -16,11 +16,11 @@ export default function App() {
 
   // DRAGGABLE PANEL WIDTHS (WITH PERSISTENCE & BOUNDARIES)
   const [leftWidth, setLeftWidth] = useState<number>(() => {
-    const saved = localStorage.getItem('unfuse_left_sidebar_width') || localStorage.getItem('unit01_left_sidebar_width');
+    const saved = localStorage.getItem('unfuse_left_sidebar_width');
     return saved ? Math.min(Math.max(parseInt(saved, 10) || 256, 170), 450) : 256;
   });
   const [rightWidth, setRightWidth] = useState<number>(() => {
-    const saved = localStorage.getItem('unfuse_right_rack_width') || localStorage.getItem('unit01_right_rack_width');
+    const saved = localStorage.getItem('unfuse_right_rack_width');
     return saved ? Math.min(Math.max(parseInt(saved, 10) || 320, 240), 560) : 320;
   });
 
