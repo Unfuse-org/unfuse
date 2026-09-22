@@ -41,7 +41,7 @@ jobs:
             librsvg2-dev
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Verify Frontend Build
         run: npm run build
