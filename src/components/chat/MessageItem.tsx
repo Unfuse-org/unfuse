@@ -129,7 +129,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
 
   // 2. ASSISTANT MESSAGE (FLAT DIRECTLY ON CANVAS WITH NO BUBBLE)
   return (
-    <div className="flex flex-col mb-10 text-[13.5px] text-white/90 min-w-0 max-w-full overflow-hidden">
+    <div className="flex flex-col mb-10 text-[13.5px] text-white/90 min-w-0 max-w-full overflow-hidden select-text">
       {/* ATTRIBUTION HEADER: LOGO, MODEL NAME, BOLD PORT, SPEED & TIME */}
       <div className="flex items-center justify-between mb-3.5 select-none min-w-0">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -163,10 +163,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
 
       {/* 1. UNBOXED COLLAPSIBLE REASONING / <THINK> PROCESS (OFFICIAL REASONING SVG) */}
       {message.thought && (
-        <div className="mb-3.5 select-none min-w-0 max-w-full">
+        <div className="mb-3.5 min-w-0 max-w-full">
           <div
             onClick={() => setThoughtOpen(!thoughtOpen)}
-            className="flex items-center gap-2 py-1 text-xs text-purple-300/80 hover:text-purple-200 transition-colors cursor-pointer w-fit"
+            className="flex items-center gap-2 py-1 text-xs text-purple-300/80 hover:text-purple-200 transition-colors cursor-pointer w-fit select-none"
           >
             <div className="text-purple-400/60">
               {thoughtOpen ? (
@@ -185,7 +185,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
 
           {/* UNBOXED FLAT CANVAS THOUGHT CONTENT */}
           {thoughtOpen && (
-            <div className="pl-6 pt-1.5 pb-1 text-[12px] text-white/40 leading-relaxed font-mono whitespace-pre-wrap break-words break-all border-l-2 border-purple-500/20 ml-1.5 my-1 min-w-0 max-w-full overflow-hidden">
+            <div className="pl-6 pt-1.5 pb-1 text-[12px] text-white/40 leading-relaxed font-mono whitespace-pre-wrap break-words break-all border-l-2 border-purple-500/20 ml-1.5 my-1 min-w-0 max-w-full overflow-hidden select-text">
               {message.thought}
             </div>
           )}
@@ -203,119 +203,136 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
 
       {/* 3. MARKDOWN BODY (DIRECTLY ON CANVAS) */}
       {message.content ? (
-        <>
-          <div className="prose prose-invert prose-sm max-w-none leading-relaxed text-white/90 space-y-3 font-sans break-words min-w-0 max-w-full overflow-hidden">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ node, inline, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || '');
-                  const codeString = String(children).replace(/\n$/, '');
+        <div className="prose prose-invert prose-sm max-w-none leading-relaxed text-white/90 space-y-3 font-sans break-words min-w-0 max-w-full overflow-hidden">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code({ node, inline, className, children, ...props }: any) {
+                const match = /language-(\w+)/.exec(className || '');
+                const codeString = String(children).replace(/\n$/, '');
 
-                  if (!inline && match) {
-                    if (match[1] === 'diff') {
-                      const lines = codeString.split('\n');
-                      const oldLines: string[] = [];
-                      const newLines: string[] = [];
-                      let targetFilename = 'src/engine/runtimeAdapter.ts';
+                if (!inline && match) {
+                  if (match[1] === 'diff') {
+                    const lines = codeString.split('\n');
+                    const oldLines: string[] = [];
+                    const newLines: string[] = [];
+                    let targetFilename = 'src/engine/runtimeAdapter.ts';
 
-                      lines.forEach((l) => {
-                        if (l.startsWith('// ') && (l.includes('.') || l.includes('/'))) {
-                          targetFilename = l.replace(/^\/\/\s*/, '').trim();
-                          return;
-                        }
-                        if (l.startsWith('--- a/') || l.startsWith('+++ b/')) {
-                          targetFilename = l.replace(/^(--- a\/|\+\+\+ b\/)/, '').trim();
-                          return;
-                        }
+                    lines.forEach((l) => {
+                      if (l.startsWith('// ') && (l.includes('.') || l.includes('/'))) {
+                        targetFilename = l.replace(/^\/\/\s*/, '').trim();
+                        return;
+                      }
+                      if (l.startsWith('--- a/') || l.startsWith('+++ b/')) {
+                        targetFilename = l.replace(/^(--- a\/|\+\+\+ b\/)/, '').trim();
+                        return;
+                      }
 
-                        if (l.startsWith('+')) {
-                          newLines.push(l.slice(1));
-                        } else if (l.startsWith('-')) {
-                          oldLines.push(l.slice(1));
-                        } else {
-                          const clean = l.startsWith(' ') ? l.slice(1) : l;
-                          oldLines.push(clean);
-                          newLines.push(clean);
-                        }
-                      });
+                      if (l.startsWith('+')) {
+                        newLines.push(l.slice(1));
+                      } else if (l.startsWith('-')) {
+                        oldLines.push(l.slice(1));
+                      } else {
+                        const clean = l.startsWith(' ') ? l.slice(1) : l;
+                        oldLines.push(clean);
+                        newLines.push(clean);
+                      }
+                    });
 
-                      return (
-                        <DiffViewer
-                          filename={targetFilename}
-                          originalCode={oldLines.join('\n')}
-                          modifiedCode={newLines.join('\n')}
-                        />
-                      );
-                    }
-
-                    // COLLAPSIBLE SYNTAX-HIGHLIGHTED CODE BLOCK WITH OFFICIAL BRAND ICON
                     return (
-                      <CodeBlock
-                        language={match[1]}
-                        code={codeString}
+                      <DiffViewer
+                        filename={targetFilename}
+                        originalCode={oldLines.join('\n')}
+                        modifiedCode={newLines.join('\n')}
                       />
                     );
                   }
-                  return (
-                    <code
-                      className="px-1.5 py-0.5 rounded bg-white/[0.08] text-amber-200/90 font-mono text-[12px]"
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  );
-                },
-                p({ children }) {
-                  return <p className="mb-3 text-[13.5px] leading-relaxed text-white/85">{children}</p>;
-                },
-                ul({ children }) {
-                  return <ul className="list-disc list-inside space-y-1.5 my-2.5 text-white/80">{children}</ul>;
-                },
-                ol({ children }) {
-                  return <ol className="list-decimal list-inside space-y-1.5 my-2.5 text-white/80">{children}</ol>;
-                },
-                li({ children }) {
-                  return <li className="text-[13.5px] text-white/80">{children}</li>;
-                },
-                h1({ children }) {
-                  return <h1 className="text-base font-bold text-white mt-4 mb-2">{children}</h1>;
-                },
-                h2({ children }) {
-                  return <h2 className="text-sm font-bold text-white mt-3 mb-1.5">{children}</h2>;
-                },
-                h3({ children }) {
-                  return <h3 className="text-xs font-semibold text-white/90 mt-2 mb-1">{children}</h3>;
-                },
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
-          </div>
 
-          {/* 4. FOOTER ACTIONS */}
-          <div className="flex items-center gap-2 mt-3 text-white/30 text-xs select-none">
+                  // COLLAPSIBLE SYNTAX-HIGHLIGHTED CODE BLOCK WITH OFFICIAL BRAND ICON
+                  return (
+                    <CodeBlock
+                      language={match[1]}
+                      code={codeString}
+                    />
+                  );
+                }
+                return (
+                  <code
+                    className="px-1.5 py-0.5 rounded bg-white/[0.08] text-amber-200/90 font-mono text-[12px]"
+                    {...props}
+                  >
+                    {children}
+                  </code>
+                );
+              },
+              p({ children }) {
+                return <p className="mb-3 text-[13.5px] leading-relaxed text-white/85">{children}</p>;
+              },
+              ul({ children }) {
+                return <ul className="list-disc list-inside space-y-1.5 my-2.5 text-white/80">{children}</ul>;
+              },
+              ol({ children }) {
+                return <ol className="list-decimal list-inside space-y-1.5 my-2.5 text-white/80">{children}</ol>;
+              },
+              li({ children }) {
+                return <li className="text-[13.5px] text-white/80">{children}</li>;
+              },
+              h1({ children }) {
+                return <h1 className="text-base font-bold text-white mt-4 mb-2">{children}</h1>;
+              },
+              h2({ children }) {
+                return <h2 className="text-sm font-bold text-white mt-3 mb-1.5">{children}</h2>;
+              },
+              h3({ children }) {
+                return <h3 className="text-xs font-semibold text-white/90 mt-2 mb-1">{children}</h3>;
+              },
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+          {message.status === 'streaming' && (
+            <span className="inline-block w-1.5 h-4 ml-0.5 bg-sky-400 animate-pulse align-middle" />
+          )}
+        </div>
+      ) : null}
+
+      {/* 4. LIVE AGENT STATUS / ACTIVITY SPINNER (VISIBLE ON ALL STREAMING PHASES) */}
+      {message.status === 'streaming' && (
+        <div className="flex items-center gap-2.5 py-2 select-none text-white/60 text-xs font-mono">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse [animation-delay:200ms]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse [animation-delay:400ms]" />
+          </div>
+          <span className="text-sky-300/80 tracking-tight">
+            {message.agentStatus || 'Ingesting prompt & generating...'}
+          </span>
+        </div>
+      )}
+
+      {/* 5. FOOTER ACTIONS */}
+      {message.status !== 'streaming' && message.content && (
+        <div className="flex items-center gap-2 mt-3 text-white/30 text-xs select-none">
+          <button
+            type="button"
+            onClick={() => handleCopy(message.content)}
+            className="p-1 rounded-md hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
+            title="Copy response"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+          {onRetry && (
             <button
               type="button"
-              onClick={() => handleCopy(message.content)}
+              onClick={onRetry}
               className="p-1 rounded-md hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
-              title="Copy response"
+              title="Regenerate"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
-            {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="p-1 rounded-md hover:bg-white/[0.06] hover:text-white transition-colors cursor-pointer"
-                title="Regenerate"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </>
-      ) : null}
+          )}
+        </div>
+      )}
     </div>
   );
 };

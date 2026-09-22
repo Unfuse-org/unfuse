@@ -59,18 +59,13 @@ npm run tauri build
 
 ```
 unfuse/
-├── backend/          # Local backend engine (tools, AST indexer, LLM router, DB, security)
-│   ├── database/     # Session persistence & shadow backup engine
-│   ├── indexer/      # AST parser, repo map & token budget router
-│   ├── llm/          # Multi-provider client, streaming normalizer & tool parser
-│   ├── security/     # Path validation guard & command safety engine
-│   ├── telemetry/    # Real-time hardware & VRAM metrics tracker
-│   └── tools/        # Native tool execution & Myers diff engine
-├── src/              # React desktop workstation UI
-│   ├── components/   # Chat stream, diff viewer, terminal, integrations hub, onboarding
-│   ├── engine/       # Integrations manager & client adapters
+├── src/              # React desktop workstation UI & client engine
+│   ├── components/   # Chat canvas, model rack, diff viewer, integrations hub
+│   ├── engine/       # Multi-provider LLM client, tool executor, DB client, MCP
 │   └── assets/       # Icons, brand assets & typography
-└── src-tauri/        # Rust native desktop shell & system bridges
+├── src-tauri/        # Rust native desktop core & system bridges
+│   └── src/          # Native OS filesystem, shell executor, SQLite DB, telemetry
+└── website/          # Official landing page & marketing site
 ```
 
 ---

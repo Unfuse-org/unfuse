@@ -107,7 +107,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
                   <tr className="border-b border-white/[0.06]">
                     <td className="py-2 px-3 text-white/40">Context Limit</td>
                     <td className="py-2 px-3 text-white font-medium">
-                      {(model.contextLength || 32768).toLocaleString()} tokens
+                      {model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Auto (Model Native)'}
                     </td>
                   </tr>
                   <tr className="border-b border-white/[0.06]">

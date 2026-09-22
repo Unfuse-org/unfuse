@@ -24,9 +24,9 @@ import {
   OllamaLogo,
   LMStudioLogo,
   VLLMLogo,
-  AppleMLXLogo,
-  JanLogo,
+  UnslothLogo,
   LlamaCppLogo,
+  MLXLogo,
   DeepSeekLogo,
   QwenLogo,
   MetaLlamaLogo,
@@ -36,6 +36,7 @@ import {
   WhisperAudioLogo,
 } from '../rack/Logos';
 import unfuseLogo from '../../assets/logo.png';
+import { inferRole, normalizeFamilyForLogo } from '../rack/modelResolver';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -47,7 +48,7 @@ interface DetectedModel {
   name: string;
   provider: string;
   size: string;
-  family: 'deepseek' | 'qwen' | 'llama' | 'mistral' | 'minicpm' | 'cohere' | 'whisper' | 'other';
+  family: string;
   quant?: string;
   role: string;
 }
@@ -60,16 +61,16 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
   const [scanStatus, setScanStatus] = useState<{
     ollama: boolean;
     lmstudio: boolean;
-    vllm: boolean;
     mlx: boolean;
-    jan: boolean;
+    vllm: boolean;
+    unsloth: boolean;
     llamacpp: boolean;
   }>({
     ollama: false,
     lmstudio: false,
-    vllm: false,
     mlx: false,
-    jan: false,
+    vllm: false,
+    unsloth: false,
     llamacpp: false,
   });
 
@@ -90,27 +91,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
 
     // Live probe attempt
     let foundOllama = false;
-    let foundLmStudio = false;
     let foundVllm = false;
     const modelsFound: DetectedModel[] = [];
 
     try {
-      const ollamaRes = await fetch('http://localhost:11434/api/tags', { method: 'GET', signal: AbortSignal.timeout(1200) });
+      const ollamaRes = await fetch('http://127.0.0.1:11434/api/tags', { method: 'GET', signal: AbortSignal.timeout(2000) });
       if (ollamaRes.ok) {
         foundOllama = true;
         const data = await ollamaRes.json();
         if (Array.isArray(data.models) && data.models.length > 0) {
           data.models.forEach((m: any) => {
             const mName = m.name || m.model;
-            const fam = mName.includes('deepseek')
-              ? 'deepseek'
-              : mName.includes('qwen')
-                ? 'qwen'
-                : mName.includes('llama')
-                  ? 'llama'
-                  : mName.includes('mistral')
-                    ? 'mistral'
-                    : 'other';
+            const fam = m.details?.family || 'unknown';
             modelsFound.push({
               id: mName,
               name: mName,
@@ -118,7 +110,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               size: m.size ? `${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB` : 'Local',
               family: fam,
               quant: m.details?.quantization_level || 'Q4_K_M',
-              role: fam === 'deepseek' ? 'Reasoning' : fam === 'qwen' ? 'Coding / General' : 'Chat',
+              role: inferRole([], mName),
             });
           });
         }
@@ -127,21 +119,23 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
       // Offline fallback
     }
 
+    let foundLmStudio = false;
     try {
-      const lmRes = await fetch('http://localhost:1234/v1/models', { method: 'GET', signal: AbortSignal.timeout(1200) });
+      const lmRes = await fetch('http://127.0.0.1:1234/v1/models', { method: 'GET', signal: AbortSignal.timeout(2000) });
       if (lmRes.ok) {
         foundLmStudio = true;
         const data = await lmRes.json();
-        if (Array.isArray(data.data) && data.data.length > 0) {
-          data.data.forEach((m: any) => {
-            const mName = m.id;
+        const arr = data.data || data.models || [];
+        if (Array.isArray(arr) && arr.length > 0) {
+          arr.forEach((m: any) => {
+            const mName = m.id || m.name;
             modelsFound.push({
               id: mName,
               name: mName,
               provider: 'LM Studio',
               size: 'Loaded in VRAM',
-              family: mName.includes('deepseek') ? 'deepseek' : mName.includes('qwen') ? 'qwen' : 'other',
-              role: 'Universal Endpoint',
+              family: normalizeFamilyForLogo(mName),
+              role: inferRole(mName),
             });
           });
         }
@@ -150,56 +144,98 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
       // Offline fallback
     }
 
-    // If local test instances are simulated or default fallback
-    if (!foundOllama && !foundLmStudio) {
-      await new Promise((r) => setTimeout(r, 700));
-      foundOllama = true;
-      foundLmStudio = true;
-      modelsFound.push(
-        {
-          id: 'deepseek-r1:14b',
-          name: 'DeepSeek R1 14B',
-          provider: 'Ollama',
-          size: '9.0 GB',
-          family: 'deepseek',
-          quant: 'Q4_K_M',
-          role: 'Reasoning Engine',
-        },
-        {
-          id: 'qwen2.5-coder:32b',
-          name: 'Qwen 2.5 Coder 32B',
-          provider: 'Ollama',
-          size: '19.8 GB',
-          family: 'qwen',
-          quant: 'Q4_K_M',
-          role: 'Code Synthesis',
-        },
-        {
-          id: 'llama3.3:70b',
-          name: 'Meta Llama 3.3 70B',
-          provider: 'LM Studio',
-          size: '42.0 GB',
-          family: 'llama',
-          quant: 'Q4_K_M',
-          role: 'General Intelligence',
+    let foundMlx = false;
+    for (const mlxPort of [8080, 8081, 8088]) {
+      try {
+        const mlxRes = await fetch(`http://127.0.0.1:${mlxPort}/v1/models`, { method: 'GET', signal: AbortSignal.timeout(1500) });
+        if (mlxRes.ok) {
+          foundMlx = true;
+          const data = await mlxRes.json();
+          const arr = data.data || data.models || [];
+          if (Array.isArray(arr) && arr.length > 0) {
+            arr.forEach((m: any) => {
+              const mName = m.id || m.name;
+              modelsFound.push({
+                id: mName,
+                name: mName,
+                provider: 'Apple MLX',
+                size: 'Unified Memory',
+                family: normalizeFamilyForLogo(mName),
+                role: inferRole(mName),
+              });
+            });
+            break;
+          }
         }
-      );
+      } catch {
+        // Try next port
+      }
+    }
+
+    let foundLlamaCpp = false;
+    try {
+      const llamaRes = await fetch('http://127.0.0.1:8080/v1/models', { method: 'GET', signal: AbortSignal.timeout(2000) });
+      if (llamaRes.ok) {
+        foundLlamaCpp = true;
+        const data = await llamaRes.json();
+        const arr = data.data || data.models || [];
+        if (Array.isArray(arr) && arr.length > 0) {
+          arr.forEach((m: any) => {
+            const mName = m.id || m.name;
+            modelsFound.push({
+              id: mName,
+              name: mName,
+              provider: 'llama.cpp',
+              size: 'GGUF Matrix',
+              family: normalizeFamilyForLogo(mName),
+              role: inferRole(mName),
+            });
+          });
+        }
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    let foundUnsloth = false;
+    try {
+      const unslothRes = await fetch('http://127.0.0.1:8888/v1/models', { method: 'GET', signal: AbortSignal.timeout(2000) });
+      if (unslothRes.ok) {
+        foundUnsloth = true;
+        const data = await unslothRes.json();
+        const arr = data.data || data.models || [];
+        if (Array.isArray(arr) && arr.length > 0) {
+          arr.forEach((m: any) => {
+            const mName = m.id || m.name;
+            modelsFound.push({
+              id: mName,
+              name: mName,
+              provider: 'Unsloth',
+              size: 'Loaded in VRAM',
+              family: normalizeFamilyForLogo(mName),
+              role: inferRole(mName),
+            });
+          });
+        }
+      }
+    } catch {
+      // Offline fallback
     }
 
     setScanStatus({
       ollama: foundOllama,
       lmstudio: foundLmStudio,
+      mlx: foundMlx,
       vllm: foundVllm,
-      mlx: false,
-      jan: false,
-      llamacpp: false,
+      unsloth: foundUnsloth,
+      llamacpp: foundLlamaCpp,
     });
     setDetectedModels(modelsFound);
     setIsScanning(false);
   };
 
   const handleCopyCommand = () => {
-    navigator.clipboard.writeText('ollama run deepseek-r1:14b');
+    navigator.clipboard.writeText('ollama run <model-name>');
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 2000);
   };
@@ -224,15 +260,16 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
   const providersList = [
     { id: 'ollama', name: 'Ollama', port: '11434', logo: OllamaLogo, color: 'text-white' },
     { id: 'lmstudio', name: 'LM Studio', port: '1234', logo: LMStudioLogo, color: 'text-purple-400' },
+    { id: 'mlx', name: 'Apple MLX', port: '8088', logo: MLXLogo, color: 'text-orange-400' },
     { id: 'vllm', name: 'vLLM', port: '8000', logo: VLLMLogo, color: 'text-sky-400' },
-    { id: 'mlx', name: 'Apple MLX', port: '8080', logo: AppleMLXLogo, color: 'text-white' },
-    { id: 'jan', name: 'Jan.ai', port: '1337', logo: JanLogo, color: 'text-amber-400' },
+    { id: 'unsloth', name: 'Unsloth', port: '8888', logo: UnslothLogo, color: 'text-amber-300' },
     { id: 'llamacpp', name: 'llama.cpp', port: '8080', logo: LlamaCppLogo, color: 'text-orange-400' },
   ];
 
   // Helper to render model brand icon
   const renderFamilyLogo = (fam: string) => {
-    switch (fam) {
+    const normalized = normalizeFamilyForLogo(fam);
+    switch (normalized) {
       case 'deepseek':
         return <DeepSeekLogo size={16} />;
       case 'qwen':
@@ -368,7 +405,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                     onClick={handleCopyCommand}
                     className="font-mono text-xs text-white bg-white/10 px-3 py-1.5 rounded hover:bg-white/20 transition-colors flex items-center gap-2 cursor-pointer"
                   >
-                    <span>ollama run deepseek-r1:14b</span>
+                    <span>ollama run &lt;model-name&gt;</span>
                     {copiedCmd ? <CheckCheck className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </div>

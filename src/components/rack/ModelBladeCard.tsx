@@ -17,9 +17,10 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
   onOpenInfo,
   onOpenConfig,
 }) => {
-  const contextLength = model.contextLength || 32768;
+  const hasKnownContext = typeof model.contextLength === 'number' && model.contextLength > 0;
+  const contextLength = hasKnownContext ? model.contextLength : null;
   const tokensUsed = model.tokensUsed || 0;
-  const percentUsed = Math.min(100, Math.round((tokensUsed / contextLength) * 100));
+  const percentUsed = contextLength ? Math.min(100, Math.round((tokensUsed / contextLength) * 100)) : 0;
 
   return (
     <div className="bg-black border border-white/10 hover:border-white/20 rounded-xl p-3 select-none transition-all group">
@@ -62,7 +63,9 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
       <div className="mt-3 pt-2.5 border-t border-white/[0.06]">
         <div className="flex items-center justify-between text-[9.5px] font-mono mb-1.5 text-white/40">
           <span>Tokens</span>
-          <span className="text-white/70">{tokensUsed.toLocaleString()} / {contextLength.toLocaleString()}</span>
+          <span className="text-white/70">
+            {tokensUsed.toLocaleString()} / {contextLength ? contextLength.toLocaleString() : 'Auto'}
+          </span>
         </div>
 
         {/* PROGRESS BAR TRACK */}
@@ -70,7 +73,7 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
           {/* PROGRESS BAR FILL */}
           <div
             className="h-full bg-white rounded-full transition-all duration-300"
-            style={{ width: `${Math.max(tokensUsed > 0 ? 2 : 0, percentUsed)}%` }}
+            style={{ width: contextLength ? `${Math.max(tokensUsed > 0 ? 2 : 0, percentUsed)}%` : tokensUsed > 0 ? '100%' : '0%' }}
           />
         </div>
       </div>

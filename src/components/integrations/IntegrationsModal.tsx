@@ -11,9 +11,8 @@ import {
   ExternalLink,
   Star,
 } from 'lucide-react';
-import { ServiceId } from '../../engine/integrations/types';
+import { ServiceId, SERVICE_METADATA, TestResult } from './types';
 import {
-  SERVICE_METADATA,
   getAllServiceStates,
   saveServiceConfig,
   disconnectService,
@@ -21,15 +20,12 @@ import {
   subscribeIntegrations,
   getDefaultWebSearchProvider,
   setDefaultWebSearchProvider,
-  TestResult,
-} from '../../engine/integrations/integrationsManager';
+} from './integrationStore';
 import {
   GitHubLogo,
   LinearLogo,
   SentryLogo,
   SlackLogo,
-  PostgreSQLLogo,
-  SQLiteLogo,
   BraveLogo,
   TavilyLogo,
   DuckDuckGoLogo,
@@ -66,10 +62,6 @@ export const renderServiceLogo = (id: ServiceId, size = 16, className = 'w-4 h-4
       return <SentryLogo size={size} className={className} />;
     case 'slack':
       return <SlackLogo size={size} className={className} />;
-    case 'postgres':
-      return <PostgreSQLLogo size={size} className={className} />;
-    case 'sqlite':
-      return <SQLiteLogo size={size} className={className} />;
   }
 };
 
@@ -124,7 +116,7 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
   const currentMeta = (activeTab && SERVICE_METADATA[activeTab]) || SERVICE_METADATA['duckduckgo'];
   const currentState = (activeTab && states && states[activeTab]) || { id: activeTab, isConnected: false, config: {} };
   const isConnected = !!currentState?.isConnected;
-  const isWebSearch = currentMeta.category === 'Web Search';
+  const isWebSearch = currentMeta.category === 'search';
   const isDefaultSearch = isWebSearch && defaultSearch === activeTab;
 
   const handleSetDefaultSearch = (id: ServiceId) => {
@@ -181,16 +173,6 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
         success: true,
         message: 'Loaded token from local `gh auth token`',
         latencyMs: 12,
-      });
-    } else if (activeTab === 'postgres') {
-      setFormValues((prev) => ({
-        ...prev,
-        connectionUri: 'postgres://postgres:postgres@localhost:5432/unfuse_dev',
-      }));
-      setTestResult({
-        success: true,
-        message: 'Loaded local default PostgreSQL socket',
-        latencyMs: 8,
       });
     }
   };
@@ -557,45 +539,6 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
                     </div>
                   </>
                 )}
-
-                {activeTab === 'postgres' && (
-                  <>
-                    <div>
-                      <label className="block text-[11px] font-medium text-white/70 mb-1.5">
-                        PostgreSQL Connection URI
-                      </label>
-                      <input
-                        type="text"
-                        value={formValues.connectionUri || ''}
-                        onChange={(e) => handleFieldChange('connectionUri', e.target.value)}
-                        placeholder="postgres://user:password@localhost:5432/dbname"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAutoDetect}
-                      className="flex items-center gap-1.5 text-[10.5px] text-white/50 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] px-2.5 py-1.5 rounded-lg transition-all cursor-pointer"
-                    >
-                      <Sparkles className="w-3 h-3 text-sky-400" /> Use default local socket
-                    </button>
-                  </>
-                )}
-
-                {activeTab === 'sqlite' && (
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/70 mb-1.5">
-                      Database File Path
-                    </label>
-                    <input
-                      type="text"
-                      value={formValues.dbPath || ''}
-                      onChange={(e) => handleFieldChange('dbPath', e.target.value)}
-                      placeholder="./dev.sqlite or /var/data/app.db"
-                      className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                    />
-                  </div>
-                )}
               </div>
 
               {/* TEST RESULT FEEDBACK */}
@@ -614,7 +557,7 @@ export const IntegrationsModal: React.FC<IntegrationsModalProps> = ({
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium leading-tight">{testResult.message}</p>
-                    {testResult.latencyMs > 0 && (
+                    {testResult.latencyMs !== undefined && testResult.latencyMs > 0 && (
                       <span className="text-[9.5px] font-mono text-white/40 block mt-0.5">
                         Latency: {testResult.latencyMs}ms
                       </span>

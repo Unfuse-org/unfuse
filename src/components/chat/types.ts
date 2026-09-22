@@ -31,6 +31,7 @@ export interface Message {
   thoughtDurationSec?: number;
   toolCalls?: ToolCall[];
   status?: 'idle' | 'streaming' | 'error';
+  agentStatus?: string;
 }
 
 export interface ClarificationOption {
@@ -57,5 +58,23 @@ export interface ActiveModelTarget {
   displayName: string;
   provider: LocalProvider;
   port: number;
-  family: ModelFamily;
+  family?: ModelFamily;
 }
+
+export interface HardwareTelemetry {
+  cpu_usage_pct: number;
+  cpu_cores: number;
+  cpu_brand: string;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_usage_pct: number;
+  swap_used_gb: number;
+  swap_total_gb: number;
+  gpu_name: string;
+  gpu_vendor: string;
+  vram_used_gb: number;
+  vram_total_gb: number;
+  vram_usage_pct: number;
+  gpu_temp_c: number | null;
+}
+

@@ -5,12 +5,14 @@ import { RackPanel } from './components/rack/RackPanel';
 import { ChatSession } from './components/sidebar/types';
 import { OnboardingModal } from './components/onboarding/OnboardingModal';
 import { WorkspaceLauncher, RecentProject } from './components/workspace/WorkspaceLauncher';
+import { LocalModelBlade } from './components/rack/types';
 
 export default function App() {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
   const [isRightRackOpen, setIsRightRackOpen] = useState(true);
   const [sessions, setSessions] = useState<ChatSession[]>(INITIAL_SESSIONS);
-  const [activeSessionId, setActiveSessionId] = useState<string>('s-1');
+  const [activeSessionId, setActiveSessionId] = useState<string>('s-main');
+  const [rackModels, setRackModels] = useState<LocalModelBlade[]>([]);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(true);
   const [isLauncherOpen, setIsLauncherOpen] = useState<boolean>(false);
 
@@ -110,6 +112,7 @@ export default function App() {
   };
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
+  const activeRackModel = rackModels.find(m => m.status === 'active') || rackModels[0] || null;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-transparent select-none relative font-sans">
@@ -124,7 +127,9 @@ export default function App() {
           activeSessionId={activeSessionId}
           sessions={sessions}
           onSelectSession={(id) => setActiveSessionId(id)}
-          onUpdateSessions={(newSessions) => setSessions(newSessions)}
+          onUpdateSessions={(newSessions) => {
+            setSessions(newSessions);
+          }}
           onNewChat={() => {}}
         />
       </aside>
@@ -145,13 +150,14 @@ export default function App() {
       {/* 2. MIDDLE PANEL: 100% PURE BLACK (#000000) */}
       <main className="flex-1 bg-black flex flex-col min-w-0 overflow-hidden border-r border-white/5">
         <ChatPanel
-          key={activeSessionId}
           sessionId={activeSessionId}
           activeSessionTitle={activeSession?.title}
           isLeftSidebarOpen={isLeftSidebarOpen}
           isRightRackOpen={isRightRackOpen}
           onToggleLeftSidebar={() => setIsLeftSidebarOpen((prev) => !prev)}
           onToggleRightRack={() => setIsRightRackOpen((prev) => !prev)}
+          activeModel={activeRackModel}
+          rackModels={rackModels}
         />
       </main>
 
@@ -175,7 +181,7 @@ export default function App() {
           isDraggingRight ? 'transition-none' : 'transition-[width,opacity] duration-200 ease-in-out'
         } ${isRightRackOpen ? 'opacity-100' : 'opacity-0 translate-x-full pointer-events-none'}`}
       >
-        <RackPanel />
+        <RackPanel models={rackModels} onModelsChange={setRackModels} />
       </aside>
 
       {/* 4. WORKSPACE LAUNCHER SCREEN */}

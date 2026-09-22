@@ -13,33 +13,12 @@ import { BtopTelemetryPopover } from '../chat/BtopTelemetryPopover';
 
 export const INITIAL_SESSIONS: ChatSession[] = [
   {
-    id: 's-1',
-    title: 'Runtime Config Adapter & Sliders',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 3), // 3 mins ago
-    messageCount: 8,
-    modelUsed: 'Qwen 2.5 Coder 32B',
-    pinned: true,
-  },
-  {
-    id: 's-2',
-    title: '6-Blade Rack State Architecture',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 45), // 45 mins ago
-    messageCount: 14,
-    modelUsed: 'DeepSeek R1 14B',
-  },
-  {
-    id: 's-3',
-    title: 'AST Repository Indexer & Myers Diff',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 22), // Yesterday
-    messageCount: 26,
-    modelUsed: 'Meta Llama 3.3 70B',
-  },
-  {
-    id: 's-4',
-    title: 'Tauri v2 Native Rust Window Vibrancy',
-    updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 50), // 2 days ago
-    messageCount: 19,
-    modelUsed: 'Qwen 2.5 Coder 32B',
+    id: 's-main',
+    title: 'General Workspace Chat',
+    updatedAt: new Date(),
+    messageCount: 0,
+    modelUsed: 'Local Model',
+    pinned: false,
   },
 ];
 
@@ -60,8 +39,8 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 }) => {
   const [internalSessions, setInternalSessions] = useState<ChatSession[]>(INITIAL_SESSIONS);
   const sessions = propSessions || internalSessions;
-  const setSessions = (updater: (prev: ChatSession[]) => ChatSession[]) => {
-    const updated = updater(sessions);
+  const setSessions = (updater: ((prev: ChatSession[]) => ChatSession[]) | ChatSession[]) => {
+    const updated = typeof updater === 'function' ? updater(sessions) : updater;
     setInternalSessions(updated);
     onUpdateSessions?.(updated);
   };
@@ -91,21 +70,31 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
   const handleDeleteSession = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setSessions((prev) => prev.filter((s) => s.id !== id));
+    const updated = sessions.filter((s) => s.id !== id);
+    setSessions(updated);
+    onUpdateSessions?.(updated);
+    if (activeId === id && updated.length > 0) {
+      setActiveId(updated[0].id);
+      onSelectSession?.(updated[0].id);
+    }
   };
 
   const handleTogglePin = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s))
+    const updated = sessions.map((s) =>
+      s.id === id ? { ...s, pinned: !s.pinned } : s
     );
+    setSessions(updated);
+    onUpdateSessions?.(updated);
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
     if (!newTitle.trim()) return;
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, title: newTitle.trim() } : s))
+    const updated = sessions.map((s) =>
+      s.id === id ? { ...s, title: newTitle.trim() } : s
     );
+    setSessions(updated);
+    onUpdateSessions?.(updated);
   };
 
   const filteredSessions = sessions.filter((s) =>

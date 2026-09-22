@@ -1,4 +1,4 @@
-export type LocalProvider = 'ollama' | 'lmstudio' | 'jan' | 'vllm' | 'mlx' | 'llamacpp';
+export type LocalProvider = 'ollama' | 'lmstudio' | 'vllm' | 'unsloth' | 'llamacpp' | 'mlx';
 
 export type ModelRole =
   | 'Coder'
@@ -9,20 +9,8 @@ export type ModelRole =
   | 'Reranker'
   | 'Audio';
 
-export type ModelFamily =
-  | 'qwen'
-  | 'deepseek'
-  | 'llama'
-  | 'mistral'
-  | 'phi'
-  | 'gemma'
-  | 'minicpm'
-  | 'cohere'
-  | 'starcoder'
-  | 'baai'
-  | 'nomic'
-  | 'whisper'
-  | 'custom';
+/** Model family is dynamic — comes from Ollama API `details.family` or inferred from model name. */
+export type ModelFamily = string;
 
 export interface LocalModelBlade {
   id: string;
@@ -34,7 +22,7 @@ export interface LocalModelBlade {
   quantization?: string;
   sizeGb: number;
   vramUsageGb: number;
-  contextLength: number;
+  contextLength?: number;
   tokensUsed: number;
   temperature?: number;
   topP?: number;

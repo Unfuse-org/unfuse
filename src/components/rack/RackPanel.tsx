@@ -6,16 +6,46 @@ import { MountModelView } from './MountModelView';
 import { ModelInfoModal } from './ModelInfoModal';
 import { BladeConfigView } from './BladeConfigView';
 
-export const RackPanel: React.FC = () => {
+export interface RackPanelProps {
+  models: LocalModelBlade[];
+  onModelsChange: (models: LocalModelBlade[]) => void;
+}
+
+export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) => {
   const [isMountingOpen, setIsMountingOpen] = useState(false);
   const [selectedInfoModel, setSelectedInfoModel] = useState<LocalModelBlade | null>(null);
   const [editingModel, setEditingModel] = useState<LocalModelBlade | null>(null);
 
-  const [models, setModels] = useState<LocalModelBlade[]>([]);
+  // Listen for live streaming token updates to animate context window progress bar
+  React.useEffect(() => {
+    const handleTokenUpdate = (
+      e: CustomEvent<{ modelName: string; tokensUsed: number; speedTokPerSec?: number }>
+    ) => {
+      if (!e.detail) return;
+      const { modelName, tokensUsed, speedTokPerSec } = e.detail;
+      onModelsChange(
+        models.map((m) => {
+          if (m.name === modelName || m.displayName === modelName || models.length === 1) {
+            return {
+              ...m,
+              tokensUsed: Math.max(m.tokensUsed || 0, tokensUsed),
+              speedTokPerSec: speedTokPerSec !== undefined ? speedTokPerSec : m.speedTokPerSec,
+            };
+          }
+          return m;
+        })
+      );
+    };
+
+    window.addEventListener('unfuse-tokens-update', handleTokenUpdate as EventListener);
+    return () => {
+      window.removeEventListener('unfuse-tokens-update', handleTokenUpdate as EventListener);
+    };
+  }, [models, onModelsChange]);
 
   const handleSetPrimary = (id: string) => {
-    setModels((prev) =>
-      prev.map((m) => ({
+    onModelsChange(
+      models.map((m) => ({
         ...m,
         status: m.id === id ? 'active' : m.status === 'active' ? 'loaded' : m.status,
       }))
@@ -23,8 +53,8 @@ export const RackPanel: React.FC = () => {
   };
 
   const handleSaveConfig = (updated: LocalModelBlade) => {
-    setModels((prev) =>
-      prev.map((m) => {
+    onModelsChange(
+      models.map((m) => {
         if (m.id === updated.id) {
           return updated;
         }
@@ -39,20 +69,18 @@ export const RackPanel: React.FC = () => {
 
   const handleUnload = (id: string) => {
     // Unloading frees the model slot from the rack
-    setModels((prev) => prev.filter((m) => m.id !== id));
+    onModelsChange(models.filter((m) => m.id !== id));
   };
 
   const handleEject = (id: string) => {
-    setModels((prev) => prev.filter((m) => m.id !== id));
+    onModelsChange(models.filter((m) => m.id !== id));
   };
 
   const handleMountModel = (newModel: LocalModelBlade) => {
-    setModels((prev) => {
-      // Guard: Ensure only one model per provider is mounted
-      const filtered = prev.filter((m) => m.provider !== newModel.provider);
-      const isFirst = filtered.length === 0;
-      return [...filtered, { ...newModel, status: isFirst ? 'active' : 'loaded' }];
-    });
+    // Guard: Ensure only one model per provider is mounted
+    const filtered = models.filter((m) => m.provider !== newModel.provider);
+    const isFirst = filtered.length === 0;
+    onModelsChange([...filtered, { ...newModel, status: isFirst ? 'active' : 'loaded' }]);
   };
 
   return (

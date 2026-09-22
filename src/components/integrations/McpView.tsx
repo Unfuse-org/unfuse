@@ -6,16 +6,15 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { McpServerConfig } from '../../engine/integrations/types';
+import { McpServerConfig, TestResult } from './types';
 import {
   getMcpServers,
   saveMcpServer,
   deleteMcpServer,
   toggleMcpServer,
   testMcpServerConnection,
-  TestResult,
   subscribeIntegrations,
-} from '../../engine/integrations/integrationsManager';
+} from './integrationStore';
 
 export const McpView: React.FC = () => {
   const [servers, setServers] = useState<McpServerConfig[]>(getMcpServers());
@@ -51,7 +50,7 @@ export const McpView: React.FC = () => {
   useEffect(() => {
     if (selectedServer && !isAdding) {
       setFormName(selectedServer.name);
-      setFormTransport(selectedServer.transport);
+      setFormTransport(selectedServer.transport === 'sse' ? 'sse' : 'stdio');
       setFormCommand(selectedServer.command || 'npx');
       setFormArgs(selectedServer.args?.join(' ') || '');
       setFormUrl(selectedServer.url || '');
@@ -183,6 +182,7 @@ export const McpView: React.FC = () => {
         args: formArgs.split(' ').filter(Boolean),
         url: formUrl,
         cwd: formCwd.trim() || undefined,
+        status: 'connected',
         enabled: true,
       };
       const res = await testMcpServerConnection(mockConfig);
@@ -468,7 +468,7 @@ export const McpView: React.FC = () => {
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-medium leading-tight">{testResult.message}</p>
-                  {testResult.latencyMs > 0 && (
+                  {testResult.latencyMs !== undefined && testResult.latencyMs > 0 && (
                     <span className="text-[9.5px] font-mono text-white/40 block mt-0.5">
                       Handshake Latency: {testResult.latencyMs}ms • JSON-RPC v2.0
                     </span>
@@ -507,7 +507,7 @@ export const McpView: React.FC = () => {
               {!isAdding && selectedServer && (
                 <button
                   type="button"
-                  onClick={() => handleToggle(selectedServer.id, selectedServer.enabled)}
+                  onClick={() => handleToggle(selectedServer.id, selectedServer.enabled ?? true)}
                   className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs border flex items-center gap-1.5 ${
                     selectedServer.enabled
                       ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'

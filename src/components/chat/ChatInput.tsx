@@ -25,8 +25,6 @@ import {
   LinearLogo,
   SentryLogo,
   SlackLogo,
-  PostgreSQLLogo,
-  SQLiteLogo,
   BraveLogo,
   TavilyLogo,
   DuckDuckGoLogo,
@@ -34,7 +32,7 @@ import {
   GoogleLogo,
   McpLogo,
 } from '../integrations/IntegrationLogos';
-import { ServiceId } from '../../engine/integrations/types';
+import { ServiceId } from '../integrations/types';
 
 export interface CodebaseFileItem {
   id: string;
@@ -54,11 +52,6 @@ export const WORKSPACE_FILES: CodebaseFileItem[] = [
   { id: 'f-6', name: 'ToolCallItem.tsx', path: 'src/components/chat/ToolCallItem.tsx', type: 'code', lines: 340, size: '12 KB' },
   { id: 'f-7', name: 'RackPanel.tsx', path: 'src/components/rack/RackPanel.tsx', type: 'code', lines: 450, size: '18 KB' },
   { id: 'f-8', name: 'SidebarPanel.tsx', path: 'src/components/sidebar/SidebarPanel.tsx', type: 'code', lines: 380, size: '15 KB' },
-  { id: 'f-9', name: 'runtimeAdapter.ts', path: 'src/engine/runtimeAdapter.ts', type: 'code', lines: 210, size: '9.2 KB' },
-  { id: 'f-10', name: 'HeroSection.tsx', path: 'kubepulse-web/components/HeroSection.tsx', type: 'code', lines: 140, size: '4.2 KB' },
-  { id: 'f-11', name: 'ClusterCanvas3D.tsx', path: 'kubepulse-web/components/ClusterCanvas3D.tsx', type: 'code', lines: 180, size: '5.1 KB' },
-  { id: 'f-12', name: 'PricingMatrix.tsx', path: 'kubepulse-web/components/PricingMatrix.tsx', type: 'code', lines: 120, size: '3.8 KB' },
-  { id: 'f-13', name: 'route.ts', path: 'kubepulse-web/app/api/waitlist/route.ts', type: 'code', lines: 65, size: '2.3 KB' },
   { id: 'f-14', name: 'package.json', path: 'package.json', type: 'config', lines: 42, size: '1.4 KB' },
   { id: 'f-15', name: 'Cargo.toml', path: 'Cargo.toml', type: 'config', lines: 30, size: '1.1 KB' },
   { id: 'f-16', name: 'tsconfig.json', path: 'tsconfig.json', type: 'config', lines: 28, size: '0.8 KB' },
@@ -77,32 +70,7 @@ interface ChatInputProps {
   onDismissClarification?: () => void;
 }
 
-const DEFAULT_MODELS: ActiveModelTarget[] = [
-  {
-    id: 'qwen-32b',
-    name: 'qwen2.5-coder:32b',
-    displayName: 'Qwen 2.5 Coder 32B',
-    provider: 'ollama',
-    port: 11434,
-    family: 'qwen',
-  },
-  {
-    id: 'deepseek-14b',
-    name: 'deepseek-r1:14b',
-    displayName: 'DeepSeek R1 14B',
-    provider: 'lmstudio',
-    port: 1234,
-    family: 'deepseek',
-  },
-  {
-    id: 'llama-70b',
-    name: 'llama3.3:70b',
-    displayName: 'Meta Llama 3.3 70B',
-    provider: 'ollama',
-    port: 11434,
-    family: 'llama',
-  },
-];
+
 
 export interface CommandItem {
   id: string;
@@ -167,24 +135,6 @@ export const COMMAND_LIST: CommandItem[] = [
     serviceId: 'slack',
     description: 'Channel alerts & summaries',
     icon: <SlackLogo size={14} className="w-3.5 h-3.5" />,
-  },
-  {
-    id: 'cmd-postgres',
-    name: 'PostgreSQL',
-    tag: '#postgres',
-    category: 'integration',
-    serviceId: 'postgres',
-    description: 'Schema reflection & queries',
-    icon: <PostgreSQLLogo size={14} className="w-3.5 h-3.5" />,
-  },
-  {
-    id: 'cmd-sqlite',
-    name: 'SQLite',
-    tag: '#sqlite',
-    category: 'integration',
-    serviceId: 'sqlite',
-    description: 'Inspect tables & local database',
-    icon: <SQLiteLogo size={14} className="w-3.5 h-3.5" />,
   },
   {
     id: 'cmd-search',
@@ -304,8 +254,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   isStreaming = false,
   onStopStreaming,
-  availableModels = DEFAULT_MODELS,
-  activeModel = DEFAULT_MODELS[0],
+  availableModels = [],
+  activeModel,
   onSelectActiveModel,
   onOpenIntegrations,
   activeClarification,
@@ -379,7 +329,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     (m) =>
       m.displayName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
       m.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-      m.family.toLowerCase().includes(mentionQuery.toLowerCase())
+      (m.family ? m.family.toLowerCase().includes(mentionQuery.toLowerCase()) : false)
   );
 
   const filteredCommands = COMMAND_LIST.filter(
@@ -594,11 +544,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 >
                   <div className="flex items-center gap-2 truncate min-w-0">
                     <div className="w-5 h-5 rounded bg-white flex items-center justify-center p-0.5 shrink-0">
-                      {getModelLogo(m.family, 12)}
+                      {getModelLogo(m.family || 'custom', 12)}
                     </div>
                     <div className="flex flex-col min-w-0">
                       <span className="truncate text-[12px] font-semibold text-sky-400">
-                        @{m.family}
+                        @{m.name || m.displayName}
                       </span>
                       <span className="truncate text-[10px] text-white/40 font-sans">
                         {m.displayName}

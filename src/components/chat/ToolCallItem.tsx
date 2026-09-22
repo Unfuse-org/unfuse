@@ -7,10 +7,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
-  Search,
   Check,
-  FolderSearch,
-  Trash2,
   Globe,
   Brain,
   ExternalLink,
@@ -24,8 +21,6 @@ import {
   LinearLogo,
   SentryLogo,
   SlackLogo,
-  PostgreSQLLogo,
-  SQLiteLogo,
   BraveLogo,
   TavilyLogo,
   DuckDuckGoLogo,
@@ -33,16 +28,20 @@ import {
   GoogleLogo,
   McpLogo,
 } from '../integrations/IntegrationLogos';
-import {
-  buildPlatformShellCommand,
-  buildPlatformDeleteCommand,
-  buildPlatformReadCommand,
-  buildPlatformSearchCommand,
-  buildPlatformFindCommand,
-} from '../../engine/runtimeAdapter';
+import { backendClient } from '../../services/backendClient';
 
-interface ToolCallItemProps {
+function buildPlatformReadCommand(path: string, start?: number, end?: number): string {
+  if (start && end) return `sed -n '${start},${end}p' '${path}'`;
+  return `cat '${path}'`;
+}
+
+function buildPlatformShellCommand(cmd: string): string {
+  return cmd;
+}
+
+export interface ToolCallItemProps {
   tool: ToolCall;
+  onDecision?: (decision: 'allow' | 'auto_allow' | 'modify' | 'reject', modifiedArgs?: Record<string, unknown>) => void;
 }
 
 interface ParsedTool {
@@ -79,7 +78,7 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     } else if (serverName === 'postgres' || serverName === 'sql' || serverName === 'db') {
       const query = (args.query || args.sql || '') as string;
       desc = query ? `${query.slice(0, 50)}${query.length > 50 ? '...' : ''}` : method;
-      icon = <PostgreSQLLogo size={14} className="w-3.5 h-3.5 shrink-0" />;
+      icon = <McpLogo size={14} className="w-3.5 h-3.5 text-white/90 shrink-0" />;
     } else if (serverName === 'puppeteer' || serverName === 'browser') {
       const url = (args.url || args.selector || '') as string;
       desc = url ? `${method} ${url}` : method;
@@ -98,7 +97,7 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
 
   // 2. NATIVE INTEGRATIONS (WEB SEARCH)
   if (name.includes('brave')) {
-    const query = (args.query || args.searchQuery || '') as string;
+    const query = (args.query || args.searchQuery || args.q || '') as string;
     return {
       actionVerb: 'Brave Search',
       targetDescription: query ? `"${query}"` : 'web',
@@ -107,7 +106,7 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
   }
 
   if (name.includes('tavily')) {
-    const query = (args.query || args.searchQuery || '') as string;
+    const query = (args.query || args.searchQuery || args.q || '') as string;
     return {
       actionVerb: 'Tavily Search',
       targetDescription: query ? `"${query}"` : 'web intelligence',
@@ -115,17 +114,8 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     };
   }
 
-  if (name.includes('duckduckgo') || name.includes('ddg')) {
-    const query = (args.query || args.searchQuery || '') as string;
-    return {
-      actionVerb: 'DuckDuckGo',
-      targetDescription: query ? `"${query}"` : 'web',
-      icon: <DuckDuckGoLogo size={14} className="w-3.5 h-3.5 shrink-0" />,
-    };
-  }
-
   if (name.includes('exa')) {
-    const query = (args.query || args.searchQuery || '') as string;
+    const query = (args.query || args.searchQuery || args.q || '') as string;
     return {
       actionVerb: 'Exa Neural',
       targetDescription: query ? `"${query}"` : 'web embeddings',
@@ -133,12 +123,36 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     };
   }
 
-  if (name.includes('google_search') || name.includes('google_custom')) {
-    const query = (args.query || args.searchQuery || '') as string;
+  if (name.includes('google_search') || name.includes('google_custom') || name === 'google') {
+    const query = (args.query || args.searchQuery || args.q || '') as string;
     return {
       actionVerb: 'Google Search',
       targetDescription: query ? `"${query}"` : 'web',
       icon: <GoogleLogo size={14} className="w-3.5 h-3.5 shrink-0" />,
+    };
+  }
+
+  if (
+    name === 'web_search' ||
+    name === 'search' ||
+    name === 'search_web' ||
+    name.includes('duckduckgo') ||
+    name.includes('ddg')
+  ) {
+    const query = (args.query || args.searchQuery || args.q || args.search || '') as string;
+    return {
+      actionVerb: 'Web Search',
+      targetDescription: query ? `"${query}"` : 'web',
+      icon: <DuckDuckGoLogo size={14} className="w-3.5 h-3.5 shrink-0" />,
+    };
+  }
+
+  if (name === 'fetch_web_page' || name === 'fetch_url' || name === 'web_fetch' || name === 'read_url') {
+    const url = (args.url || args.targetUrl || args.link || '') as string;
+    return {
+      actionVerb: 'Fetch URL',
+      targetDescription: url ? extractDomain(url) || url : 'webpage',
+      icon: <Globe className="w-3.5 h-3.5 text-sky-400 shrink-0" />,
     };
   }
 
@@ -163,24 +177,6 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     };
   }
 
-  if (name.startsWith('postgres_') || name.startsWith('postgresql_')) {
-    const query = (args.query || args.sql || '') as string;
-    return {
-      actionVerb: 'PostgreSQL',
-      targetDescription: query ? `${query.slice(0, 50)}${query.length > 50 ? '...' : ''}` : 'query',
-      icon: <PostgreSQLLogo size={14} className="w-3.5 h-3.5 shrink-0" />,
-    };
-  }
-
-  if (name.startsWith('sqlite_')) {
-    const query = (args.query || args.sql || '') as string;
-    return {
-      actionVerb: 'SQLite',
-      targetDescription: query ? `${query.slice(0, 50)}${query.length > 50 ? '...' : ''}` : 'query',
-      icon: <SQLiteLogo size={14} className="w-3.5 h-3.5 shrink-0" />,
-    };
-  }
-
   if (name.startsWith('sentry_')) {
     const action = name.replace('sentry_', '').replace(/_/g, ' ');
     const proj = (args.project || args.issue || '') as string;
@@ -201,7 +197,7 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     };
   }
 
-  // 4. CORE CODEBASE & OS TOOLS (BASIC TOOLS: READ, EDIT, CREATE, SEARCH, FIND, RUN, DELETE)
+  // 4. CORE CODEBASE & OS TOOLS (READ, EDIT, WRITE, BASH)
   // READ FILE
   if (name.includes('read')) {
     const path = (args.path || args.filePath || args.targetFile || args.file || '') as string;
@@ -224,7 +220,7 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     return {
       actionVerb: 'Edited',
       targetDescription: path || 'file',
-      shellCommand: `AST patch '${path}' (Myers Diff)`,
+      shellCommand: `patch '${path}'`,
       path,
       icon: <FileEdit className="w-3.5 h-3.5 text-emerald-300/85 shrink-0" />,
     };
@@ -236,39 +232,13 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
     return {
       actionVerb: 'Created',
       targetDescription: path || 'file',
-      shellCommand: `mkdir -p "$(dirname '${path}')" && cat << 'EOF' > '${path}'`,
+      shellCommand: `write '${path}'`,
       path,
       icon: <FileCode className="w-3.5 h-3.5 text-blue-300/85 shrink-0" />,
     };
   }
 
-  // SEARCH CODE
-  if (name.includes('search') || name.includes('grep')) {
-    const query = (args.query || args.pattern || args.searchQuery || '') as string;
-    const path = (args.path || args.searchPath || '') as string;
-    return {
-      actionVerb: 'Searched',
-      targetDescription: query ? `"${query}"${path ? ` in ${path}` : ''}` : 'codebase',
-      shellCommand: buildPlatformSearchCommand(query, path || '.'),
-      path,
-      icon: <Search className="w-3.5 h-3.5 text-sky-400/85 shrink-0" />,
-    };
-  }
-
-  // FIND FILES / GLOB
-  if (name.includes('find') || name.includes('glob') || name.includes('list_files')) {
-    const pattern = (args.pattern || args.glob || args.extension || '') as string;
-    const path = (args.directory || args.path || '.') as string;
-    return {
-      actionVerb: 'Found',
-      targetDescription: pattern ? `${pattern}${path !== '.' ? ` in ${path}` : ''}` : 'files',
-      shellCommand: buildPlatformFindCommand(pattern, path || '.'),
-      path,
-      icon: <FolderSearch className="w-3.5 h-3.5 text-cyan-300/85 shrink-0" />,
-    };
-  }
-
-  // RUN COMMAND
+  // RUN COMMAND (BASH)
   if (name.includes('command') || name.includes('run') || name.includes('bash') || name.includes('shell')) {
     const cmd = (args.command || args.cmd || args.commandLine || '') as string;
     return {
@@ -276,18 +246,6 @@ function parseToolInfo(tool: ToolCall): ParsedTool {
       targetDescription: cmd || 'command',
       shellCommand: buildPlatformShellCommand(cmd),
       icon: <Terminal className="w-3.5 h-3.5 text-indigo-300/85 shrink-0" />,
-    };
-  }
-
-  // DELETE FILE
-  if (name.includes('delete') || name.includes('remove') || name.includes('rm')) {
-    const path = (args.path || args.filePath || '') as string;
-    return {
-      actionVerb: 'Deleted',
-      targetDescription: path || 'file',
-      shellCommand: buildPlatformDeleteCommand(path),
-      path,
-      icon: <Trash2 className="w-3.5 h-3.5 text-rose-400/85 shrink-0" />,
     };
   }
 
@@ -307,8 +265,9 @@ function extractDomain(url: string): string {
   }
 }
 
-export const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool }) => {
-  const [isOpen, setIsOpen] = useState(tool.status === 'running' || tool.status === 'pending');
+export const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool, onDecision }) => {
+  // Only open by default if it requires user confirmation ('pending')
+  const [isOpen, setIsOpen] = useState(tool.status === 'pending');
   const [liveStatus, setLiveStatus] = useState(tool.status);
   const [streamedText, setStreamedText] = useState(tool.result || '');
   const [isSimulating, setIsSimulating] = useState(false);
@@ -316,6 +275,23 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool }) => {
   const parsed = parseToolInfo(tool);
   const [currentCommand, setCurrentCommand] = useState(parsed.shellCommand || '');
   const sourcesCount = tool.sources?.length || 0;
+
+  // Real-time synchronization when parent updates tool execution status
+  React.useEffect(() => {
+    setLiveStatus(tool.status);
+    if (tool.status === 'pending') {
+      setIsOpen(true);
+    } else if (tool.status === 'completed') {
+      // Auto-collapse completed tools so chat remains clean & uncluttered
+      setIsOpen(false);
+    }
+  }, [tool.status]);
+
+  React.useEffect(() => {
+    if (tool.result) {
+      setStreamedText(tool.result);
+    }
+  }, [tool.result]);
 
   const executeAction = (commandToRun?: string) => {
     setIsModifying(false);
@@ -343,24 +319,49 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool }) => {
 
   const handleAllow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    executeAction();
+    setLiveStatus('running');
+    if (onDecision) {
+      onDecision('allow');
+    } else {
+      backendClient.resolvePermission(tool.id, 'allow');
+    }
   };
 
   const handleAutoAllow = (e: React.MouseEvent) => {
     e.stopPropagation();
-    executeAction();
+    setLiveStatus('running');
+    if (onDecision) {
+      onDecision('auto_allow');
+    } else {
+      backendClient.resolvePermission(tool.id, 'auto_allow');
+    }
   };
 
   const handleReject = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsModifying(false);
     setLiveStatus('rejected');
-    setStreamedText('Action cancelled by user.');
+    setStreamedText('Action rejected by user.');
+    if (onDecision) {
+      onDecision('reject');
+    } else {
+      backendClient.resolvePermission(tool.id, 'reject');
+    }
   };
 
   const handleRunModified = (e: React.MouseEvent) => {
     e.stopPropagation();
-    executeAction(currentCommand);
+    setIsModifying(false);
+    setLiveStatus('running');
+    const modifiedArgs = { ...(tool.args || {}) };
+    if (tool.name.includes('command') || tool.name.includes('bash')) {
+      modifiedArgs.command = currentCommand;
+    }
+    if (onDecision) {
+      onDecision('modify', modifiedArgs);
+    } else {
+      backendClient.resolvePermission(tool.id, 'modify', modifiedArgs);
+    }
   };
 
   const handleReplay = (e: React.MouseEvent) => {
@@ -370,11 +371,11 @@ export const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool }) => {
   };
 
   return (
-    <div className="select-none text-[12px] font-mono min-w-0 max-w-full overflow-hidden">
+    <div className="select-text text-[12px] font-mono min-w-0 max-w-full overflow-hidden">
       {/* 1. NATURAL HUMAN ACTION ROW (UNBOXED, FLAT DIRECTLY ON CANVAS) */}
       <div
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 py-1 text-white/70 hover:text-white transition-colors cursor-pointer w-fit max-w-full group min-w-0"
+        className="flex items-center gap-2 py-1 text-white/70 hover:text-white transition-colors cursor-pointer w-fit max-w-full group min-w-0 select-none"
       >
         <div className="text-white/30 group-hover:text-white/60 transition-colors shrink-0">
           {isOpen ? (

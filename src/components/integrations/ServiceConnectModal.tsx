@@ -11,22 +11,18 @@ import {
   Sparkles,
   Activity,
 } from 'lucide-react';
-import { ServiceId } from '../../engine/integrations/types';
+import { ServiceId, SERVICE_METADATA, TestResult } from './types';
 import {
-  SERVICE_METADATA,
   getServiceState,
   saveServiceConfig,
   disconnectService,
   testServiceConnection,
-  TestResult,
-} from '../../engine/integrations/integrationsManager';
+} from './integrationStore';
 import {
   GitHubLogo,
   LinearLogo,
   SentryLogo,
   SlackLogo,
-  PostgreSQLLogo,
-  SQLiteLogo,
   BraveLogo,
   TavilyLogo,
   DuckDuckGoLogo,
@@ -61,10 +57,6 @@ export const renderServiceLogo = (id?: ServiceId | null, size = 20, className = 
       return <SentryLogo size={size} className={className} />;
     case 'slack':
       return <SlackLogo size={size} className={className} />;
-    case 'postgres':
-      return <PostgreSQLLogo size={size} className={className} />;
-    case 'sqlite':
-      return <SQLiteLogo size={size} className={className} />;
     default:
       return <Activity className={className} />;
   }
@@ -158,16 +150,6 @@ export const ServiceConnectModal: React.FC<ServiceConnectModalProps> = ({
         success: true,
         message: 'Auto-detected credentials from local `gh auth status`',
         latencyMs: 12,
-      });
-    } else if (serviceId === 'postgres') {
-      setFormData((prev) => ({
-        ...prev,
-        connectionUri: 'postgres://postgres:postgres@localhost:5432/unfuse_dev',
-      }));
-      setTestResult({
-        success: true,
-        message: 'Loaded default local PostgreSQL socket configuration',
-        latencyMs: 8,
       });
     }
   };
@@ -476,48 +458,6 @@ export const ServiceConnectModal: React.FC<ServiceConnectModalProps> = ({
               </>
             )}
 
-            {serviceId === 'postgres' && (
-              <>
-                <div>
-                  <label className="block text-[11px] font-medium text-white/70 mb-1.5">
-                    Connection URI
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.connectionUri || ''}
-                    onChange={(e) => handleFieldChange('connectionUri', e.target.value)}
-                    placeholder="postgres://user:password@localhost:5432/dbname"
-                    className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                  />
-                </div>
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={handleAutoDetectCli}
-                    className="flex items-center gap-1.5 text-[11px] text-white/50 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] px-2.5 py-1.5 rounded-lg transition-all"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                    Use local default PostgreSQL socket
-                  </button>
-                </div>
-              </>
-            )}
-
-            {serviceId === 'sqlite' && (
-              <div>
-                <label className="block text-[11px] font-medium text-white/70 mb-1.5">
-                  Database File Path
-                </label>
-                <input
-                  type="text"
-                  value={formData.dbPath || ''}
-                  onChange={(e) => handleFieldChange('dbPath', e.target.value)}
-                  placeholder="./database.sqlite or /var/data/app.db"
-                  className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                />
-              </div>
-            )}
-
             {serviceId === 'brave' && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -558,7 +498,7 @@ export const ServiceConnectModal: React.FC<ServiceConnectModalProps> = ({
               )}
               <div className="flex-1 min-w-0">
                 <p className="font-medium leading-tight">{testResult.message}</p>
-                {testResult.latencyMs > 0 && (
+                {testResult.latencyMs !== undefined && testResult.latencyMs > 0 && (
                   <p className="text-[10px] text-white/40 mt-1 font-mono">
                     Latency: {testResult.latencyMs}ms • Zero cloud proxy
                   </p>

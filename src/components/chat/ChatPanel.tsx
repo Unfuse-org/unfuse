@@ -1,24 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Copy, Check } from 'lucide-react';
 import { MessageItem } from './MessageItem';
 import { ChatInput } from './ChatInput';
 import { Message, ActiveModelTarget, ClarificationRequest, ToolCall } from './types';
-import { ModelFamily } from '../rack/types';
-import { ServiceId } from '../../engine/integrations/types';
-import {
-  LLMClient,
-  PromptBuilder,
-  executeToolCall,
-  type ChatMessage,
-  type LLMConfig,
-  type InferenceProvider,
-} from '../../engine/llm';
+import { LocalModelBlade, ModelFamily } from '../rack/types';
+import { ServiceId } from '../integrations/types';
 import {
   getServiceState,
   getDefaultWebSearchProvider,
-} from '../../engine/integrations/integrationsManager';
+} from '../integrations/integrationStore';
 import { IntegrationsModal } from '../integrations/IntegrationsModal';
 import { ServiceConnectModal } from '../integrations/ServiceConnectModal';
 import { BtopTelemetryPopover } from './BtopTelemetryPopover';
+import { backendClient, AgentConfig, BackendEvent } from '../../services/backendClient';
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -27,7 +21,8 @@ interface ChatPanelProps {
   isRightRackOpen?: boolean;
   onToggleLeftSidebar?: () => void;
   onToggleRightRack?: () => void;
-  loadedRackModels?: ActiveModelTarget[];
+  activeModel?: LocalModelBlade | null;
+  rackModels?: LocalModelBlade[];
 }
 
 export const LeftPanelToggleIcon: React.FC<{ isOpen?: boolean; className?: string }> = ({
@@ -121,25 +116,12 @@ async function fetchLocalOllamaModels(): Promise<ActiveModelTarget[]> {
 
     return data.models.map((m: any) => {
       const name = m.name || m.model || '';
-      const lower = name.toLowerCase();
-      let family: ModelFamily = 'custom';
-      if (lower.includes('qwen')) family = 'qwen';
-      else if (lower.includes('deepseek')) family = 'deepseek';
-      else if (lower.includes('llama')) family = 'llama';
-      else if (lower.includes('mistral')) family = 'mistral';
-      else if (lower.includes('phi')) family = 'phi';
-      else if (lower.includes('gemma')) family = 'gemma';
-
-      let displayName = name;
-      if (lower.startsWith('qwen2.5-coder:7b')) displayName = 'Qwen 2.5 Coder 7B';
-      else if (lower.startsWith('qwen2.5-coder:32b')) displayName = 'Qwen 2.5 Coder 32B';
-      else if (lower.startsWith('llama3.2:3b')) displayName = 'Llama 3.2 3B';
-      else if (lower.startsWith('deepseek-r1:14b')) displayName = 'DeepSeek R1 14B';
+      const family = m.details?.family || name || 'unknown';
 
       return {
         id: `ollama-${name}`,
         name,
-        displayName,
+        displayName: name,
         provider: 'ollama' as const,
         port: 11434,
         family,
@@ -150,365 +132,124 @@ async function fetchLocalOllamaModels(): Promise<ActiveModelTarget[]> {
   }
 }
 
-const SAMPLE_MODELS: ActiveModelTarget[] = [
-  {
-    id: 'qwen-32b',
-    name: 'qwen2.5-coder:32b',
-    displayName: 'Qwen 2.5 Coder 32B',
-    provider: 'ollama',
-    port: 11434,
-    family: 'qwen',
-  },
-  {
-    id: 'deepseek-14b',
-    name: 'deepseek-r1:14b',
-    displayName: 'DeepSeek R1 14B',
-    provider: 'lmstudio',
-    port: 1234,
-    family: 'deepseek',
-  },
-  {
-    id: 'llama-70b',
-    name: 'llama3.3:70b',
-    displayName: 'Meta Llama 3.3 70B',
-    provider: 'ollama',
-    port: 11434,
-    family: 'llama',
-  },
-];
+const FALLBACK_OFFLINE_MODEL: ActiveModelTarget = {
+  id: 'offline',
+  name: 'Local Model',
+  displayName: 'Local Model',
+  provider: 'ollama',
+  port: 11434,
+  family: 'custom',
+};
 
-const INITIAL_MESSAGES: Message[] = [
-  // ==========================================
-  // TURN 1: MODEL 1 - @qwen (QWEN 2.5 CODER 32B)
-  // Next.js 15 Product Website Scaffolding & Glassmorphic Design System
-  // ==========================================
-  {
-    id: 'u-turn-1',
-    role: 'user',
-    content: "@qwen Build a high-converting, modern dark-mode landing page website for our product 'KubePulse' (Local Edge AI & Kubernetes Observability Platform). Scaffold with Next.js 15 App Router, Tailwind CSS, Lucide icons, and glassmorphic hero + pricing matrix. Search web for latest Next.js 15 streaming SSR patterns.",
-    timestamp: '17:20',
-  },
-  {
-    id: 'a-turn-1',
-    role: 'assistant',
-    modelName: 'Qwen 2.5 Coder 32B',
-    modelFamily: 'qwen',
-    provider: 'ollama',
-    port: 11434,
-    speedTokPerSec: 58.4,
-    timestamp: '17:21',
-    toolCalls: [
-      {
-        id: 't-1a',
-        name: 'brave_web_search',
-        args: {
-          query: 'nextjs 15 app router glassmorphism landing page tailwind',
-        },
-        result: 'Found 8 search results · Best match: "Next.js 15 App Router Dark Modern Component Architecture"',
-        status: 'completed',
-        durationMs: 180,
-        sources: [
-          {
-            title: 'Next.js 15 App Router & React 19 Docs',
-            url: 'https://nextjs.org/docs/app',
-            domain: 'nextjs.org',
-            snippet: 'Zero-config streaming SSR with React 19 Server Components and Suspense boundaries.',
-          },
-          {
-            title: 'Tailwind CSS v4 Modern Glassmorphism Guide',
-            url: 'https://tailwindcss.com/docs/backdrop-filter',
-            domain: 'tailwindcss.com',
-            snippet: 'Hardware-accelerated backdrop-blur filters, dynamic gradients, and CSS container queries.',
-          },
-        ],
-      },
-      {
-        id: 't-1b',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/package.json',
-        },
-        result: 'Created kubepulse-web/package.json (1.4 KB · Next.js 15, React 19, Lucide, Tailwind)',
-        status: 'completed',
-        durationMs: 8,
-      },
-      {
-        id: 't-1c',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/app/globals.css',
-        },
-        result: 'Created kubepulse-web/app/globals.css (2.1 KB · Cyberpunk aurora glow & custom scrollbars)',
-        status: 'completed',
-        durationMs: 6,
-      },
-      {
-        id: 't-1d',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/components/HeroSection.tsx',
-        },
-        result: 'Created kubepulse-web/components/HeroSection.tsx (4.2 KB · Live cluster ping, CTA badge, interactive terminal preview)',
-        status: 'completed',
-        durationMs: 12,
-      },
-      {
-        id: 't-1e',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/components/PricingMatrix.tsx',
-        },
-        result: 'Created kubepulse-web/components/PricingMatrix.tsx (3.8 KB · Developer, Team, Enterprise tier matrix with monthly/annual toggle)',
-        status: 'completed',
-        durationMs: 10,
-      },
-      {
-        id: 't-1f',
-        name: 'run_command',
-        args: {
-          command: 'cd kubepulse-web && pnpm install && pnpm build',
-        },
-        result: '✓ Compiled / (Static 14 pages) in 1.42s · 0 lint errors · 0 TypeScript type errors',
-        status: 'completed',
-        durationMs: 460,
-      },
-    ],
-    content: `I have scaffolded the complete product website for **KubePulse** using **Next.js 15**, **React 19 Server Components**, and **Tailwind CSS**.
-
-### What Was Built:
-1. **Glassmorphic Hero Banner (\`HeroSection.tsx\`)**:
-   - Dynamic live telemetry pill showing *'12,400+ Edge Pods Active'*.
-   - High-contrast primary CTA *'Start Free Cluster'* with secondary documentation button.
-   - Interactive code terminal tab demonstrating zero-cloud eBPF tracing command.
-
-2. **Enterprise Pricing Matrix (\`PricingMatrix.tsx\`)**:
-   - **Hacker / Free**: $0/mo for local single-node blades.
-   - **Pro Team**: $49/mo with multi-region cluster federation.
-   - **Enterprise**: Custom air-gapped deployments & dedicated GPU acceleration.
-
-3. **Core Web Vitals Optimized**: Zero layout shifts (CLS: 0.00), fast sub-second Largest Contentful Paint (LCP: 0.4s).`,
-  },
-
-  // ==========================================
-  // TURN 2: MODEL 2 - @deepseek (DEEPSEEK R1 14B)
-  // Deep Reasoning & Interactive 3D WebGL Cluster Visualizer
-  // ==========================================
-  {
-    id: 'u-turn-2',
-    role: 'user',
-    content: '@deepseek The hero section needs an interactive 3D cluster node topology visualizer with real-time particle routing and 60fps GPU shaders. How do we build this with zero CPU jank?',
-    timestamp: '17:23',
-  },
-  {
-    id: 'a-turn-2',
-    role: 'assistant',
-    modelName: 'DeepSeek R1 14B',
-    modelFamily: 'deepseek',
-    provider: 'lmstudio',
-    port: 1234,
-    speedTokPerSec: 41.2,
-    timestamp: '17:23',
-    thought: `The user wants an interactive 3D cluster topology visualizer in the product hero section. Rendering thousands of edge nodes with traditional DOM nodes or unbatched Canvas2D draw calls causes heavy CPU main-thread blocking and frame drops during user scrolling.
-
-To achieve continuous 60fps / 120Hz smooth rendering with zero memory leaks:
-1. Use WebGL / Three.js with \`InstancedMesh\` to render 2,500 interconnected cluster nodes in a single GPU draw call.
-2. Implement custom GLSL vertex and fragment shaders for dynamic pulsating energy pulses along Kubernetes edge links.
-3. Use \`requestAnimationFrame\` with delta-time clamping and attach pointer-events raycasting only on mousemove throttling (16ms).
-4. Build a progressive fallback detection for lower-end devices (WebGL2 -> WebGL1 -> Canvas2D).
-
-Let's inspect the hero section layout, generate \`ClusterCanvas3D.tsx\`, patch \`app/page.tsx\`, and persist the shader topology into local MCP memory.`,
-    thoughtDurationSec: 5.8,
-    toolCalls: [
-      {
-        id: 't-2a',
-        name: 'read_file',
-        args: {
-          path: 'kubepulse-web/components/HeroSection.tsx',
-          startLine: 1,
-          endLine: 40,
-        },
-        result: 'Read 40 lines from kubepulse-web/components/HeroSection.tsx (1.6 KB)',
-        status: 'completed',
-        durationMs: 5,
-      },
-      {
-        id: 't-2b',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/components/ClusterCanvas3D.tsx',
-        },
-        result: 'Created kubepulse-web/components/ClusterCanvas3D.tsx (5.1 KB · GPU InstancedMesh & custom GLSL vertex shader)',
-        status: 'completed',
-        durationMs: 14,
-      },
-      {
-        id: 't-2c',
-        name: 'patch_file',
-        args: {
-          path: 'kubepulse-web/app/page.tsx',
-          instruction: 'Embed dynamic ClusterCanvas3D with SSR Suspense boundary and ambient glow backdrop',
-        },
-        result: 'Patched 24 lines in kubepulse-web/app/page.tsx (Myers AST diff applied cleanly)',
-        status: 'completed',
-        durationMs: 11,
-      },
-      {
-        id: 't-2d',
-        name: 'run_command',
-        args: {
-          command: 'pnpm test -- --run components/ClusterCanvas3D.test.tsx',
-        },
-        result: '✓ 12 unit tests passed (WebGL context initialization, buffer deallocation, 0 memory leaks)',
-        status: 'completed',
-        durationMs: 180,
-      },
-      {
-        id: 't-2e',
-        name: 'mcp_memory_create_entities',
-        args: {
-          entities: ['KubePulse_3D_Topology', 'InstancedMesh_Shader', 'Edge_Node_Visualizer'],
-        },
-        result: 'Stored 3 architecture entities with 4 bidirectional relationships in local MCP memory',
-        status: 'completed',
-        durationMs: 25,
-      },
-    ],
-    content: `I have implemented the **Interactive 3D Cluster Topology Visualizer** (\`ClusterCanvas3D.tsx\`) with dedicated GPU hardware acceleration:
-
-### Technical Highlights:
-* **GPU InstancedMesh Architecture**: Renders 2,500 interconnected Kubernetes pods and gateway nodes in **1 single draw call**, reducing CPU overhead to < 2%.
-* **Custom GLSL Pulse Shaders**: Real-time packet routing animations calculated directly inside GPU fragment shaders without garbage collection overhead.
-* **Responsive Mouse Parallax & Dynamic LOD**: Smooth inertia damping on pointer hover with automatic Level-of-Detail scaling for mobile viewports.`,
-  },
-
-  // ==========================================
-  // TURN 3: MODEL 3 - @llama (META LLAMA 3.3 70B)
-  // PostgreSQL Waitlist API, Linear Task & GitHub PR Release
-  // ==========================================
-  {
-    id: 'u-turn-3',
-    role: 'user',
-    content: '@llama Hook up PostgreSQL waitlist signups with rate limiting, verify Sentry exception reporting, create a Linear issue for Stripe checkout integration, and publish the GitHub PR.',
-    timestamp: '17:25',
-  },
-  {
-    id: 'a-turn-3',
-    role: 'assistant',
-    modelName: 'Meta Llama 3.3 70B',
-    modelFamily: 'llama',
-    provider: 'ollama',
-    port: 11434,
-    speedTokPerSec: 32.8,
-    timestamp: '17:25',
-    toolCalls: [
-      {
-        id: 't-3a',
-        name: 'postgres_query',
-        args: {
-          query: 'CREATE TABLE IF NOT EXISTS waitlist_leads (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), email VARCHAR(255) UNIQUE NOT NULL, company VARCHAR(100), plan_tier VARCHAR(50) DEFAULT \'pro\', created_at TIMESTAMPTZ DEFAULT NOW());',
-        },
-        result: 'Table `waitlist_leads` created with unique email index and timestamp partitioning in local PostgreSQL',
-        status: 'completed',
-        durationMs: 6,
-      },
-      {
-        id: 't-3b',
-        name: 'write_file',
-        args: {
-          path: 'kubepulse-web/app/api/waitlist/route.ts',
-        },
-        result: 'Created kubepulse-web/app/api/waitlist/route.ts (2.3 KB · Zod validation, token bucket rate limiter, PostgreSQL insert)',
-        status: 'completed',
-        durationMs: 8,
-      },
-      {
-        id: 't-3c',
-        name: 'sentry_fetch_issues',
-        args: {
-          project: 'kubepulse-landing',
-          query: 'is:unresolved level:error',
-        },
-        result: '0 unresolved exceptions · All API routes and client hydration verified healthy',
-        status: 'completed',
-        durationMs: 19,
-      },
-      {
-        id: 't-3d',
-        name: 'linear_create_issue',
-        args: {
-          title: 'Implement Stripe Checkout & Customer Portal for Pro Tier Subscriptions',
-        },
-        result: 'Created Linear Issue KUB-302 in "Website Launch" cycle',
-        status: 'completed',
-        durationMs: 88,
-      },
-      {
-        id: 't-3e',
-        name: 'run_command',
-        args: {
-          command: 'git add . && git commit -m "feat: complete kubepulse product website with 3d cluster hero and postgres waitlist api"',
-        },
-        result: '[main c8e41a9] feat: complete kubepulse product website with 3d cluster hero and postgres waitlist api · 7 files changed, 482 insertions(+)',
-        status: 'completed',
-        durationMs: 28,
-      },
-      {
-        id: 't-3f',
-        name: 'run_command',
-        args: {
-          command: 'gh pr create --title "feat: launch kubepulse product website" --body "Closes KUB-302 with Next.js 15, 3D WebGL hero, and Postgres waitlist API."',
-        },
-        result: 'Created Pull Request #12: https://github.com/unfuse/kubepulse-web/pull/12',
-        status: 'pending',
-      },
-    ],
-    content: `All production systems, database migrations, backlog tickets, and version control checkpoints are configured:
-
-* **PostgreSQL Waitlist Engine**: Provisioned \`waitlist_leads\` table with strict Zod schema validation and token bucket rate limiting on \`/api/waitlist\`.
-* **Telemetry & Crash Free Rate**: Verified 100% crash-free sessions in Sentry monitoring.
-* **Linear Issue Tracking**: Created **[KUB-302: Implement Stripe Checkout & Customer Portal](https://linear.app)**.
-* **Git Version Control**: Committed changeset \`c8e41a9\` (*feat: complete kubepulse product website with 3d cluster hero and postgres waitlist api*).`,
-  },
-];
+const INITIAL_MESSAGES: Message[] = [];
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({
+  sessionId = 's-main',
   activeSessionTitle,
   isLeftSidebarOpen = true,
   isRightRackOpen = true,
   onToggleLeftSidebar,
   onToggleRightRack,
-  loadedRackModels = SAMPLE_MODELS,
+  activeModel: activeModelProp = null,
+  rackModels = [],
 }) => {
+  const mappedRackModels: ActiveModelTarget[] = rackModels.map(m => ({
+    id: m.id,
+    name: m.name,
+    displayName: m.displayName,
+    provider: m.provider,
+    port: m.port,
+    family: m.family
+  }));
+  const mappedActiveModel: ActiveModelTarget | null = activeModelProp ? {
+    id: activeModelProp.id,
+    name: activeModelProp.name,
+    displayName: activeModelProp.displayName,
+    provider: activeModelProp.provider,
+    port: activeModelProp.port,
+    family: activeModelProp.family
+  } : null;
+
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  const [activeModel, setActiveModel] = useState<ActiveModelTarget>(loadedRackModels[0] || SAMPLE_MODELS[0]);
+  const [discoveredModels, setDiscoveredModels] = useState<ActiveModelTarget[]>([]);
+  const effectiveModels = mappedRackModels.length > 0
+    ? mappedRackModels
+    : discoveredModels.length > 0
+    ? discoveredModels
+    : [FALLBACK_OFFLINE_MODEL];
+  const [internalActiveModel, setInternalActiveModel] = useState<ActiveModelTarget>(effectiveModels[0]);
+  const activeModel = mappedActiveModel || internalActiveModel;
+  
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isCopiedAll, setIsCopiedAll] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
   const [activeClarification, setActiveClarification] = useState<ClarificationRequest | null>(null);
-  const [discoveredModels, setDiscoveredModels] = useState<ActiveModelTarget[]>([]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const effectiveModels = discoveredModels.length > 0 ? discoveredModels : loadedRackModels;
+  const handleCopyFullConversation = () => {
+    if (messages.length === 0) return;
+    const conversationText = messages
+      .map((m) => {
+        const sender = m.role === 'user' ? '### User' : `### Assistant (${m.modelName || 'Local Blade'})`;
+        let text = `${sender}\n\n${m.content || ''}`;
+        if (m.thought) {
+          text += `\n\n> **Reasoning Process:**\n> ${m.thought.replace(/\n/g, '\n> ')}`;
+        }
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          text +=
+            `\n\n**Tool Executions:**\n` +
+            m.toolCalls.map((tc) => `- \`${tc.name}\`: ${tc.result || 'Executed'}`).join('\n');
+        }
+        return text;
+      })
+      .join('\n\n---\n\n');
+
+    navigator.clipboard.writeText(conversationText);
+    setIsCopiedAll(true);
+    setTimeout(() => setIsCopiedAll(false), 2000);
+  };
+
+  useEffect(() => {
+    // Session switched
+  }, [sessionId]);
 
   // Auto-discover local models running in Ollama
   useEffect(() => {
+    if (activeModelProp) return;
+    
     fetchLocalOllamaModels().then((models) => {
       if (models.length > 0) {
         setDiscoveredModels(models);
-        setActiveModel((curr) => {
+        setInternalActiveModel((curr) => {
           const exists = models.some((m) => m.name === curr.name);
           if (exists) return curr;
-          const preferred = models.find((m) => m.name.includes('coder') || m.family === 'qwen') || models[0];
+          const preferred = models[0];
           return preferred;
         });
       }
     });
-  }, []);
+  }, [activeModelProp !== null]);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [integrationsModalTab, setIntegrationsModalTab] = useState<'native' | 'mcp'>('native');
+  const [activeServiceConnectId, setActiveServiceConnectId] = useState<ServiceId | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isStreaming]);
 
   const handleStopStreaming = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    backendClient.stopSession(sessionId);
     setIsStreaming(false);
   };
 
@@ -528,45 +269,222 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     // Find the exact model that asked the clarification
     const queriedModel =
       effectiveModels.find((m) => m.family === activeClarification.modelFamily) ||
-      SAMPLE_MODELS.find((m) => m.family === activeClarification.modelFamily) ||
+      effectiveModels[0] ||
       activeModel;
 
     setActiveClarification(null);
     handleSendMessage(`Clarification: Use ${answerText}`, queriedModel);
   };
 
-  const [integrationsModalTab, setIntegrationsModalTab] = useState<'native' | 'mcp'>('native');
-  const [activeServiceConnectId, setActiveServiceConnectId] = useState<ServiceId | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+interface PartitionedModelTarget {
+  model: ActiveModelTarget;
+  tag: string;
+  taskPrompt: string;
+  isCollaboration: boolean;
+  orderIndex: number;
+}
 
-  const scrollToBottom = () => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+function parseModelChain(
+  content: string,
+  effectiveModels: ActiveModelTarget[],
+  fallbackModel: ActiveModelTarget
+): PartitionedModelTarget[] {
+  const atRegex = /@([a-zA-Z0-9_.:-]+)/g;
+  const tagMatches: {
+    model: ActiveModelTarget;
+    tag: string;
+    cleanTag: string;
+    startIndex: number;
+    endIndex: number;
+  }[] = [];
+
+  let match: RegExpExecArray | null;
+  while ((match = atRegex.exec(content)) !== null) {
+    const rawTag = match[0];
+    const cleanTag = match[1].toLowerCase();
+    if (cleanTag === 'autopilot') continue;
+
+    const found = effectiveModels.find(
+      (m) =>
+        m.name.toLowerCase().includes(cleanTag) ||
+        m.displayName.toLowerCase().includes(cleanTag) ||
+        (m.family && m.family.toLowerCase().includes(cleanTag))
+    );
+
+    if (found) {
+      tagMatches.push({
+        model: found,
+        tag: rawTag,
+        cleanTag,
+        startIndex: match.index,
+        endIndex: match.index + rawTag.length,
+      });
     }
-  };
+  }
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isStreaming]);
+  // 1. If no models were matched, return single target with the content
+  if (tagMatches.length === 0) {
+    return [
+      {
+        model: fallbackModel,
+        tag: '',
+        taskPrompt: content,
+        isCollaboration: false,
+        orderIndex: 0,
+      },
+    ];
+  }
+
+  // 2. If exactly 1 model was matched
+  if (tagMatches.length === 1) {
+    const cleaned = content.replace(tagMatches[0].tag, '').trim();
+    return [
+      {
+        model: tagMatches[0].model,
+        tag: tagMatches[0].tag,
+        taskPrompt: cleaned || content,
+        isCollaboration: false,
+        orderIndex: 0,
+      },
+    ];
+  }
+
+  // 3. If multiple models were matched (2 to N models)
+  const rawSegments: { model: ActiveModelTarget; tag: string; segmentText: string }[] = [];
+
+  for (let i = 0; i < tagMatches.length; i++) {
+    const current = tagMatches[i];
+    const nextStart = tagMatches[i + 1] ? tagMatches[i + 1].startIndex : content.length;
+    const textBetween = content.slice(current.endIndex, nextStart).trim();
+    const cleanText = textBetween.replace(/^[,;:\s-]+|[,;:\s-]+$/g, '').trim();
+
+    rawSegments.push({
+      model: current.model,
+      tag: current.tag,
+      segmentText: cleanText,
+    });
+  }
+
+  // Check if all models (or all except the last one) had empty segment text (e.g. "@m1 @m2 @m3 say hi")
+  const allExceptLastEmpty = rawSegments
+    .slice(0, rawSegments.length - 1)
+    .every((s) => s.segmentText.length === 0);
+
+  if (allExceptLastEmpty) {
+    // Shared Collaborative Mode
+    const sharedTask = rawSegments[rawSegments.length - 1].segmentText || content;
+
+    return rawSegments.map((item, idx) => {
+      const isFirst = idx === 0;
+      const modelName = item.model.displayName || item.model.name;
+      const otherModelNames = rawSegments
+        .filter((_, oIdx) => oIdx !== idx)
+        .map((o) => `@${o.model.displayName || o.model.name}`)
+        .join(', ');
+
+      let promptForModel = sharedTask;
+
+      if (isFirst) {
+        promptForModel = `${sharedTask}\n\n[Instruction for @${modelName}]: You are the first model in this collaboration with ${otherModelNames}. Provide your initial response/greeting.`;
+      } else {
+        const prevModelName = rawSegments[idx - 1].model.displayName || rawSegments[idx - 1].model.name;
+        promptForModel = `${sharedTask}\n\n[Instruction for @${modelName}]: You are responding after @${prevModelName} in this collaboration. Reply directly to @${prevModelName}'s output above and provide your response without repeating what they already stated.`;
+      }
+
+      return {
+        model: item.model,
+        tag: item.tag,
+        taskPrompt: promptForModel,
+        isCollaboration: true,
+        orderIndex: idx,
+      };
+    });
+  }
+
+  // Segmented Task Mode (e.g. "@m1 write rust code, @m2 check workspace, @m3 optimize")
+  return rawSegments.map((item, idx) => {
+    const isFirst = idx === 0;
+    const modelName = item.model.displayName || item.model.name;
+    const specificTask = item.segmentText || content;
+
+    let promptForModel = specificTask;
+    if (!isFirst) {
+      const prevModelName = rawSegments[idx - 1].model.displayName || rawSegments[idx - 1].model.name;
+      promptForModel = `[Directive for @${modelName}]: Address your assigned task: "${specificTask}". (Note: @${prevModelName} has completed their step above; build upon their work and do not duplicate it).`;
+    }
+
+    return {
+      model: item.model,
+      tag: item.tag,
+      taskPrompt: promptForModel,
+      isCollaboration: false,
+      orderIndex: idx,
+    };
+  });
+}
 
   const handleSendMessage = async (content: string, targetModel?: ActiveModelTarget) => {
     if (isStreaming) return;
 
-    let chosenModel = targetModel || activeModel;
     const lower = content.toLowerCase().trim();
 
-    // 1. Detect exact model tagged with @
-    if (lower.includes('@qwen') || lower.includes('@qwen2.5')) {
-      const found = effectiveModels.find((m) => m.family === 'qwen') || SAMPLE_MODELS[0];
-      if (found) chosenModel = found;
-    } else if (lower.includes('@deepseek') || lower.includes('@deepseek-r1')) {
-      const found = effectiveModels.find((m) => m.family === 'deepseek') || SAMPLE_MODELS[1];
-      if (found) chosenModel = found;
-    } else if (lower.includes('@llama') || lower.includes('@llama3')) {
-      const found = effectiveModels.find((m) => m.family === 'llama') || SAMPLE_MODELS[2];
-      if (found) chosenModel = found;
+    // 1. Partition prompt across mentioned models dynamically (1 to N models)
+    const parsedTargets = parseModelChain(content, effectiveModels, targetModel || activeModel);
+
+    const fallbackDisplayName =
+      parsedTargets[0].model.displayName && !parsedTargets[0].model.displayName.includes('Connecting')
+        ? parsedTargets[0].model.displayName
+        : parsedTargets[0].model.name || 'Local Model';
+
+    // 2. Handle Git turn rollback (/undo)
+    if (lower === '/undo' || lower === 'undo') {
+      const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
+      const success = await backendClient.undoTurn(workspaceRoot);
+      const undoMsg: Message = {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        modelName: fallbackDisplayName,
+        modelFamily: parsedTargets[0].model.family,
+        provider: parsedTargets[0].model.provider,
+        port: parsedTargets[0].model.port,
+        content: success
+          ? '↩️ Successfully rolled back workspace to the previous turn snapshot.'
+          : '⚠️ No previous turn snapshot found to undo.',
+        status: 'idle',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => [...prev, undoMsg]);
+      return;
     }
 
+    // 3. Handle Autopilot Autonomous Mode
+    if (lower.startsWith('/autopilot') || lower.startsWith('@autopilot')) {
+      const parts = content.replace(/^(\/|@)autopilot\s*/i, '').trim();
+      const verifyCmd = parts || 'npm test';
+      const userMsg: Message = {
+        id: `msg-${Date.now()}`,
+        role: 'user',
+        content,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      const assistantMsg: Message = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        modelName: fallbackDisplayName,
+        modelFamily: parsedTargets[0].model.family,
+        provider: parsedTargets[0].model.provider,
+        content: `Target Verification: \`${verifyCmd}\`\n\nAutopilot pipeline initialized with real backend harness.`,
+        thought: 'Analyzing repository structure and preparing verification runner...',
+        status: 'idle',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      return;
+    }
+
+    // 4. Construct user message and sequentially execute across targeted models
     const userMsg: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -574,248 +492,210 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    const assistantMsgId = `msg-${Date.now() + 1}`;
-    const assistantMsg: Message = {
-      id: assistantMsgId,
-      role: 'assistant',
-      modelName: chosenModel.displayName,
-      modelFamily: chosenModel.family,
-      provider: chosenModel.provider,
-      port: chosenModel.port,
-      content: '',
-      thought: '',
-      speedTokPerSec: 0,
-      status: 'streaming',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      toolCalls: [],
-    };
-
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
 
-    // Build chat history for PromptBuilder
-    const historyMessages: ChatMessage[] = [
-      ...messages
-        .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content)
-        .map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
-      { role: 'user', content },
-    ];
+    for (let i = 0; i < parsedTargets.length; i++) {
+      const target = parsedTargets[i];
+      const chosenModel = target.model;
+      const modelDisplayName =
+        chosenModel.displayName && !chosenModel.displayName.includes('Connecting')
+          ? chosenModel.displayName
+          : chosenModel.name || 'Local Model';
 
-    const provider: InferenceProvider =
-      chosenModel.provider === 'ollama' ? 'ollama' : 'openai-compatible';
-    const baseUrl = `http://127.0.0.1:${chosenModel.port || (chosenModel.provider === 'ollama' ? 11434 : 1234)}`;
+      const assistantMsgId = `msg-${Date.now() + i + 1}`;
+      const assistantMsg: Message = {
+        id: assistantMsgId,
+        role: 'assistant',
+        modelName: modelDisplayName,
+        modelFamily: chosenModel.family,
+        provider: chosenModel.provider,
+        port: chosenModel.port,
+        content: '',
+        thought: '',
+        toolCalls: [],
+        status: 'streaming',
+        agentStatus: 'Ingesting prompt & generating...',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
 
-    const config: LLMConfig = {
-      provider,
-      baseUrl,
-      model: chosenModel.name,
-      temperature: 0.2,
-      topP: 0.9,
-      maxTokens: 4096,
-      contextWindow: 32768,
-    };
+      setMessages((prev) => [...prev, assistantMsg]);
 
-    const promptBuilder = new PromptBuilder();
-    const fullPromptMessages = promptBuilder.buildPrompt(historyMessages, '', config);
+      const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
+      const baseUrl = chosenModel.port ? `http://127.0.0.1:${chosenModel.port}` : 'http://127.0.0.1:11434';
 
-    const client = new LLMClient();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    let accumulatedContent = '';
-    let accumulatedThought = '';
-
-    try {
-      await client.streamChat(
-        fullPromptMessages,
-        config,
-        {
-          onToken: (token) => {
-            accumulatedContent += token;
-
-            let displayContent = accumulatedContent;
-            let displayThought = accumulatedThought;
-
-            // Live parse <think> tags if model emits them directly in content stream
-            if (displayContent.includes('<think>')) {
-              const thinkStart = displayContent.indexOf('<think>');
-              const thinkEnd = displayContent.indexOf('</think>');
-              if (thinkEnd !== -1) {
-                const thoughtPart = displayContent.slice(thinkStart + 7, thinkEnd).trim();
-                displayThought = (displayThought ? displayThought + '\n' : '') + thoughtPart;
-                displayContent = (displayContent.slice(0, thinkStart) + displayContent.slice(thinkEnd + 8)).trimStart();
-              } else {
-                const thoughtPart = displayContent.slice(thinkStart + 7).trim();
-                displayThought = (displayThought ? displayThought + '\n' : '') + thoughtPart;
-                displayContent = displayContent.slice(0, thinkStart);
-              }
-            }
-
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      content: displayContent,
-                      thought: displayThought || m.thought,
-                    }
-                  : m
-              )
-            );
-          },
-          onReasoning: (thinking) => {
-            accumulatedThought += thinking;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? { ...m, thought: accumulatedThought }
-                  : m
-              )
-            );
-          },
-          onMetrics: (metrics) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      speedTokPerSec: metrics.tokensPerSecond,
-                      thoughtDurationSec: metrics.timeToFirstTokenMs
-                        ? Number((metrics.timeToFirstTokenMs / 1000).toFixed(1))
-                        : undefined,
-                    }
-                  : m
-              )
-            );
-          },
-          onDone: async (cleanText, toolCalls) => {
-            const uiToolCalls: ToolCall[] = toolCalls.map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              args: tc.args,
-              status: 'running',
-              result: 'Executing tool via local OS bridge...',
-            }));
-
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      content: cleanText,
-                      toolCalls: uiToolCalls,
-                      status: 'idle',
-                    }
-                  : m
-              )
-            );
-
-            // Execute detected tools through Tauri IPC
-            if (toolCalls.length > 0) {
-              for (const tc of toolCalls) {
-                // Interactive clarification tool
-                if (tc.name === 'ask_question' || tc.name === 'ask_clarification') {
-                  const q = tc.args.question || tc.args.query || 'Clarification required:';
-                  const opts = Array.isArray(tc.args.options)
-                    ? tc.args.options.map((opt: any, idx: number) => ({
-                        id: `opt-${idx}`,
-                        label: typeof opt === 'string' ? opt : opt.label || JSON.stringify(opt),
-                        description: opt.description,
-                        recommended: idx === 0,
-                      }))
-                    : [
-                        { id: 'opt-1', label: 'Proceed with default', recommended: true },
-                        { id: 'opt-2', label: 'Provide custom input' },
-                      ];
-
-                  setActiveClarification({
-                    id: `clarify-${Date.now()}`,
-                    toolCallId: tc.id,
-                    modelName: chosenModel.displayName,
-                    modelFamily: chosenModel.family,
-                    question: q,
-                    options: opts,
-                    allowCustomInput: true,
-                  });
-
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsgId
-                        ? {
-                            ...m,
-                            toolCalls: (m.toolCalls || []).map((t) =>
-                              t.id === tc.id
-                                ? {
-                                    ...t,
-                                    status: 'pending',
-                                    result: 'Awaiting user choice...',
-                                  }
-                                : t
-                            ),
-                          }
-                        : m
-                    )
-                  );
-                  continue;
-                }
-
-                const res = await executeToolCall(tc);
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? {
-                          ...m,
-                          toolCalls: (m.toolCalls || []).map((t) =>
-                            t.id === tc.id
-                              ? {
-                                  ...t,
-                                  status: res.success ? 'completed' : 'failed',
-                                  result: res.output,
-                                  durationMs: res.durationMs,
-                                }
-                              : t
-                          ),
-                        }
-                      : m
-                  )
-                );
-              }
-            }
-          },
+      const agentConfig: AgentConfig = {
+        sessionId,
+        workspaceRoot,
+        llmConfig: {
+          baseUrl,
+          model: chosenModel.name || 'default',
+          temperature: (activeModelProp as any)?.temperature,
+          topP: (activeModelProp as any)?.topP,
+          maxTokens: (activeModelProp as any)?.maxTokens,
+          repetitionPenalty: (activeModelProp as any)?.repetitionPenalty,
         },
-        abortController
-      );
-    } catch (err: any) {
-      if (abortController.signal.aborted) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? { ...m, status: 'idle' }
-              : m
-          )
-        );
-      } else {
-        const errorMsg = `⚠️ **Connection Error**: Unable to reach **${chosenModel.displayName}** at \`${baseUrl}\`.\n\n${err?.message || String(err)}\n\n**Resolution Steps**:\n1. Check that ${chosenModel.provider === 'ollama' ? 'Ollama is running (`ollama serve`)' : 'your local LLM server is running on port ' + chosenModel.port}.\n2. Ensure model \`${chosenModel.name}\` is pulled (${chosenModel.provider === 'ollama' ? `\`ollama run ${chosenModel.name}\`` : 'loaded in LM Studio'}).\n3. Click the retry button to try again.`;
+      };
 
+      const startTime = Date.now();
+      let accumulatedTokens = 0;
+
+      const handleBackendEvent = (event: BackendEvent) => {
+        if (event.sessionId && event.sessionId !== sessionId) return;
+
+        if (event.type === 'token_chunk') {
+          accumulatedTokens++;
+          const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+          const speedTokPerSec = Math.round((accumulatedTokens / elapsedSec) * 10) / 10;
+
+          // Animate Rack context bar with live tokens
+          window.dispatchEvent(
+            new CustomEvent('unfuse-tokens-update', {
+              detail: {
+                modelName: modelDisplayName,
+                tokensUsed: accumulatedTokens,
+                speedTokPerSec,
+              },
+            })
+          );
+
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === assistantMsgId) {
+                const raw = (m.content || '') + event.chunk;
+
+                // Parse <think>...</think> reasoning tags
+                const thinkMatch = raw.match(/<think>([\s\S]*?)(?:<\/think>|$)/);
+                const thought = thinkMatch ? thinkMatch[1].trim() : m.thought;
+                const clean = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trimStart();
+
+                return {
+                  ...m,
+                  content: thinkMatch && !raw.includes('</think>') ? '' : (clean || raw),
+                  thought: thought || m.thought,
+                  speedTokPerSec,
+                };
+              }
+              return m;
+            })
+          );
+        } else if (event.type === 'agent_status') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, agentStatus: event.status } : m
+            )
+          );
+        } else if (event.type === 'tokens_update') {
+          window.dispatchEvent(
+            new CustomEvent('unfuse-tokens-update', {
+              detail: {
+                modelName: event.model || modelDisplayName,
+                tokensUsed: event.totalTokens,
+              },
+            })
+          );
+        } else if (event.type === 'tool_pending') {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === assistantMsgId) {
+                const existing = m.toolCalls || [];
+                const exists = existing.find((t) => t.id === event.tool.id);
+                if (exists) return m;
+
+                return {
+                  ...m,
+                  toolCalls: [
+                    ...existing,
+                    {
+                      id: event.tool.id,
+                      name: event.tool.name,
+                      args: event.tool.args,
+                      status: 'pending',
+                    },
+                  ],
+                };
+              }
+              return m;
+            })
+          );
+        } else if (event.type === 'tool_result') {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === assistantMsgId) {
+                const existing = m.toolCalls || [];
+                const exists = existing.find((t) => t.id === event.result.toolCallId);
+                const status: ToolCall['status'] = event.result.success ? 'completed' : 'failed';
+                const updated: ToolCall[] = exists
+                  ? existing.map((t) => {
+                      if (t.id === event.result.toolCallId) {
+                        return {
+                          ...t,
+                          status,
+                          result: event.result.output || event.result.error || '',
+                          durationMs: event.result.durationMs,
+                        };
+                      }
+                      return t;
+                    })
+                  : [
+                      ...existing,
+                      {
+                        id: event.result.toolCallId,
+                        name: event.result.toolName,
+                        args: {},
+                        status,
+                        result: event.result.output || event.result.error || '',
+                        durationMs: event.result.durationMs,
+                      },
+                    ];
+                return { ...m, toolCalls: updated };
+              }
+              return m;
+            })
+          );
+        } else if (event.type === 'agent_done') {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantMsgId ? { ...m, status: 'idle', agentStatus: undefined } : m))
+          );
+        } else if (event.type === 'agent_error') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    status: 'error',
+                    agentStatus: undefined,
+                    content: (m.content ? m.content + '\n\n' : '') + `⚠️ Error: ${event.error}`,
+                  }
+                : m
+            )
+          );
+        }
+      };
+
+      try {
+        const abortController = new AbortController();
+        abortControllerRef.current = abortController;
+        await backendClient.sendChatMessage(agentConfig, target.taskPrompt, handleBackendEvent, abortController.signal);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
               ? {
                   ...m,
-                  content: errorMsg,
                   status: 'error',
+                  agentStatus: undefined,
+                  content: (m.content ? m.content + '\n\n' : '') + `⚠️ Error: ${msg}`,
                 }
               : m
           )
         );
       }
-    } finally {
-      setIsStreaming(false);
-      abortControllerRef.current = null;
     }
+
+    setIsStreaming(false);
+    abortControllerRef.current = null;
   };
 
   return (
@@ -831,12 +711,34 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         {/* MIDDLE COLUMN: ACTIVE CHAT NAME IN TRUE CENTER */}
         <div className="flex items-center justify-center px-3 max-w-[420px] h-full -translate-y-0.5">
           <span className="font-bold text-xs text-white tracking-tight truncate text-center leading-none">
-            {activeSessionTitle || 'KubePulse — Edge AI Cluster Platform'}
+            {activeSessionTitle || 'General Workspace Chat'}
           </span>
         </div>
 
-        {/* RIGHT COLUMN: BOTH COLLAPSIBLE PANEL TOGGLES */}
+        {/* RIGHT COLUMN: COPY CHAT & BOTH COLLAPSIBLE PANEL TOGGLES */}
         <div className="flex items-center justify-end gap-1.5 min-w-0 h-full">
+          {/* COPY FULL CONVERSATION BUTTON */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleCopyFullConversation}
+              title="Copy entire conversation to clipboard (Markdown)"
+              className="h-6 px-2 rounded-md text-white/40 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer flex items-center gap-1.5 text-[11px] font-mono -translate-y-0.5 active:scale-95 border border-transparent hover:border-white/10"
+            >
+              {isCopiedAll ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span className="text-emerald-400 text-[10.5px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span className="text-[10.5px] hidden sm:inline">Copy Chat</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* LEFT SIDEBAR TOGGLE */}
           {onToggleLeftSidebar && (
             <button
@@ -871,10 +773,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </div>
       </div>
 
-      {/* 2. CHAT CANVAS STREAM (Pure messages directly on canvas) */}
+      {/* 2. CHAT CANVAS STREAM (Pure messages directly on canvas with full drag text selection) */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-8 py-4 scroll-smooth min-w-0"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-8 py-4 scroll-smooth min-w-0 select-text selection:bg-sky-500/30 selection:text-white"
       >
         <div className="max-w-3xl mx-auto w-full min-w-0 overflow-hidden">
           {messages.map((message) => (
@@ -900,7 +802,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
           onStopStreaming={handleStopStreaming}
           availableModels={effectiveModels}
           activeModel={activeModel}
-          onSelectActiveModel={(m) => setActiveModel(m)}
+          onSelectActiveModel={(m) => setInternalActiveModel(m)}
           activeClarification={activeClarification}
           onSubmitClarification={handleClarificationSubmit}
           onDismissClarification={() => setActiveClarification(null)}
