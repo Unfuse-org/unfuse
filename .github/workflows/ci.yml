@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    name: Build & Verify (Frontend + Rust)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Linux Desktop Dependencies (WebKitGTK, X11)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Verify Frontend Build
+        run: npm run build
+
+      - name: Verify Rust Backend (Cargo Check)
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Run Rust Tests (Cargo Test)
+        run: cargo test --manifest-path src-tauri/Cargo.toml
