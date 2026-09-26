@@ -51,9 +51,9 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#161618] px-3.5 pt-2.5 pb-3 text-white/90 overflow-y-auto select-none font-sans">
+    <div className="flex-1 flex flex-col h-full bg-[#121215] px-3.5 pt-2.5 pb-3 text-[#f4f4f5] overflow-y-auto select-none font-sans">
       {/* 1. TOP HEADER & MODEL IDENTITY (UNIFIED SINGLE BAR) */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.08]" data-tauri-drag-region>
+      <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1e1e24]" data-tauri-drag-region>
         <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
           <button
             type="button"
@@ -66,7 +66,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
 
           {/* WHITE LOGO BADGE (ALIGNED AT SAME HEIGHT) */}
           <div className="w-6 h-6 rounded-md bg-white flex items-center justify-center p-0.5 shrink-0 shadow-sm border border-white/20">
-            {getModelLogo(model.family, 14)}
+            {getModelLogo(model.family, model.provider, 14)}
           </div>
 
           {/* MODEL NAME & PORT ALIGNED ON EXACT HORIZONTAL BASELINE */}
@@ -96,12 +96,12 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
       </div>
 
       {/* 2. UNIFIED HARDWARE INSPECTOR PARAMETERS */}
-      <div className="flex-1 bg-black/40 border border-white/[0.08] rounded-xl p-3.5 space-y-4 shadow-sm">
+      <div className="flex-1 bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 space-y-4 shadow-sm">
         {/* CONTEXT LIMIT */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-white/80">Context Limit</span>
-            <span className="text-[11px] font-mono font-bold text-white tabular-nums">
+            <span className="text-xs font-medium text-[#a1a1aa]">Context Limit</span>
+            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
               {contextLength.toLocaleString()} tok
             </span>
           </div>
@@ -113,7 +113,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
             step="2048"
             value={contextLength}
             onChange={(e) => setContextLength(Number(e.target.value))}
-            className="w-full h-1 bg-white/15 rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
+            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
           />
 
           <div className="flex items-center justify-between mt-2.5 gap-1.5">
@@ -125,7 +125,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
                 className={`py-1 px-1.5 rounded-md text-[10px] font-mono transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                   contextLength === preset
                     ? 'bg-white text-black font-bold border-white shadow-sm'
-                    : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                    : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
                 }`}
               >
                 {preset >= 1000 ? `${preset / 1024}k` : preset}
@@ -134,13 +134,13 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
           </div>
         </div>
 
-        <div className="border-t border-white/[0.06]" />
+        <div className="border-t border-[#222228]" />
 
         {/* TEMPERATURE */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-white/80">Temperature</span>
-            <span className="text-[11px] font-mono font-bold text-white tabular-nums">
+            <span className="text-xs font-medium text-[#a1a1aa]">Temperature</span>
+            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
               {temperature.toFixed(2)}
             </span>
           </div>
@@ -152,7 +152,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
             step="0.05"
             value={temperature}
             onChange={(e) => setTemperature(Number(e.target.value))}
-            className="w-full h-1 bg-white/15 rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
+            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
           />
 
           <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
@@ -162,7 +162,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 temperature === 0.0
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               0.00 Strict
@@ -173,7 +173,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 temperature === 0.2
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               0.20 Code
@@ -184,7 +184,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 temperature === 0.7
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               0.70 Chat
@@ -192,13 +192,13 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
           </div>
         </div>
 
-        <div className="border-t border-white/[0.06]" />
+        <div className="border-t border-[#222228]" />
 
         {/* TOP-P SAMPLING */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-white/80">Top-P (Nucleus)</span>
-            <span className="text-[11px] font-mono font-bold text-white tabular-nums">
+            <span className="text-xs font-medium text-[#a1a1aa]">Top-P (Nucleus)</span>
+            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
               {topP.toFixed(2)}
             </span>
           </div>
@@ -210,7 +210,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
             step="0.05"
             value={topP}
             onChange={(e) => setTopP(Number(e.target.value))}
-            className="w-full h-1 bg-white/15 rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
+            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
           />
 
           <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
@@ -220,7 +220,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 topP === 0.5
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               0.50 Focused
@@ -231,7 +231,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 topP === 0.9
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               0.90 Normal
@@ -242,7 +242,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 topP === 1.0
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               1.00 Max
@@ -250,13 +250,13 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
           </div>
         </div>
 
-        <div className="border-t border-white/[0.06]" />
+        <div className="border-t border-[#222228]" />
 
         {/* REPETITION PENALTY */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-white/80">Repetition Penalty</span>
-            <span className="text-[11px] font-mono font-bold text-white tabular-nums">
+            <span className="text-xs font-medium text-[#a1a1aa]">Repetition Penalty</span>
+            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
               {repetitionPenalty.toFixed(2)}
             </span>
           </div>
@@ -268,7 +268,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
             step="0.02"
             value={repetitionPenalty}
             onChange={(e) => setRepetitionPenalty(Number(e.target.value))}
-            className="w-full h-1 bg-white/15 rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
+            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
           />
 
           <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
@@ -278,7 +278,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 repetitionPenalty === 1.0
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               1.00 Off
@@ -289,7 +289,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 repetitionPenalty === 1.1
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               1.10 Normal
@@ -300,7 +300,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
               className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                 repetitionPenalty === 1.2
                   ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
               }`}
             >
               1.20 Strict
@@ -308,13 +308,13 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
           </div>
         </div>
 
-        <div className="border-t border-white/[0.06]" />
+        <div className="border-t border-[#222228]" />
 
         {/* MAX OUTPUT TOKENS */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-white/80">Max Output</span>
-            <span className="text-[11px] font-mono font-bold text-white tabular-nums">
+            <span className="text-xs font-medium text-[#a1a1aa]">Max Output</span>
+            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
               {maxTokens.toLocaleString()} tok
             </span>
           </div>
@@ -328,7 +328,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
                 className={`py-1 px-1.5 rounded-md text-[10px] font-mono transition-all cursor-pointer flex-1 text-center shadow-xs border ${
                   maxTokens === preset
                     ? 'bg-white text-black font-bold border-white shadow-sm'
-                    : 'bg-[#1c1c20] hover:bg-[#28282e] border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+                    : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
                 }`}
               >
                 {preset >= 1024 ? `${preset / 1024}k` : preset}

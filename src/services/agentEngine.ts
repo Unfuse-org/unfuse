@@ -18,11 +18,15 @@ import {
   nativeRunCommand,
   nativeGitTurnCommit,
   nativeGitUndo,
+  nativeGetSystemInfo,
+  SystemInfo,
 } from './tauriBridge';
 import {
   getServiceState,
   getDefaultWebSearchProvider,
 } from '../components/integrations/integrationStore';
+import { ToolName } from '../types/pipeline';
+import { getScopedToolSchemas } from './toolGate';
 
 export interface LLMConfig {
   baseUrl: string;
@@ -38,6 +42,7 @@ export interface AgentConfig {
   sessionId: string;
   workspaceRoot: string;
   llmConfig: LLMConfig;
+  allowedTools?: ToolName[];
 }
 
 export interface ToolCallRequest {
@@ -91,19 +96,29 @@ const activeSessions = new Map<string, ActiveSession>();
 const pendingPermissions = new Map<string, (res: PermissionResolution) => void>();
 
 /**
- * Builds the crisp, model-agnostic Unfuse system prompt.
+ * Builds the crisp, model-agnostic Unfuse system prompt with universal cross-platform context.
  */
-function buildSystemPrompt(workspaceRoot: string): string {
+function buildSystemPrompt(workspaceRoot: string, sysInfo?: SystemInfo): string {
+  const osName = sysInfo?.os || 'macos';
+  const username = sysInfo?.username || 'user';
+  const homeDir = sysInfo?.home_dir || (osName === 'windows' ? 'C:/Users/user' : `/Users/${username}`);
+  const shell = sysInfo?.shell || (osName === 'windows' ? 'cmd' : '/bin/zsh');
+
   return `You are Unfuse, an autonomous local AI software engineering workstation.
 You have direct native access to inspect files, edit code, and execute shell commands.
 
-Primary Workspace Directory: ${workspaceRoot || '.'}
+Environment:
+- Platform: ${osName} (macos | linux | windows)
+- User: ${username}
+- Home Directory: ${homeDir}
+- Shell: ${shell}
+- Workspace Root: ${workspaceRoot || '.'}
 
-Filesystem & Environment Capabilities:
-- Your default working directory is the project directory (${workspaceRoot || '.'}).
-- You ALSO have full permission to read, inspect, and interact with files in the user's home directory (~/...) and absolute system paths when requested by the user (e.g., ~/Downloads, ~/Desktop, ~/Documents, or other local folders).
-- All relative file paths resolve against the workspace root.
-- All paths starting with '~' or '/' resolve to the user's home directory or absolute filesystem paths.
+Path & Filesystem Rules:
+1. Workspace Scope (Default): Relative paths (e.g. "src/index.ts") resolve against the workspace root (${workspaceRoot || '.'}).
+2. User Scope: Paths starting with "~" or referencing user personal files, configs, or directories resolve relative to the user's home directory (${homeDir}).
+3. Cross-Platform Paths: Always use forward slashes ("/") in tool calls—the native layer automatically normalizes paths across Windows, Linux, and macOS.
+4. Shell Execution: Commands execute with the workspace root as their current working directory. To target files outside the workspace with bash or read, use absolute paths or "~" (e.g. read(path: "~/Documents") or bash(command: "ls -la ~/")).
 
 Core Philosophy:
 - Direct, concise, technical execution. No filler or corporate preamble.
@@ -111,16 +126,16 @@ Core Philosophy:
 - Ensure all edits preserve existing style, indentation, and comments.
 
 Available Tools:
-1. read: Read file contents or specific line ranges (accepts workspace-relative paths or ~/ home paths).
+1. read: Read file contents or list directory entries (accepts workspace-relative paths, absolute paths, or ~/ paths).
    Args: { "path": string, "startLine"?: number, "endLine"?: number }
 
-2. write: Create or completely overwrite a file (accepts workspace-relative paths or ~/ home paths).
+2. write: Create or completely overwrite a file (accepts workspace-relative paths, absolute paths, or ~/ paths).
    Args: { "path": string, "content": string }
 
 3. edit: Surgically replace a contiguous block of text.
    Args: { "path": string, "target": string, "replacement": string, "startLine"?: number, "endLine"?: number }
 
-4. bash: Run shell commands inside the workspace (or cd to inspect other user directories).
+4. bash: Run shell commands inside the workspace (or target other directories using absolute or ~ paths).
    Args: { "command": string }
 
 5. web_search: Search the web for up-to-date documentation, libraries, or news.
@@ -229,6 +244,7 @@ async function executeWebSearch(query: string): Promise<string> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ api_key: apiKey, query, max_results: 5 }),
+        signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) throw new Error(`Tavily error: ${res.statusText}`);
       const data = await res.json();
@@ -251,6 +267,7 @@ async function executeWebSearch(query: string): Promise<string> {
           'Accept': 'application/json',
           'X-Subscription-Token': apiKey,
         },
+        signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) throw new Error(`Brave error: ${res.statusText}`);
       const data = await res.json();
@@ -276,6 +293,7 @@ async function executeWebSearch(query: string): Promise<string> {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query, numResults: 5, useAutoprompt: true, type: 'auto' }),
+        signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) throw new Error(`Exa error: ${res.statusText}`);
       const data = await res.json();
@@ -296,7 +314,8 @@ async function executeWebSearch(query: string): Promise<string> {
     if (cx) {
       try {
         const res = await fetch(
-          `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(query)}&num=5`
+          `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${encodeURIComponent(cx)}&q=${encodeURIComponent(query)}&num=5`,
+          { signal: AbortSignal.timeout(15_000) }
         );
         if (!res.ok) throw new Error(`Google API error: ${res.statusText}`);
         const data = await res.json();
@@ -312,31 +331,69 @@ async function executeWebSearch(query: string): Promise<string> {
     }
   }
 
-  // 5. DuckDuckGo Instant Answer / Fallback
+  // 5. DuckDuckGo Real Web Search (Zero-Config, Free, No API Key Required)
   try {
-    const res = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    );
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+
     if (res.ok) {
-      const data = await res.json();
-      const parts: string[] = [];
-      if (data.Heading && data.AbstractText) {
-        parts.push(`### ${data.Heading}\n${data.AbstractText}\nSource: ${data.AbstractURL || 'DuckDuckGo'}`);
-      }
-      if (Array.isArray(data.RelatedTopics)) {
-        for (const topic of data.RelatedTopics.slice(0, 3)) {
-          if (topic.Text && topic.FirstURL) {
-            parts.push(`- [${topic.Text}](${topic.FirstURL})`);
+      const html = await res.text();
+      const blocks = html.split('<div class="result results_links');
+      const results: { title: string; url: string; snippet: string }[] = [];
+
+      for (let i = 1; i < blocks.length && results.length < 5; i++) {
+        const b = blocks[i];
+        const titleMatch = b.match(/<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+        const snippetMatch = b.match(/<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+        if (!titleMatch) continue;
+
+        const rawUrl = titleMatch[1];
+        let cleanUrl = rawUrl;
+        const uddgMatch = rawUrl.match(/[?&]uddg=([^&]+)/);
+        if (uddgMatch) {
+          try {
+            cleanUrl = decodeURIComponent(uddgMatch[1]);
+          } catch {
+            cleanUrl = rawUrl;
           }
         }
+
+        const decodeEntities = (s: string) =>
+          s
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#x27;/g, "'")
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ');
+
+        const title = decodeEntities(titleMatch[2].replace(/<[^>]+>/g, '').trim());
+        const snippet = snippetMatch
+          ? decodeEntities(snippetMatch[1].replace(/<[^>]+>/g, '').trim())
+          : '';
+
+        if (title && cleanUrl) {
+          results.push({ title, url: cleanUrl, snippet });
+        }
       }
-      if (parts.length > 0) {
-        return parts.join('\n\n');
+
+      if (results.length > 0) {
+        return results
+          .map((r) => `### [${r.title}](${r.url})\n${r.snippet}`)
+          .join('\n\n');
       }
     }
-  } catch {}
+  } catch (err: any) {
+    console.error('DuckDuckGo search error:', err);
+  }
 
-  return `Web search returned no direct encyclopedia results for "${query}". To enable live, full-web search, configure a search API provider (Tavily, Brave, or Exa) with an API key in Settings > Integrations.`;
+  return `No web search results found for "${query}". Check your internet connection or configure an API key for Brave, Tavily, or Exa in Settings > Integrations.`;
 }
 
 /**
@@ -351,6 +408,7 @@ async function executeFetchWebPage(url: string): Promise<string> {
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
       },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) {
@@ -444,7 +502,8 @@ async function executeTool(
 
   if (normName === 'bash' || normName === 'run_command' || normName === 'terminal' || normName === 'shell') {
     const command = (args.command || args.cmd || args.commandLine || '') as string;
-    const res = await nativeRunCommand(command, workspaceRoot);
+    const rawTimeout = typeof args.timeoutMs === 'number' ? args.timeoutMs : (typeof args.timeout === 'number' ? args.timeout : undefined);
+    const res = await nativeRunCommand(command, workspaceRoot, rawTimeout);
     return {
       toolCallId: callId,
       toolName: 'bash',
@@ -563,9 +622,10 @@ class AgentEngine {
     try {
       // 1. Initialize system prompt if fresh session
       if (session.messages.length === 0) {
+        const sysInfo = await nativeGetSystemInfo();
         session.messages.push({
           role: 'system',
-          content: buildSystemPrompt(workspaceRoot),
+          content: buildSystemPrompt(workspaceRoot, sysInfo),
         });
       }
 
@@ -619,139 +679,6 @@ class AgentEngine {
           };
         });
 
-const CORE_TOOL_SCHEMAS = [
-  {
-    type: 'function',
-    function: {
-      name: 'read',
-      description: 'Read the contents of a file or list a directory from the workspace or user home (~/...), optionally within a specific 1-indexed line range.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'The relative or absolute path to the file or directory to read (supports workspace paths or ~/home paths).',
-          },
-          startLine: {
-            type: 'integer',
-            description: 'Optional 1-indexed line number to start reading from.',
-          },
-          endLine: {
-            type: 'integer',
-            description: 'Optional 1-indexed line number to stop reading at (inclusive).',
-          },
-        },
-        required: ['path'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'write',
-      description: 'Create a new file or completely overwrite an existing file in the workspace or home directory (~/...).',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'The path of the file to create or overwrite (supports workspace paths or ~/home paths).',
-          },
-          content: {
-            type: 'string',
-            description: 'The complete text content to write into the file.',
-          },
-        },
-        required: ['path', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'edit',
-      description: 'Replace a specific target text chunk in an existing file with new content.',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: {
-            type: 'string',
-            description: 'The path of the file to modify.',
-          },
-          target: {
-            type: 'string',
-            description: 'The exact string to be replaced.',
-          },
-          replacement: {
-            type: 'string',
-            description: 'The replacement text content.',
-          },
-          startLine: {
-            type: 'integer',
-            description: 'Optional 1-indexed line number where replacement begins.',
-          },
-          endLine: {
-            type: 'integer',
-            description: 'Optional 1-indexed line number where replacement ends (inclusive).',
-          },
-        },
-        required: ['path', 'target', 'replacement'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'bash',
-      description: 'Execute a shell command inside the workspace directory (or inspect user directories).',
-      parameters: {
-        type: 'object',
-        properties: {
-          command: {
-            type: 'string',
-            description: 'The shell command line string to execute.',
-          },
-        },
-        required: ['command'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description: 'Search the web for real-time information, documentation, libraries, or news.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'The search query to look up on the web.',
-          },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'fetch_web_page',
-      description: 'Fetch and read the readable text content of a public URL.',
-      parameters: {
-        type: 'object',
-        properties: {
-          url: {
-            type: 'string',
-            description: 'The HTTP or HTTPS URL to fetch.',
-          },
-        },
-        required: ['url'],
-      },
-    },
-  },
-];
-
         // 4. Stream completion from local model
         const targetUrl = `${llmConfig.baseUrl.replace(/\/+$/, '')}/v1/chat/completions`;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -762,114 +689,149 @@ const CORE_TOOL_SCHEMAS = [
           headers['Authorization'] = `Bearer ${authKey.trim()}`;
         }
 
-        let res = await fetch(targetUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: llmConfig.model,
-            messages: requestMessages,
-            tools: CORE_TOOL_SCHEMAS,
-            temperature: llmConfig.temperature ?? 0.2,
-            top_p: llmConfig.topP ?? 0.95,
-            max_tokens: llmConfig.maxTokens ?? 4096,
-            stream: true,
-          }),
-          signal: abortController.signal,
-        });
+        const scopedTools = getScopedToolSchemas(config.allowedTools ?? ['read', 'write', 'edit', 'bash']);
 
-        // Dynamic fallback: If runner rejects tools parameter for any model, retry without it
-        if (!res.ok && res.status === 400) {
-          const errText = await res.text();
-          if (
-            errText.toLowerCase().includes('support tools') ||
-            errText.toLowerCase().includes('tools are not supported') ||
-            errText.toLowerCase().includes('unsupported parameter: tools')
-          ) {
-            res = await fetch(targetUrl, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                model: llmConfig.model,
-                messages: requestMessages,
-                temperature: llmConfig.temperature ?? 0.2,
-                top_p: llmConfig.topP ?? 0.95,
-                max_tokens: llmConfig.maxTokens ?? 4096,
-                stream: true,
-              }),
-              signal: abortController.signal,
-            });
-          } else {
-            throw new Error(`LLM endpoint returned error (${res.status}): ${errText}`);
-          }
-        }
+        // Network connection & stream stall timeout controller
+        const streamAbortController = new AbortController();
+        const onUserAbort = () => {
+          streamAbortController.abort(abortController.signal.reason);
+        };
+        abortController.signal.addEventListener('abort', onUserAbort, { once: true });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`LLM endpoint returned error (${res.status}): ${errText}`);
-        }
+        // Connect timeout: 60s
+        let streamTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+          streamAbortController.abort(
+            new Error(`Model runner (${llmConfig.baseUrl}) connection timed out after 60 seconds. Verify that your model runner is running.`)
+          );
+        }, 60_000);
 
-        if (!res.body) {
-          throw new Error('ReadableStream not supported on LLM response body.');
-        }
+        const resetStreamTimer = (delayMs = 90_000) => {
+          if (streamTimer) clearTimeout(streamTimer);
+          streamTimer = setTimeout(() => {
+            streamAbortController.abort(
+              new Error(`Model generation stalled: no response received from runner for ${delayMs / 1000} seconds.`)
+            );
+          }, delayMs);
+        };
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder('utf-8');
+        let res: Response;
         let accumulatedText = '';
-        let nativeToolCalls: ToolCallRequest[] = [];
-        let sseBuffer = '';
+        const nativeToolCalls: ToolCallRequest[] = [];
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          res = await fetch(targetUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: llmConfig.model,
+              messages: requestMessages,
+              ...(scopedTools ? { tools: scopedTools } : {}),
+              temperature: llmConfig.temperature ?? 0.2,
+              top_p: llmConfig.topP ?? 0.95,
+              max_tokens: llmConfig.maxTokens ?? 4096,
+              stream: true,
+            }),
+            signal: streamAbortController.signal,
+          });
 
-          sseBuffer += decoder.decode(value, { stream: true });
-          const lines = sseBuffer.split('\n');
-          sseBuffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            const dataStr = trimmed.slice(5).trim();
-            if (dataStr === '[DONE]') continue;
-
-            try {
-              const chunk = JSON.parse(dataStr);
-              const delta = chunk.choices?.[0]?.delta;
-              if (delta?.content) {
-                accumulatedText += delta.content;
-                onEvent({
-                  type: 'token_chunk',
-                  sessionId,
-                  chunk: delta.content,
-                });
-              }
-
-              if (delta?.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const idx = tc.index ?? 0;
-                  if (!nativeToolCalls[idx]) {
-                    nativeToolCalls[idx] = {
-                      id: tc.id || `call_${Date.now()}_${idx}`,
-                      name: '',
-                      args: {},
-                    };
-                  }
-                  if (tc.id) {
-                    nativeToolCalls[idx].id = tc.id;
-                  }
-                  if (tc.function?.name && !nativeToolCalls[idx].name) {
-                    nativeToolCalls[idx].name = tc.function.name;
-                  }
-                  if (tc.function?.arguments) {
-                    const existingArgs = (nativeToolCalls[idx] as any)._rawArgs || '';
-                    (nativeToolCalls[idx] as any)._rawArgs = existingArgs + tc.function.arguments;
-                  }
-                }
-              }
-            } catch {
-              // Ignore non-JSON SSE chunks
+          // Dynamic fallback: If runner rejects tools parameter for any model, retry without it
+          if (!res.ok && res.status === 400) {
+            const errText = await res.text();
+            if (
+              errText.toLowerCase().includes('support tools') ||
+              errText.toLowerCase().includes('tools are not supported') ||
+              errText.toLowerCase().includes('unsupported parameter: tools')
+            ) {
+              res = await fetch(targetUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  model: llmConfig.model,
+                  messages: requestMessages,
+                  temperature: llmConfig.temperature ?? 0.2,
+                  top_p: llmConfig.topP ?? 0.95,
+                  max_tokens: llmConfig.maxTokens ?? 4096,
+                  stream: true,
+                }),
+                signal: streamAbortController.signal,
+              });
+            } else {
+              throw new Error(`LLM endpoint returned error (${res.status}): ${errText}`);
             }
           }
+
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`LLM endpoint returned error (${res.status}): ${errText}`);
+          }
+
+          if (!res.body) {
+            throw new Error('ReadableStream not supported on LLM response body.');
+          }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let sseBuffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            // Received stream chunk: reset stall timeout
+            resetStreamTimer(90_000);
+
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const dataStr = trimmed.slice(5).trim();
+              if (dataStr === '[DONE]') continue;
+
+              try {
+                const chunk = JSON.parse(dataStr);
+                const delta = chunk.choices?.[0]?.delta;
+                if (delta?.content) {
+                  accumulatedText += delta.content;
+                  onEvent({
+                    type: 'token_chunk',
+                    sessionId,
+                    chunk: delta.content,
+                  });
+                }
+
+                if (delta?.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0;
+                    if (!nativeToolCalls[idx]) {
+                      nativeToolCalls[idx] = {
+                        id: tc.id || `call_${Date.now()}_${idx}`,
+                        name: '',
+                        args: {},
+                      };
+                    }
+                    if (tc.id) {
+                      nativeToolCalls[idx].id = tc.id;
+                    }
+                    if (tc.function?.name && !nativeToolCalls[idx].name) {
+                      nativeToolCalls[idx].name = tc.function.name;
+                    }
+                    if (tc.function?.arguments) {
+                      const existingArgs = (nativeToolCalls[idx] as any)._rawArgs || '';
+                      (nativeToolCalls[idx] as any)._rawArgs = existingArgs + tc.function.arguments;
+                    }
+                  }
+                }
+              } catch {
+                // Ignore non-JSON SSE chunks
+              }
+            }
+          }
+        } finally {
+          if (streamTimer) clearTimeout(streamTimer);
+          abortController.signal.removeEventListener('abort', onUserAbort);
         }
 
         // Parse arguments for any native tool calls

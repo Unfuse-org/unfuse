@@ -112,7 +112,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
     const currentThemeClass =
       colorIndex !== null
         ? PROMPT_EASTER_EGG_COLORS[colorIndex]
-        : 'bg-white/[0.06] hover:bg-white/[0.08] text-white/95 border-white/[0.08]';
+        : 'bg-[#18181c] hover:bg-[#1f1f24] text-[#f4f4f5] border-[#27272a]';
 
     return (
       <div className="flex justify-end mb-8">

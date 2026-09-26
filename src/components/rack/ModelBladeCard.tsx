@@ -23,7 +23,7 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
   const percentUsed = contextLength ? Math.min(100, Math.round((tokensUsed / contextLength) * 100)) : 0;
 
   return (
-    <div className="bg-black border border-white/10 hover:border-white/20 rounded-xl p-3 select-none transition-all group">
+    <div className="bg-[#18181c] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 select-none transition-all group shadow-sm">
       {/* TOP ROW: LOGO, MODEL NAME, PORT & CONFIG BUTTON */}
       <div className="flex items-center gap-2.5">
         {/* WHITE LOGO BADGE (CLICKABLE EASTER EGG FOR MODEL INFO) */}
@@ -33,16 +33,16 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
           className="w-7 h-7 rounded-lg bg-white flex items-center justify-center p-1 shrink-0 hover:scale-105 active:scale-95 transition-transform cursor-pointer shadow-sm"
           title="Click for Model Info"
         >
-          {getModelLogo(model.family)}
+          {getModelLogo(model.family, model.provider, 16)}
         </button>
 
         {/* MODEL NAME & PORT ALIGNED HORIZONTALLY ON THE SAME LEVEL */}
         <div className="flex items-center justify-between min-w-0 flex-1">
-          <div className="text-[12.5px] font-semibold text-white tracking-tight truncate">
+          <div className="text-[12.5px] font-semibold text-[#f4f4f5] tracking-tight truncate">
             {model.displayName}
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            <span className="text-[11px] text-white font-mono font-bold">
+            <span className="text-[11px] text-[#f4f4f5] font-mono font-bold">
               {model.port}
             </span>
 
@@ -50,7 +50,7 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
             <button
               type="button"
               onClick={() => onOpenConfig?.(model)}
-              className="p-1 rounded-md text-white/25 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+              className="p-1 rounded-md text-[#71717a] hover:text-[#f4f4f5] hover:bg-[#27272a] transition-colors cursor-pointer"
               title="Configure blade & unload options"
             >
               <Settings className="w-3.5 h-3.5" />
@@ -60,19 +60,19 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
       </div>
 
       {/* DOWNSIDE: SMALL CONTEXT WINDOW BAR */}
-      <div className="mt-3 pt-2.5 border-t border-white/[0.06]">
-        <div className="flex items-center justify-between text-[9.5px] font-mono mb-1.5 text-white/40">
+      <div className="mt-3 pt-2.5 border-t border-[#222228]">
+        <div className="flex items-center justify-between text-[9.5px] font-mono mb-1.5 text-[#71717a]">
           <span>Tokens</span>
-          <span className="text-white/70">
+          <span className="text-[#a1a1aa]">
             {tokensUsed.toLocaleString()} / {contextLength ? contextLength.toLocaleString() : 'Auto'}
           </span>
         </div>
 
         {/* PROGRESS BAR TRACK */}
-        <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+        <div className="h-1 w-full bg-[#27272a] rounded-full overflow-hidden">
           {/* PROGRESS BAR FILL */}
           <div
-            className="h-full bg-white rounded-full transition-all duration-300"
+            className="h-full bg-[#f4f4f5] rounded-full transition-all duration-300"
             style={{ width: contextLength ? `${Math.max(tokensUsed > 0 ? 2 : 0, percentUsed)}%` : tokensUsed > 0 ? '100%' : '0%' }}
           />
         </div>

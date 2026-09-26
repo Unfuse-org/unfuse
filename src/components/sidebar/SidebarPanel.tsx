@@ -138,7 +138,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('open-launcher'))}
           title="Home / Workspace Launcher"
-          className="h-7 px-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-white/60 hover:text-white"
+          className="h-7 px-1.5 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[#a1a1aa] hover:text-white"
         >
           <HomeIcon size={12} />
           <span className="text-[11px] font-medium tracking-tight">Home</span>
@@ -149,14 +149,14 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           type="button"
           onClick={handleCreateNew}
           title="New Chat (⌘N)"
-          className="h-7 px-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-white/60 hover:text-white"
+          className="h-7 px-1.5 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[#a1a1aa] hover:text-white"
         >
           <NewChatIcon size={12} />
           <span className="text-[11px] font-medium tracking-tight">New</span>
         </button>
 
         {/* SYSTEM MONITOR / TELEMETRY */}
-        <div className="h-7 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/15 transition-all flex items-center justify-center">
+        <div className="h-7 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] transition-all flex items-center justify-center">
           <BtopTelemetryPopover />
         </div>
       </div>
@@ -267,8 +267,8 @@ const SessionItem: React.FC<SessionItemProps> = ({
       onDoubleClick={handleDoubleClick}
       className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
         isActive
-          ? 'bg-white/[0.12] text-white font-medium shadow-xs border border-white/10'
-          : 'text-white/60 hover:text-white hover:bg-white/[0.04]'
+          ? 'bg-[#18181c] text-white font-medium shadow-xs border border-[#27272a]'
+          : 'text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#121215]'
       }`}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">

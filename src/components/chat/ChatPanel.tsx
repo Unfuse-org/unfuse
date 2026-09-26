@@ -13,6 +13,9 @@ import { IntegrationsModal } from '../integrations/IntegrationsModal';
 import { ServiceConnectModal } from '../integrations/ServiceConnectModal';
 import { BtopTelemetryPopover } from './BtopTelemetryPopover';
 import { backendClient, AgentConfig, BackendEvent } from '../../services/backendClient';
+import { PipelinePlanner } from '../../services/pipelinePlanner';
+import { ContextBuilder } from '../../services/contextBuilder';
+import { ExecutionState } from '../../types/pipeline';
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -276,165 +279,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     handleSendMessage(`Clarification: Use ${answerText}`, queriedModel);
   };
 
-interface PartitionedModelTarget {
-  model: ActiveModelTarget;
-  tag: string;
-  taskPrompt: string;
-  isCollaboration: boolean;
-  orderIndex: number;
-}
-
-function parseModelChain(
-  content: string,
-  effectiveModels: ActiveModelTarget[],
-  fallbackModel: ActiveModelTarget
-): PartitionedModelTarget[] {
-  const atRegex = /@([a-zA-Z0-9_.:-]+)/g;
-  const tagMatches: {
-    model: ActiveModelTarget;
-    tag: string;
-    cleanTag: string;
-    startIndex: number;
-    endIndex: number;
-  }[] = [];
-
-  let match: RegExpExecArray | null;
-  while ((match = atRegex.exec(content)) !== null) {
-    const rawTag = match[0];
-    const cleanTag = match[1].toLowerCase();
-    if (cleanTag === 'autopilot') continue;
-
-    const found = effectiveModels.find(
-      (m) =>
-        m.name.toLowerCase().includes(cleanTag) ||
-        m.displayName.toLowerCase().includes(cleanTag) ||
-        (m.family && m.family.toLowerCase().includes(cleanTag))
-    );
-
-    if (found) {
-      tagMatches.push({
-        model: found,
-        tag: rawTag,
-        cleanTag,
-        startIndex: match.index,
-        endIndex: match.index + rawTag.length,
-      });
-    }
-  }
-
-  // 1. If no models were matched, return single target with the content
-  if (tagMatches.length === 0) {
-    return [
-      {
-        model: fallbackModel,
-        tag: '',
-        taskPrompt: content,
-        isCollaboration: false,
-        orderIndex: 0,
-      },
-    ];
-  }
-
-  // 2. If exactly 1 model was matched
-  if (tagMatches.length === 1) {
-    const cleaned = content.replace(tagMatches[0].tag, '').trim();
-    return [
-      {
-        model: tagMatches[0].model,
-        tag: tagMatches[0].tag,
-        taskPrompt: cleaned || content,
-        isCollaboration: false,
-        orderIndex: 0,
-      },
-    ];
-  }
-
-  // 3. If multiple models were matched (2 to N models)
-  const rawSegments: { model: ActiveModelTarget; tag: string; segmentText: string }[] = [];
-
-  for (let i = 0; i < tagMatches.length; i++) {
-    const current = tagMatches[i];
-    const nextStart = tagMatches[i + 1] ? tagMatches[i + 1].startIndex : content.length;
-    const textBetween = content.slice(current.endIndex, nextStart).trim();
-    const cleanText = textBetween.replace(/^[,;:\s-]+|[,;:\s-]+$/g, '').trim();
-
-    rawSegments.push({
-      model: current.model,
-      tag: current.tag,
-      segmentText: cleanText,
-    });
-  }
-
-  // Check if all models (or all except the last one) had empty segment text (e.g. "@m1 @m2 @m3 say hi")
-  const allExceptLastEmpty = rawSegments
-    .slice(0, rawSegments.length - 1)
-    .every((s) => s.segmentText.length === 0);
-
-  if (allExceptLastEmpty) {
-    // Shared Collaborative Mode
-    const sharedTask = rawSegments[rawSegments.length - 1].segmentText || content;
-
-    return rawSegments.map((item, idx) => {
-      const isFirst = idx === 0;
-      const modelName = item.model.displayName || item.model.name;
-      const otherModelNames = rawSegments
-        .filter((_, oIdx) => oIdx !== idx)
-        .map((o) => `@${o.model.displayName || o.model.name}`)
-        .join(', ');
-
-      let promptForModel = sharedTask;
-
-      if (isFirst) {
-        promptForModel = `${sharedTask}\n\n[Instruction for @${modelName}]: You are the first model in this collaboration with ${otherModelNames}. Provide your initial response/greeting.`;
-      } else {
-        const prevModelName = rawSegments[idx - 1].model.displayName || rawSegments[idx - 1].model.name;
-        promptForModel = `${sharedTask}\n\n[Instruction for @${modelName}]: You are responding after @${prevModelName} in this collaboration. Reply directly to @${prevModelName}'s output above and provide your response without repeating what they already stated.`;
-      }
-
-      return {
-        model: item.model,
-        tag: item.tag,
-        taskPrompt: promptForModel,
-        isCollaboration: true,
-        orderIndex: idx,
-      };
-    });
-  }
-
-  // Segmented Task Mode (e.g. "@m1 write rust code, @m2 check workspace, @m3 optimize")
-  return rawSegments.map((item, idx) => {
-    const isFirst = idx === 0;
-    const modelName = item.model.displayName || item.model.name;
-    const specificTask = item.segmentText || content;
-
-    let promptForModel = specificTask;
-    if (!isFirst) {
-      const prevModelName = rawSegments[idx - 1].model.displayName || rawSegments[idx - 1].model.name;
-      promptForModel = `[Directive for @${modelName}]: Address your assigned task: "${specificTask}". (Note: @${prevModelName} has completed their step above; build upon their work and do not duplicate it).`;
-    }
-
-    return {
-      model: item.model,
-      tag: item.tag,
-      taskPrompt: promptForModel,
-      isCollaboration: false,
-      orderIndex: idx,
-    };
-  });
-}
-
   const handleSendMessage = async (content: string, targetModel?: ActiveModelTarget) => {
     if (isStreaming) return;
 
     const lower = content.toLowerCase().trim();
+    const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
 
-    // 1. Partition prompt across mentioned models dynamically (1 to N models)
-    const parsedTargets = parseModelChain(content, effectiveModels, targetModel || activeModel);
+    // 1. Create a deterministic execution plan
+    const plan = PipelinePlanner.createPlan(content, effectiveModels, targetModel || activeModel, workspaceRoot);
 
     const fallbackDisplayName =
-      parsedTargets[0].model.displayName && !parsedTargets[0].model.displayName.includes('Connecting')
-        ? parsedTargets[0].model.displayName
-        : parsedTargets[0].model.name || 'Local Model';
+      plan.steps[0].model.displayName && !plan.steps[0].model.displayName.includes('Connecting')
+        ? plan.steps[0].model.displayName
+        : plan.steps[0].model.name || 'Local Model';
 
     // 2. Handle Git turn rollback (/undo)
     if (lower === '/undo' || lower === 'undo') {
@@ -444,9 +301,9 @@ function parseModelChain(
         id: `msg-${Date.now()}`,
         role: 'assistant',
         modelName: fallbackDisplayName,
-        modelFamily: parsedTargets[0].model.family,
-        provider: parsedTargets[0].model.provider,
-        port: parsedTargets[0].model.port,
+        modelFamily: plan.steps[0].model.family,
+        provider: plan.steps[0].model.provider,
+        port: plan.steps[0].model.port,
         content: success
           ? '↩️ Successfully rolled back workspace to the previous turn snapshot.'
           : '⚠️ No previous turn snapshot found to undo.',
@@ -472,8 +329,8 @@ function parseModelChain(
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
         modelName: fallbackDisplayName,
-        modelFamily: parsedTargets[0].model.family,
-        provider: parsedTargets[0].model.provider,
+        modelFamily: plan.steps[0].model.family,
+        provider: plan.steps[0].model.provider,
         content: `Target Verification: \`${verifyCmd}\`\n\nAutopilot pipeline initialized with real backend harness.`,
         thought: 'Analyzing repository structure and preparing verification runner...',
         status: 'idle',
@@ -495,9 +352,18 @@ function parseModelChain(
     setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
 
-    for (let i = 0; i < parsedTargets.length; i++) {
-      const target = parsedTargets[i];
-      const chosenModel = target.model;
+    const executionState: ExecutionState = {
+      planId: plan.id,
+      currentStepIndex: 0,
+      status: 'running',
+      artifacts: {},
+    };
+
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      executionState.currentStepIndex = i;
+
+      const chosenModel = step.model;
       const modelDisplayName =
         chosenModel.displayName && !chosenModel.displayName.includes('Connecting')
           ? chosenModel.displayName
@@ -521,12 +387,12 @@ function parseModelChain(
 
       setMessages((prev) => [...prev, assistantMsg]);
 
-      const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
       const baseUrl = chosenModel.port ? `http://127.0.0.1:${chosenModel.port}` : 'http://127.0.0.1:11434';
 
       const agentConfig: AgentConfig = {
         sessionId,
         workspaceRoot,
+        allowedTools: step.allowedTools,
         llmConfig: {
           baseUrl,
           model: chosenModel.name || 'default',
@@ -537,14 +403,19 @@ function parseModelChain(
         },
       };
 
+      const stepMessages = ContextBuilder.buildMessages(step, plan, executionState);
+      const promptForStep = stepMessages[stepMessages.length - 1].content;
+
       const startTime = Date.now();
       let accumulatedTokens = 0;
+      let accumulatedStepText = '';
 
       const handleBackendEvent = (event: BackendEvent) => {
         if (event.sessionId && event.sessionId !== sessionId) return;
 
         if (event.type === 'token_chunk') {
           accumulatedTokens++;
+          accumulatedStepText += event.chunk;
           const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
           const speedTokPerSec = Math.round((accumulatedTokens / elapsedSec) * 10) / 10;
 
@@ -676,7 +547,17 @@ function parseModelChain(
       try {
         const abortController = new AbortController();
         abortControllerRef.current = abortController;
-        await backendClient.sendChatMessage(agentConfig, target.taskPrompt, handleBackendEvent, abortController.signal);
+        await backendClient.sendChatMessage(agentConfig, promptForStep, handleBackendEvent, abortController.signal);
+
+        // Record verified output for downstream steps
+        executionState.artifacts[step.id] = {
+          stepId: step.id,
+          modelName: modelDisplayName,
+          content: accumulatedStepText,
+          timestamp: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+          tokensUsed: accumulatedTokens,
+        };
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         setMessages((prev) =>
@@ -702,7 +583,7 @@ function parseModelChain(
     <div className="flex flex-col h-full w-full bg-transparent relative overflow-hidden font-sans">
       {/* 1. TOP WINDOW DRAG REGION & TOP PANEL CONTROLS (WITH ACTIVE CHAT TITLE & SYSTEM STATS) */}
       <div
-        className="h-9 w-full flex-shrink-0 select-none cursor-default grid grid-cols-[1fr_auto_1fr] items-center px-3 border-b border-white/[0.04]"
+        className="h-9 w-full flex-shrink-0 select-none cursor-default grid grid-cols-[1fr_auto_1fr] items-center px-3 border-b border-[#1e1e24]"
         data-tauri-drag-region
       >
         {/* LEFT COLUMN: CLEAN DRAG REGION */}

@@ -3,8 +3,11 @@
 
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -45,10 +48,28 @@ fn validate_safe_path(path_str: &str) -> Result<PathBuf, String> {
     Ok(expanded)
 }
 
-/// Core Tool: Read a file with optional 1-indexed line ranges and character truncation.
+/// Core Tool: Read a file or list a directory with optional 1-indexed line ranges.
 #[tauri::command]
 fn read_file(path: String, start_line: Option<usize>, end_line: Option<usize>) -> Result<String, String> {
     let target_path = validate_safe_path(&path)?;
+
+    // If path is a directory, return a sorted directory listing
+    if target_path.is_dir() {
+        let entries = fs::read_dir(&target_path)
+            .map_err(|e| format!("Failed to read directory '{}': {}", path, e))?;
+
+        let mut items = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.path().is_dir();
+            let type_str = if is_dir { "[DIR] " } else { "[FILE]" };
+            items.push(format!("{} {}", type_str, name));
+        }
+        items.sort();
+
+        let header = format!("[Directory: {} ({} items)]\n\n", path, items.len());
+        return Ok(format!("{}{}", header, items.join("\n")));
+    }
 
     let content = fs::read_to_string(&target_path)
         .map_err(|e| format!("Failed to read file '{}': {}", path, e))?;
@@ -159,7 +180,11 @@ fn edit_file(
 
 /// Core Tool: Execute a shell command locked to workspace cwd with safety checks and timeout.
 #[tauri::command]
-fn run_command(command: String, cwd: Option<String>) -> Result<String, String> {
+fn run_command(
+    command: String,
+    cwd: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
     let lower = command.trim().to_lowercase();
 
     // Safety checks against destructive or catastrophic commands
@@ -180,25 +205,82 @@ fn run_command(command: String, cwd: Option<String>) -> Result<String, String> {
     }
 
     let work_dir = cwd.unwrap_or_else(|| ".".to_string());
+    // Default 120 seconds, minimum 1 second, maximum 10 minutes (600_000ms)
+    let timeout_duration = Duration::from_millis(
+        timeout_ms
+            .unwrap_or(120_000)
+            .clamp(1_000, 600_000),
+    );
 
     #[cfg(target_os = "windows")]
-    let output = Command::new("cmd")
-        .args(["/C", &command])
-        .current_dir(work_dir)
-        .output();
+    let mut cmd = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", &command]);
+        c
+    };
 
     #[cfg(not(target_os = "windows"))]
-    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-    #[cfg(not(target_os = "windows"))]
-    let output = Command::new(shell)
-        .args(["-c", &command])
-        .current_dir(work_dir)
-        .output();
+    let mut cmd = {
+        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let mut c = Command::new(shell);
+        c.args(["-c", &command]);
+        c
+    };
 
-    let res = output.map_err(|e| format!("Failed to spawn shell process: {}", e))?;
+    cmd.current_dir(work_dir);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
 
-    let stdout = String::from_utf8_lossy(&res.stdout);
-    let stderr = String::from_utf8_lossy(&res.stderr);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn shell process: {}", e))?;
+
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+
+    let stdout_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(ref mut pipe) = stdout_pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let stderr_thread = thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(ref mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let start = Instant::now();
+    let mut timed_out = false;
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => {
+                if start.elapsed() >= timeout_duration {
+                    timed_out = true;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break None;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("Error monitoring process execution: {}", e));
+            }
+        }
+    };
+
+    let stdout_bytes = stdout_thread.join().unwrap_or_default();
+    let stderr_bytes = stderr_thread.join().unwrap_or_default();
+
+    let stdout = String::from_utf8_lossy(&stdout_bytes);
+    let stderr = String::from_utf8_lossy(&stderr_bytes);
 
     let combined = if stderr.is_empty() {
         stdout.to_string()
@@ -214,10 +296,20 @@ fn run_command(command: String, cwd: Option<String>) -> Result<String, String> {
         truncated.push_str("\n\n... [Output truncated: exceeds 32,000 characters]");
     }
 
-    if res.status.success() {
+    if timed_out {
+        return Err(format!(
+            "Command timed out after {} seconds. Process was terminated.\nPartial output:\n{}",
+            timeout_duration.as_secs(),
+            truncated
+        ));
+    }
+
+    let status = exit_status.ok_or_else(|| "Process status unavailable.".to_string())?;
+
+    if status.success() {
         Ok(truncated)
     } else {
-        let code = res.status.code().unwrap_or(1);
+        let code = status.code().unwrap_or(1);
         Err(format!("Process exited with code {}:\n{}", code, truncated))
     }
 }
@@ -352,6 +444,39 @@ fn get_system_telemetry() -> Result<SystemTelemetry, String> {
     })
 }
 
+#[derive(serde::Serialize)]
+struct SystemInfo {
+    os: String,
+    username: String,
+    home_dir: String,
+    shell: String,
+    hostname: String,
+}
+
+/// Core System: Returns the current user profile, OS, and home directory context.
+#[tauri::command]
+fn get_system_info() -> SystemInfo {
+    let os = std::env::consts::OS.to_string();
+    let username = env::var("USER")
+        .or_else(|_| env::var("USERNAME"))
+        .unwrap_or_else(|_| "user".to_string());
+    let home_dir = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .unwrap_or_else(|_| "/tmp".to_string());
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let hostname = env::var("HOSTNAME")
+        .or_else(|_| env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "localhost".to_string());
+
+    SystemInfo {
+        os,
+        username,
+        home_dir,
+        shell,
+        hostname,
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -370,7 +495,8 @@ fn main() {
             run_command,
             git_turn_commit,
             git_undo,
-            get_system_telemetry
+            get_system_telemetry,
+            get_system_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -525,11 +525,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         {/* 1. FLOATING CARD COMPOSER */}
         <div
           ref={composerRef}
-          className="flex-1 min-w-0 relative rounded-2xl bg-[#1c1c20] border border-white/10 shadow-2xl focus-within:border-white/25 focus-within:ring-1 focus-within:ring-white/10 p-3 flex flex-col justify-between"
+          className="flex-1 min-w-0 relative rounded-2xl bg-[#141418] border border-[#27272a] shadow-2xl focus-within:border-[#3f3f46] focus-within:ring-1 focus-within:ring-white/10 p-3 flex flex-col justify-between"
         >
           {/* 1. @ MENTION MODEL POPUP */}
           {mentionType === 'model' && filteredModels.length > 0 && (
-            <div className="absolute bottom-full left-3 mb-2 w-72 max-h-60 overflow-y-auto overflow-x-hidden bg-[#18181b] border border-white/15 rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
+            <div className="absolute bottom-full left-3 mb-2 w-72 max-h-60 overflow-y-auto overflow-x-hidden bg-[#121215] border border-[#27272a] rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
               {filteredModels.map((m, idx) => (
                 <button
                   key={m.id}
@@ -565,7 +565,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* 2. # RUN COMMAND POPUP (Without top header bar, perfectly contained scrollbar) */}
           {mentionType === 'command' && filteredCommands.length > 0 && (
-            <div className="absolute bottom-full left-3 mb-2 w-80 max-h-64 overflow-y-auto overflow-x-hidden bg-[#18181b] border border-white/15 rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
+            <div className="absolute bottom-full left-3 mb-2 w-80 max-h-64 overflow-y-auto overflow-x-hidden bg-[#121215] border border-[#27272a] rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
               {filteredCommands.map((c, idx) => (
                 <button
                   key={c.id}
@@ -597,7 +597,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* 3. / FILE & CODEBASE CONTEXT POPUP */}
           {mentionType === 'file' && filteredFiles.length > 0 && (
-            <div className="absolute bottom-full left-3 mb-2 w-88 max-h-64 overflow-y-auto overflow-x-hidden bg-[#18181b] border border-white/15 rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
+            <div className="absolute bottom-full left-3 mb-2 w-88 max-h-64 overflow-y-auto overflow-x-hidden bg-[#121215] border border-[#27272a] rounded-xl shadow-2xl z-50 p-1 space-y-0.5 animate-in fade-in duration-100 font-mono popup-scroll">
               {filteredFiles.map((f, idx) => (
                 <button
                   key={f.id}

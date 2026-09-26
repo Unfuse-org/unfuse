@@ -116,10 +116,10 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-transparent select-none relative font-sans">
-      {/* 1. LEFT PANEL: TRANSPARENT / TRANSLUCENT FROSTED GLASS */}
+      {/* 1. LEFT PANEL: DEEP ZINC-950 BASE LAYER (#09090b) */}
       <aside
         style={{ width: isLeftSidebarOpen ? `${leftWidth}px` : 0 }}
-        className={`flex-shrink-0 bg-transparent overflow-hidden flex flex-col ${
+        className={`flex-shrink-0 bg-[#09090b] border-r border-[#1e1e24] overflow-hidden flex flex-col ${
           isDraggingLeft ? 'transition-none' : 'transition-[width,opacity] duration-200 ease-in-out'
         } ${isLeftSidebarOpen ? 'opacity-100' : 'opacity-0 -translate-x-full pointer-events-none'}`}
       >
@@ -147,8 +147,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. MIDDLE PANEL: 100% PURE BLACK (#000000) */}
-      <main className="flex-1 bg-black flex flex-col min-w-0 overflow-hidden border-r border-white/5">
+      {/* 2. MIDDLE PANEL: CLEAN OBSIDIAN WORKSPACE CANVAS (#0d0d10) */}
+      <main className="flex-1 bg-[#0d0d10] flex flex-col min-w-0 overflow-hidden border-r border-[#1e1e24]">
         <ChatPanel
           sessionId={activeSessionId}
           activeSessionTitle={activeSession?.title}
@@ -174,10 +174,10 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. RIGHT PANEL: MATTE CHARCOAL (#161618) */}
+      {/* 3. RIGHT PANEL: ELEVATED TOOL SURFACE (#121215) */}
       <aside
         style={{ width: isRightRackOpen ? `${rightWidth}px` : 0 }}
-        className={`flex-shrink-0 bg-[#161618] flex flex-col min-w-0 overflow-hidden ${
+        className={`flex-shrink-0 bg-[#121215] flex flex-col min-w-0 overflow-hidden ${
           isDraggingRight ? 'transition-none' : 'transition-[width,opacity] duration-200 ease-in-out'
         } ${isRightRackOpen ? 'opacity-100' : 'opacity-0 translate-x-full pointer-events-none'}`}
       >

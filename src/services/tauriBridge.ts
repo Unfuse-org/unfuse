@@ -143,7 +143,8 @@ export async function nativeEditFile(
  */
 export async function nativeRunCommand(
   command: string,
-  cwd?: string
+  cwd?: string,
+  timeoutMs?: number
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
   if (!isTauriEnvironment()) {
@@ -155,7 +156,11 @@ export async function nativeRunCommand(
   }
 
   try {
-    const output = await invoke<string>('run_command', { command, cwd });
+    const output = await invoke<string>('run_command', {
+      command,
+      cwd,
+      timeoutMs: timeoutMs ? Math.round(timeoutMs) : undefined,
+    });
     return {
       success: true,
       output,
@@ -236,5 +241,47 @@ export async function nativeGetTelemetry(): Promise<{
   } catch (err) {
     console.warn('[Telemetry] Failed to read hardware metrics:', err);
     return null;
+  }
+}
+
+export interface SystemInfo {
+  os: string;
+  username: string;
+  home_dir: string;
+  shell: string;
+  hostname: string;
+}
+
+let cachedSystemInfo: SystemInfo | null = null;
+
+/**
+ * Reads the host operating system profile, current user, and home directory.
+ */
+export async function nativeGetSystemInfo(): Promise<SystemInfo> {
+  if (cachedSystemInfo) return cachedSystemInfo;
+
+  if (!isTauriEnvironment()) {
+    cachedSystemInfo = {
+      os: 'macos',
+      username: 'user',
+      home_dir: '/Users/user',
+      shell: '/bin/zsh',
+      hostname: 'localhost',
+    };
+    return cachedSystemInfo;
+  }
+
+  try {
+    cachedSystemInfo = await invoke<SystemInfo>('get_system_info');
+    return cachedSystemInfo;
+  } catch (err) {
+    console.warn('[SystemInfo] Failed to read system info:', err);
+    return {
+      os: 'macos',
+      username: 'user',
+      home_dir: '/Users/user',
+      shell: '/bin/zsh',
+      hostname: 'localhost',
+    };
   }
 }

@@ -45,5 +45,7 @@ Thumbs.db
 *.sln
 *.sw?
 
-# Marketing Website (Tracked separately / excluded per specification)
+# Marketing Website & CLI (Tracked separately / excluded per specification)
 website/
+cli/
+

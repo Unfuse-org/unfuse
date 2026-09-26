@@ -15,12 +15,29 @@ import {
   MistralLogo,
   MicrosoftPhiLogo,
   GoogleGemmaLogo,
-  MiniCPMLogo,
+  YiLogo,
+  IBMGraniteLogo,
+  NvidiaLogo,
+  NousResearchLogo,
+  InternLMLogo,
+  ChatGLMLogo,
+  StabilityLogo,
+  SnowflakeLogo,
+  BaichuanLogo,
+  MinimaxLogo,
+  MoonshotLogo,
+  StepfunLogo,
+  DolphinLogo,
+  TIILogo,
+  RwkvLogo,
+  LLaVALogo,
   CohereLogo,
   StarCoderLogo,
   BAAILogo,
+  MiniCPMLogo,
   NomicEmbeddingLogo,
   WhisperAudioLogo,
+  getProviderLogo,
 } from './Logos';
 
 interface MountModelViewProps {
@@ -85,7 +102,14 @@ const PROVIDER_DATA: Record<
   },
 };
 
-export const getModelLogo = (family: string, size: number = 16) => {
+export const getModelLogo = (
+  family: string,
+  providerOrSize?: string | number,
+  maybeSize?: number
+): React.ReactElement => {
+  const provider = typeof providerOrSize === 'string' ? providerOrSize : undefined;
+  const size = typeof providerOrSize === 'number' ? providerOrSize : (maybeSize ?? 16);
+
   const normalized = normalizeFamilyForLogo(family);
   switch (normalized) {
     case 'qwen':
@@ -100,20 +124,56 @@ export const getModelLogo = (family: string, size: number = 16) => {
       return <MicrosoftPhiLogo size={size} />;
     case 'gemma':
       return <GoogleGemmaLogo size={size} />;
-    case 'minicpm':
-      return <MiniCPMLogo size={size} />;
-    case 'cohere':
-      return <CohereLogo size={size} />;
+    case 'yi':
+      return <YiLogo size={size} />;
+    case 'granite':
+      return <IBMGraniteLogo size={size} />;
+    case 'nvidia':
+      return <NvidiaLogo size={size} />;
+    case 'nous':
+      return <NousResearchLogo size={size} />;
+    case 'internlm':
+      return <InternLMLogo size={size} />;
+    case 'glm':
+      return <ChatGLMLogo size={size} />;
+    case 'stability':
+      return <StabilityLogo size={size} />;
+    case 'snowflake':
+      return <SnowflakeLogo size={size} />;
+    case 'baichuan':
+      return <BaichuanLogo size={size} />;
+    case 'minimax':
+      return <MinimaxLogo size={size} />;
+    case 'moonshot':
+      return <MoonshotLogo size={size} />;
+    case 'stepfun':
+      return <StepfunLogo size={size} />;
+    case 'dolphin':
+      return <DolphinLogo size={size} />;
+    case 'falcon':
+      return <TIILogo size={size} />;
+    case 'rwkv':
+      return <RwkvLogo size={size} />;
+    case 'llava':
+      return <LLaVALogo size={size} />;
     case 'starcoder':
       return <StarCoderLogo size={size} />;
+    case 'command-r':
+    case 'cohere':
+      return <CohereLogo size={size} />;
+    case 'bge':
     case 'baai':
       return <BAAILogo size={size} />;
+    case 'minicpm':
+      return <MiniCPMLogo size={size} />;
     case 'nomic':
       return <NomicEmbeddingLogo size={size} />;
     case 'whisper':
       return <WhisperAudioLogo size={size} />;
+    case 'unsloth':
+      return <UnslothLogo size={size} />;
     default:
-      return <OllamaLogo size={size} />;
+      return getProviderLogo(provider, size);
   }
 };
 
@@ -312,12 +372,12 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#161618] px-3.5 pt-2 pb-3 text-white/90 overflow-y-auto select-none animate-in fade-in duration-150 font-sans">
+    <div className="flex-1 flex flex-col h-full bg-[#121215] px-3.5 pt-2 pb-3 text-[#f4f4f5] overflow-y-auto select-none animate-in fade-in duration-150 font-sans">
       {/* TOP HEADER CONTROLS */}
       <div className="h-8 flex items-center justify-between mb-2 shrink-0" data-tauri-drag-region>
         <button
           onClick={onClose}
-          className="p-1 -ml-1 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+          className="p-1 -ml-1 rounded-lg text-[#71717a] hover:text-[#f4f4f5] hover:bg-[#18181c] transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back</span>
@@ -325,7 +385,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
 
         <button
           onClick={onClose}
-          className="p-1 -mr-1 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+          className="p-1 -mr-1 rounded-lg text-[#71717a] hover:text-[#f4f4f5] hover:bg-[#18181c] transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -345,8 +405,8 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               onClick={() => setSelectedProvider(p)}
               className={`relative py-2 px-2 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                 isSelected
-                  ? 'bg-white/10 border-white/30 text-white font-semibold shadow-sm'
-                  : 'bg-white/[0.02] border-white/[0.05] text-white/40 hover:text-white/80 hover:bg-white/[0.04]'
+                  ? 'bg-[#18181c] border-[#3f3f46] text-[#f4f4f5] font-semibold shadow-sm'
+                  : 'bg-[#141418] border-[#222228] text-[#71717a] hover:text-[#a1a1aa] hover:bg-[#18181c] hover:border-[#27272a]'
               }`}
             >
               {provMounted && (
@@ -364,8 +424,8 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
 
       {/* UNSLOTH API TOKEN INPUT */}
       {selectedProvider === 'unsloth' && (
-        <div className="mb-2.5 p-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-2">
-          <Key className="w-3.5 h-3.5 text-white/40 shrink-0" />
+        <div className="mb-2.5 p-2 rounded-xl bg-[#141418] border border-[#27272a] flex items-center gap-2">
+          <Key className="w-3.5 h-3.5 text-[#71717a] shrink-0" />
           <input
             type="password"
             value={unslothApiKey}
@@ -378,7 +438,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
             }}
             onBlur={() => scanRunner('unsloth', activePort)}
             placeholder="Unsloth API Token (sk-unsloth-...)"
-            className="bg-transparent text-white placeholder-white/20 text-xs font-mono outline-none flex-1"
+            className="bg-transparent text-[#f4f4f5] placeholder-[#71717a] text-xs font-mono outline-none flex-1"
           />
         </div>
       )}
@@ -386,10 +446,10 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
       {/* 2. HEADER: DETECTED LOCAL MODELS & ACTIVE PORT */}
       <div className="mb-2 px-0.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-white text-[11px] font-medium tracking-tight">
+          <span className="text-[#f4f4f5] text-[11px] font-medium tracking-tight">
             Installed Models ({availableModels.length})
           </span>
-          <div className="flex items-center gap-1 text-[10px] font-mono text-white/40 bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/[0.06]">
+          <div className="flex items-center gap-1 text-[10px] font-mono text-[#71717a] bg-[#141418] px-1.5 py-0.5 rounded border border-[#222228]">
             <span>Port:</span>
             {isCustomPortEditing ? (
               <input
@@ -415,7 +475,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                   }
                 }}
                 autoFocus
-                className="w-12 bg-white/10 text-sky-400 px-1 py-0.2 rounded border border-sky-400/40 text-[10px] font-mono outline-none"
+                className="w-12 bg-[#18181c] text-sky-400 px-1 py-0.2 rounded border border-sky-400/40 text-[10px] font-mono outline-none"
               />
             ) : (
               <button
@@ -436,7 +496,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
         <button
           onClick={() => scanRunner(selectedProvider, activePort)}
           title="Rescan local runner"
-          className="text-white/40 hover:text-white flex items-center gap-1 text-[10px] cursor-pointer"
+          className="text-[#71717a] hover:text-[#f4f4f5] flex items-center gap-1 text-[10px] cursor-pointer"
         >
           <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
           <span>{isScanning ? 'Scanning...' : 'Rescan'}</span>
@@ -446,12 +506,12 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
       {/* 3. DETECTED MODELS LIST OR ERROR */}
       <div className="space-y-1.5 mb-3 flex-1 overflow-y-auto">
         {scanError ? (
-          <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-center flex flex-col items-center gap-2 text-white/60">
+          <div className="p-3.5 rounded-xl bg-[#141418] border border-[#27272a] text-center flex flex-col items-center gap-2 text-[#a1a1aa]">
             <AlertCircle className="w-5 h-5 text-amber-400" />
             <span className="text-[11px] leading-relaxed">{scanError}</span>
           </div>
         ) : availableModels.length === 0 ? (
-          <div className="p-4 text-center text-white/40 text-xs">
+          <div className="p-4 text-center text-[#71717a] text-xs">
             {isScanning ? 'Detecting local models on machine...' : 'No models found.'}
           </div>
         ) : (
@@ -465,26 +525,26 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                 onClick={() => setSelectedModel(m)}
                 className={`w-full text-left p-2.5 rounded-xl border transition-all duration-150 flex items-center justify-between cursor-pointer ${
                   isSelected
-                    ? 'bg-white/[0.08] border-white/40 text-white shadow-[0_0_12px_rgba(255,255,255,0.08)] ring-1 ring-white/15'
-                    : 'bg-white/[0.025] border-white/[0.05] text-white/70 hover:text-white hover:bg-white/[0.04] hover:border-white/15'
+                    ? 'bg-[#18181c] border-[#3f3f46] text-[#f4f4f5] shadow-sm ring-1 ring-[#3f3f46]'
+                    : 'bg-[#141418] border-[#222228] text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#18181c] hover:border-[#27272a]'
                 }`}
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center p-1 shadow-sm shrink-0 border border-white/20">
-                    {getModelLogo(m.family)}
+                    {getModelLogo(m.family, selectedProvider, 16)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-bold text-white tracking-tight truncate">
+                      <span className="text-[12px] font-bold text-[#f4f4f5] tracking-tight truncate">
                         {m.displayName}
                       </span>
                       {isCurrentActiveBlade && (
-                        <span className="text-[9px] font-mono bg-white text-black px-1 rounded font-bold shrink-0">
+                        <span className="text-[9px] font-mono bg-[#f4f4f5] text-black px-1 rounded font-bold shrink-0">
                           MOUNTED
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-white/40 font-mono mt-0.5">
+                    <div className="text-[10px] text-[#71717a] font-mono mt-0.5">
                       {m.defaultRole} · {m.quantization} · {m.sizeGb} GB
                     </div>
                   </div>
@@ -501,8 +561,8 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
         onClick={handleMount}
         className={`w-full py-2.5 rounded-xl font-semibold text-xs transition-all shadow-md flex items-center justify-center gap-1.5 shrink-0 ${
           isOccupied || !selectedModel
-            ? 'bg-white/[0.05] border border-white/10 text-white/30 cursor-not-allowed'
-            : 'bg-white text-black hover:bg-white/90 active:scale-[0.98] cursor-pointer'
+            ? 'bg-[#18181c] border border-[#27272a] text-[#71717a] cursor-not-allowed'
+            : 'bg-white text-black hover:bg-[#e4e4e7] active:scale-[0.98] cursor-pointer'
         }`}
       >
         {isOccupied ? (

@@ -49,7 +49,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {/* LOGO BADGE */}
             <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0 shadow-md border border-white/20">
-              {getModelLogo(model.family, 24)}
+              {getModelLogo(model.family, model.provider, 24)}
             </div>
 
             <div className="min-w-0 flex-1">

@@ -27,14 +27,8 @@ import {
   UnslothLogo,
   LlamaCppLogo,
   MLXLogo,
-  DeepSeekLogo,
-  QwenLogo,
-  MetaLlamaLogo,
-  MistralLogo,
-  MiniCPMLogo,
-  CohereLogo,
-  WhisperAudioLogo,
 } from '../rack/Logos';
+import { getModelLogo } from '../rack/MountModelView';
 import unfuseLogo from '../../assets/logo.png';
 import { inferRole, normalizeFamilyForLogo } from '../rack/modelResolver';
 
@@ -267,26 +261,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
   ];
 
   // Helper to render model brand icon
-  const renderFamilyLogo = (fam: string) => {
-    const normalized = normalizeFamilyForLogo(fam);
-    switch (normalized) {
-      case 'deepseek':
-        return <DeepSeekLogo size={16} />;
-      case 'qwen':
-        return <QwenLogo size={16} />;
-      case 'llama':
-        return <MetaLlamaLogo size={16} />;
-      case 'mistral':
-        return <MistralLogo size={16} />;
-      case 'minicpm':
-        return <MiniCPMLogo size={16} />;
-      case 'cohere':
-        return <CohereLogo size={16} />;
-      case 'whisper':
-        return <WhisperAudioLogo size={16} />;
-      default:
-        return <Cpu className="w-4 h-4 text-white/70" />;
-    }
+  const renderFamilyLogo = (fam: string, provider?: string) => {
+    return getModelLogo(fam, provider, 16);
   };
 
   // STEP 1: PURE FULLSCREEN BLACK BACKGROUND WITH BIG PIXEL UNFUSE, SLANTED LOGO & GET STARTED BUTTON ONLY
@@ -375,7 +351,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                       className="flex items-center justify-between py-2 border-b border-white/[0.08]"
                     >
                       <div className="flex items-center gap-3 text-left">
-                        <div className="shrink-0">{renderFamilyLogo(model.family)}</div>
+                        <div className="shrink-0">{renderFamilyLogo(model.family, model.provider)}</div>
                         <div>
                           <div className="text-xs font-semibold text-white">{model.name}</div>
                           <div className="text-[10px] text-white/40 font-mono">

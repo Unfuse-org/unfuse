@@ -12,18 +12,35 @@ export interface ResolvedModelInfo {
 
 export function normalizeFamilyForLogo(familyStr: string): ModelFamily {
   const f = familyStr.toLowerCase();
-  if (f.includes('qwen')) return 'qwen';
+  if (f.includes('qwen') || f.includes('qwq')) return 'qwen';
   if (f.includes('deepseek')) return 'deepseek';
   if (f.includes('llama')) return 'llama';
   if (f.includes('mistral') || f.includes('mixtral') || f.includes('codestral') || f.includes('mathstral') || f.includes('devstral') || f.includes('ministral')) return 'mistral';
   if (f.includes('phi')) return 'phi';
   if (f.includes('gemma') || f.includes('codey')) return 'gemma';
+  if (f.includes('yi') && !f.includes('whisper')) return 'yi';
+  if (f.includes('granite')) return 'granite';
+  if (f.includes('nemotron') || f.includes('megatron') || f.includes('nvidia')) return 'nvidia';
+  if (f.includes('hermes') || f.includes('nous')) return 'nous';
+  if (f.includes('internlm') || f.includes('internvl')) return 'internlm';
+  if (f.includes('glm') || f.includes('chatglm') || f.includes('zhipu')) return 'glm';
+  if (f.includes('stablelm') || f.includes('stable-code') || f.includes('stability')) return 'stability';
+  if (f.includes('arctic') || f.includes('snowflake')) return 'snowflake';
+  if (f.includes('baichuan')) return 'baichuan';
+  if (f.includes('minimax')) return 'minimax';
+  if (f.includes('moonshot') || f.includes('kimi')) return 'moonshot';
+  if (f.includes('stepfun')) return 'stepfun';
+  if (f.includes('dolphin')) return 'dolphin';
+  if (f.includes('falcon') || f.includes('tii')) return 'falcon';
+  if (f.includes('rwkv')) return 'rwkv';
+  if (f.includes('llava')) return 'llava';
   if (f.includes('cpm') || f.includes('minicpm')) return 'minicpm';
   if (f.includes('cohere') || f.includes('command')) return 'command-r';
-  if (f.includes('starcoder') || f.includes('santacoder')) return 'starcoder';
+  if (f.includes('starcoder') || f.includes('santacoder') || f.includes('bigcode')) return 'starcoder';
   if (f.includes('bge') || f.includes('baai')) return 'bge';
   if (f.includes('nomic')) return 'nomic';
   if (f.includes('whisper')) return 'whisper';
+  if (f.includes('unsloth')) return 'unsloth';
   return 'custom';
 }
 
