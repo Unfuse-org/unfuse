@@ -13,9 +13,6 @@ import { IntegrationsModal } from '../integrations/IntegrationsModal';
 import { ServiceConnectModal } from '../integrations/ServiceConnectModal';
 import { BtopTelemetryPopover } from './BtopTelemetryPopover';
 import { backendClient, AgentConfig, BackendEvent } from '../../services/backendClient';
-import { PipelinePlanner } from '../../services/pipelinePlanner';
-import { ContextBuilder } from '../../services/contextBuilder';
-import { ExecutionState } from '../../types/pipeline';
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -285,28 +282,30 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     const lower = content.toLowerCase().trim();
     const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
 
-    // 1. Create a deterministic execution plan
-    const plan = PipelinePlanner.createPlan(content, effectiveModels, targetModel || activeModel, workspaceRoot);
+    // 1. Resolve active model target
+    const chosenModel = targetModel || activeModel || effectiveModels[0] || {
+      id: 'default-local',
+      name: 'qwen2.5-coder:7b',
+      displayName: 'Qwen 2.5 Coder',
+      provider: 'ollama' as const,
+      port: 11434,
+    };
 
     const fallbackDisplayName =
-      plan.steps[0].model.displayName && !plan.steps[0].model.displayName.includes('Connecting')
-        ? plan.steps[0].model.displayName
-        : plan.steps[0].model.name || 'Local Model';
+      chosenModel.displayName && !chosenModel.displayName.includes('Connecting')
+        ? chosenModel.displayName
+        : chosenModel.name || 'Local Model';
 
-    // 2. Handle Git turn rollback (/undo)
+    // 2. Handle /undo notice
     if (lower === '/undo' || lower === 'undo') {
-      const workspaceRoot = localStorage.getItem('unfuse_workspace_root') || '.';
-      const success = await backendClient.undoTurn(workspaceRoot);
       const undoMsg: Message = {
         id: `msg-${Date.now()}`,
         role: 'assistant',
         modelName: fallbackDisplayName,
-        modelFamily: plan.steps[0].model.family,
-        provider: plan.steps[0].model.provider,
-        port: plan.steps[0].model.port,
-        content: success
-          ? '↩️ Successfully rolled back workspace to the previous turn snapshot.'
-          : '⚠️ No previous turn snapshot found to undo.',
+        modelFamily: chosenModel.family,
+        provider: chosenModel.provider,
+        port: chosenModel.port,
+        content: 'ℹ️ Git remains entirely user-owned and external in Unfuse. Use standard Git commands (e.g. `git restore .`) in your workspace to manage code revisions.',
         status: 'idle',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
@@ -329,8 +328,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
         modelName: fallbackDisplayName,
-        modelFamily: plan.steps[0].model.family,
-        provider: plan.steps[0].model.provider,
+        modelFamily: chosenModel.family,
+        provider: chosenModel.provider,
         content: `Target Verification: \`${verifyCmd}\`\n\nAutopilot pipeline initialized with real backend harness.`,
         thought: 'Analyzing repository structure and preparing verification runner...',
         status: 'idle',
@@ -341,7 +340,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       return;
     }
 
-    // 4. Construct user message and sequentially execute across targeted models
+    // 4. Construct user message and execute agent turn
     const userMsg: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -352,59 +351,40 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
 
-    const executionState: ExecutionState = {
-      planId: plan.id,
-      currentStepIndex: 0,
-      status: 'running',
-      artifacts: {},
+    const modelDisplayName = fallbackDisplayName;
+    const assistantMsgId = `msg-${Date.now() + 1}`;
+    const assistantMsg: Message = {
+      id: assistantMsgId,
+      role: 'assistant',
+      modelName: modelDisplayName,
+      modelFamily: chosenModel.family,
+      provider: chosenModel.provider,
+      port: chosenModel.port,
+      content: '',
+      thought: '',
+      toolCalls: [],
+      status: 'streaming',
+      agentStatus: 'Ingesting prompt & generating...',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
-    for (let i = 0; i < plan.steps.length; i++) {
-      const step = plan.steps[i];
-      executionState.currentStepIndex = i;
+    setMessages((prev) => [...prev, assistantMsg]);
 
-      const chosenModel = step.model;
-      const modelDisplayName =
-        chosenModel.displayName && !chosenModel.displayName.includes('Connecting')
-          ? chosenModel.displayName
-          : chosenModel.name || 'Local Model';
+    const baseUrl = chosenModel.port ? `http://127.0.0.1:${chosenModel.port}` : 'http://127.0.0.1:11434';
 
-      const assistantMsgId = `msg-${Date.now() + i + 1}`;
-      const assistantMsg: Message = {
-        id: assistantMsgId,
-        role: 'assistant',
-        modelName: modelDisplayName,
-        modelFamily: chosenModel.family,
-        provider: chosenModel.provider,
-        port: chosenModel.port,
-        content: '',
-        thought: '',
-        toolCalls: [],
-        status: 'streaming',
-        agentStatus: 'Ingesting prompt & generating...',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      const baseUrl = chosenModel.port ? `http://127.0.0.1:${chosenModel.port}` : 'http://127.0.0.1:11434';
-
-      const agentConfig: AgentConfig = {
-        sessionId,
-        workspaceRoot,
-        allowedTools: step.allowedTools,
-        llmConfig: {
-          baseUrl,
-          model: chosenModel.name || 'default',
-          temperature: (activeModelProp as any)?.temperature,
-          topP: (activeModelProp as any)?.topP,
-          maxTokens: (activeModelProp as any)?.maxTokens,
-          repetitionPenalty: (activeModelProp as any)?.repetitionPenalty,
-        },
-      };
-
-      const stepMessages = ContextBuilder.buildMessages(step, plan, executionState);
-      const promptForStep = stepMessages[stepMessages.length - 1].content;
+    const agentConfig: AgentConfig = {
+      sessionId,
+      workspaceRoot,
+      allowedTools: ['read', 'write', 'edit', 'bash'],
+      llmConfig: {
+        baseUrl,
+        model: chosenModel.name || 'default',
+        temperature: (activeModelProp as any)?.temperature,
+        topP: (activeModelProp as any)?.topP,
+        maxTokens: (activeModelProp as any)?.maxTokens,
+        repetitionPenalty: (activeModelProp as any)?.repetitionPenalty,
+      },
+    };
 
       const startTime = Date.now();
       let accumulatedTokens = 0;
@@ -544,35 +524,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         }
       };
 
-      try {
-        const abortController = new AbortController();
-        abortControllerRef.current = abortController;
-        await backendClient.sendChatMessage(agentConfig, promptForStep, handleBackendEvent, abortController.signal);
-
-        // Record verified output for downstream steps
-        executionState.artifacts[step.id] = {
-          stepId: step.id,
-          modelName: modelDisplayName,
-          content: accumulatedStepText,
-          timestamp: new Date().toISOString(),
-          durationMs: Date.now() - startTime,
-          tokensUsed: accumulatedTokens,
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? {
-                  ...m,
-                  status: 'error',
-                  agentStatus: undefined,
-                  content: (m.content ? m.content + '\n\n' : '') + `⚠️ Error: ${msg}`,
-                }
-              : m
-          )
-        );
-      }
+    try {
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      await backendClient.sendChatMessage(agentConfig, content, handleBackendEvent, abortController.signal);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId
+            ? {
+                ...m,
+                status: 'error',
+                agentStatus: undefined,
+                content: (m.content ? m.content + '\n\n' : '') + `⚠️ Error: ${msg}`,
+              }
+            : m
+        )
+      );
     }
 
     setIsStreaming(false);
@@ -583,7 +552,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     <div className="flex flex-col h-full w-full bg-transparent relative overflow-hidden font-sans">
       {/* 1. TOP WINDOW DRAG REGION & TOP PANEL CONTROLS (WITH ACTIVE CHAT TITLE & SYSTEM STATS) */}
       <div
-        className="h-9 w-full flex-shrink-0 select-none cursor-default grid grid-cols-[1fr_auto_1fr] items-center px-3 border-b border-[#1e1e24]"
+        className="h-9 w-full flex-shrink-0 select-none cursor-default grid grid-cols-[1fr_auto_1fr] items-center px-3 border-b border-white/[0.08]"
         data-tauri-drag-region
       >
         {/* LEFT COLUMN: CLEAN DRAG REGION */}
@@ -675,8 +644,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         </div>
       </div>
 
-      {/* 3. FLOATING BOTTOM COMPOSER */}
-      <div className="flex-shrink-0 z-20">
+      {/* 3. DOCKED BOTTOM INPUT PANEL */}
+      <div className="flex-shrink-0 z-20 border-t border-white/[0.08] bg-black">
         <ChatInput
           onSendMessage={handleSendMessage}
           isStreaming={isStreaming}

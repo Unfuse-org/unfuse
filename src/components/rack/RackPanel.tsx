@@ -84,7 +84,7 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#121215] overflow-hidden text-[#f4f4f5] select-none relative">
+    <div className="flex flex-col h-full w-full bg-black overflow-hidden text-white select-none relative">
       {/* 1. BLADE CONFIG VIEW IN-PANEL */}
       {editingModel ? (
         <BladeConfigView

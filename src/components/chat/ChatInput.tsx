@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Paperclip,
   Square,
@@ -269,8 +269,70 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [mentionQuery, setMentionQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const vimCursorRef = useRef<HTMLDivElement>(null);
+  const isFocusedRef = useRef(false);
   const composerRef = useRef<HTMLDivElement>(null);
   const [composerHeight, setComposerHeight] = useState<number>(108);
+
+  const updateVimCursor = useCallback(() => {
+    const el = textareaRef.current;
+    const cursor = vimCursorRef.current;
+    if (!el || !cursor) return;
+
+    if (!isFocusedRef.current) {
+      cursor.style.display = 'none';
+      return;
+    }
+
+    if (el.selectionStart !== el.selectionEnd) {
+      cursor.style.display = 'none';
+      return;
+    }
+
+    const pos = el.selectionStart ?? el.value.length;
+    const style = window.getComputedStyle(el);
+
+    const div = document.createElement('div');
+    const properties = [
+      'boxSizing', 'width', 'fontStyle', 'fontVariant', 'fontWeight',
+      'fontSize', 'lineHeight', 'fontFamily', 'letterSpacing',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+      'whiteSpace', 'wordWrap', 'wordBreak'
+    ] as const;
+
+    div.style.position = 'absolute';
+    div.style.visibility = 'hidden';
+    div.style.pointerEvents = 'none';
+    div.style.top = '-9999px';
+    div.style.left = '-9999px';
+
+    properties.forEach((prop) => {
+      (div.style as any)[prop] = style[prop];
+    });
+    div.style.whiteSpace = 'pre-wrap';
+    div.style.wordWrap = 'break-word';
+
+    div.textContent = el.value.substring(0, pos);
+
+    const span = document.createElement('span');
+    span.textContent = el.value.substring(pos) || '\u200B';
+    div.appendChild(span);
+
+    document.body.appendChild(div);
+    const top = span.offsetTop + parseFloat(style.borderTopWidth || '0') - el.scrollTop;
+    const left = span.offsetLeft + parseFloat(style.borderLeftWidth || '0');
+    const height = parseFloat(style.lineHeight) || span.offsetHeight || 18;
+    document.body.removeChild(div);
+
+    cursor.style.display = 'block';
+    cursor.style.transform = `translate(${left}px, ${top + 2}px)`;
+    cursor.style.height = `${Math.max(16, height - 4)}px`;
+
+    cursor.style.animation = 'none';
+    void cursor.offsetWidth;
+    cursor.style.animation = 'vim-cursor-blink 1s steps(1) infinite';
+  }, []);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -281,7 +343,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         220
       )}px`;
     }
-  }, [input, attachedFiles]);
+    if (isFocusedRef.current) {
+      requestAnimationFrame(updateVimCursor);
+    }
+  }, [input, attachedFiles, updateVimCursor]);
 
   // Track composer height to ensure VoiceOrbSquare is an exact pixel-matched square
   useEffect(() => {
@@ -510,22 +575,24 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 pb-5 select-none">
+    <div className="w-full px-6 py-2.5 select-none bg-black">
       {/* DOCKED CLARIFICATION PANEL */}
       {activeClarification && onSubmitClarification && onDismissClarification && (
-        <ClarificationPanel
-          request={activeClarification}
-          onSubmit={onSubmitClarification}
-          onDismiss={onDismissClarification}
-        />
+        <div className="max-w-4xl mx-auto mb-2.5">
+          <ClarificationPanel
+            request={activeClarification}
+            onSubmit={onSubmitClarification}
+            onDismiss={onDismissClarification}
+          />
+        </div>
       )}
 
       {/* COMPOSER & VOICE PANEL FLEX CONTAINER */}
-      <div className="flex items-stretch gap-2.5 w-full">
-        {/* 1. FLOATING CARD COMPOSER */}
+      <div className="max-w-4xl mx-auto flex items-stretch gap-2.5 w-full">
+        {/* 1. DOCKED BOTTOM COMPOSER (FLAT, EDGE-TO-EDGE, NO CURVED RECTANGLE) */}
         <div
           ref={composerRef}
-          className="flex-1 min-w-0 relative rounded-2xl bg-[#141418] border border-[#27272a] shadow-2xl focus-within:border-[#3f3f46] focus-within:ring-1 focus-within:ring-white/10 p-3 flex flex-col justify-between"
+          className="flex-1 min-w-0 relative bg-transparent flex flex-col justify-between"
         >
           {/* 1. @ MENTION MODEL POPUP */}
           {mentionType === 'model' && filteredModels.length > 0 && (
@@ -659,20 +726,54 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           )}
 
-          {/* TEXTAREA */}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              isVoiceActive
-                ? 'Listening to your voice... speak naturally'
-                : 'Message... type @ for models, # for commands, / for files'
-            }
-            rows={1}
-            className="w-full bg-transparent resize-none outline-none text-white/95 placeholder:text-white/30 text-[13.5px] leading-relaxed px-1.5 pt-0.5 pb-2.5 font-sans max-h-52 overflow-y-auto"
-          />
+          {/* TEXTAREA WRAPPER WITH VIM-STYLE TYPING CURSOR */}
+          <div className="relative w-full">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                handleInputChange(e);
+                requestAnimationFrame(updateVimCursor);
+              }}
+              onKeyDown={(e) => {
+                handleKeyDown(e);
+                requestAnimationFrame(updateVimCursor);
+              }}
+              onKeyUp={() => requestAnimationFrame(updateVimCursor)}
+              onClick={() => requestAnimationFrame(updateVimCursor)}
+              onSelect={() => requestAnimationFrame(updateVimCursor)}
+              onScroll={() => requestAnimationFrame(updateVimCursor)}
+              onFocus={() => {
+                isFocusedRef.current = true;
+                requestAnimationFrame(updateVimCursor);
+              }}
+              onBlur={() => {
+                isFocusedRef.current = false;
+                if (vimCursorRef.current) {
+                  vimCursorRef.current.style.display = 'none';
+                }
+              }}
+              placeholder={
+                isVoiceActive
+                  ? 'Listening to your voice... speak naturally'
+                  : 'Message... type @ for models, # for commands, / for files'
+              }
+              rows={1}
+              style={{ caretColor: 'transparent' }}
+              className="w-full bg-transparent resize-none outline-none text-white/95 placeholder:text-white/30 text-[13.5px] leading-relaxed px-1.5 pt-0.5 pb-2.5 font-mono max-h-52 overflow-y-auto"
+            />
+
+            {/* VIM VERTICAL BAR CURSOR WHILE TYPING */}
+            <div
+              ref={vimCursorRef}
+              className="absolute top-0 left-0 pointer-events-none w-[2.5px] bg-white rounded-[0.5px] shadow-[0_0_8px_rgba(255,255,255,0.85)] z-10"
+              style={{
+                display: 'none',
+                transform: 'translate(0px, 0px)',
+                height: '18px',
+              }}
+            />
+          </div>
 
           {/* BOTTOM TOOLBAR */}
           <div className="flex items-center justify-between pt-1.5">
@@ -755,38 +856,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 <Mic className="w-3.5 h-3.5" />
               </button>
 
-              {isStreaming ? (
+              {isStreaming && (
                 <button
                   type="button"
                   onClick={onStopStreaming}
-                  className="w-7 h-7 rounded-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 flex items-center justify-center transition-colors cursor-pointer"
+                  className="h-7 px-2.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/25 flex items-center gap-1.5 transition-colors cursor-pointer font-mono text-[11px]"
                   title="Stop Generation"
                 >
-                  <Square className="w-3 h-3 fill-current" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleSubmit()}
-                  disabled={!input.trim()}
-                  className={`w-7 h-7 rounded-full transition-all flex items-center justify-center ${
-                    input.trim()
-                      ? 'bg-white text-black hover:bg-white/90 shadow-md scale-100 cursor-pointer active:scale-95'
-                      : 'bg-white/10 text-white/20 cursor-not-allowed'
-                  }`}
-                  title="Send Message (Enter)"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="w-3.5 h-3.5 fill-current"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      clipRule="evenodd"
-                      d="M12 3a1 1 0 0 1 .707.293l6 6a1 1 0 0 1-1.414 1.414L13 6.414V20a1 1 0 1 1-2 0V6.414L6.707 10.707a1 1 0 0 1-1.414-1.414l6-6A1 1 0 0 1 12 3z"
-                    />
-                  </svg>
+                  <Square className="w-2.5 h-2.5 fill-current" />
+                  <span>STOP</span>
                 </button>
               )}
             </div>
