@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { LocalProvider, ModelRole, AvailableProviderModel, LocalModelBlade, ModelFamily } from './types';
+import { LocalProvider, ModelRole, AvailableProviderModel, LocalModelBlade, ModelFamily, ModelCapabilities } from './types';
 import { X, Plus, ArrowLeft, RefreshCw, AlertCircle, Key } from 'lucide-react';
 import { inferRole, normalizeFamilyForLogo } from './modelResolver';
 import {
@@ -262,7 +262,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               const sizeGb = m.size ? parseFloat((m.size / (1024 * 1024 * 1024)).toFixed(1)) : 4.0;
               const tagsQuant = m.details?.quantization_level || 'unknown';
               const details = await inspectOllamaModel(name, port);
-              const caps = await invoke('resolve_model_capabilities', { provider: 'ollama', metadata: details.rawData });
+              const caps = (await invoke('resolve_model_capabilities', { provider: 'ollama', metadata: details.rawData })) as ModelCapabilities;
               const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
 
               return {
@@ -314,11 +314,11 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
 
           const modelsArr = data.data || data.models || [];
           if (Array.isArray(modelsArr) && modelsArr.length > 0) {
-            const list: AvailableProviderModel[] = modelsArr.map((m: any) => {
+            const listPromises = modelsArr.map(async (m: any) => {
               const name = m.id || m.name;
               const family = normalizeFamilyForLogo(name);
               const metadata = p === 'llamacpp' && llamacppProps ? { ...m, ...llamacppProps } : m;
-              const caps = await invoke('resolve_model_capabilities', { provider: p, metadata });
+              const caps = (await invoke('resolve_model_capabilities', { provider: p, metadata })) as ModelCapabilities;
               const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
               const ctx = typeof m.context_length === 'number' && m.context_length > 0
                 ? m.context_length
@@ -339,6 +339,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                 capabilities: caps.image_input === 'Supported' ? ['completion', 'vision'] : ['completion'],
               };
             });
+            const list = await Promise.all(listPromises);
             setActivePort(port);
             setAvailableModels(list);
             setSelectedModel(list[0]);
