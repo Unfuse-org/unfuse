@@ -232,12 +232,7 @@ impl JsonlSessionStore {
 
         // If compaction took place, prepend summary as system context
         if let Some(summary) = compaction_summary {
-            messages.push(ChatMessage {
-                role: "system".to_string(),
-                content: format!("[Prior conversation summary]:\n{}", summary),
-                tool_calls: None,
-                tool_call_id: None,
-            });
+            messages.push(ChatMessage::system(format!("[Prior conversation summary]:\n{}", summary)));
         }
 
         // Temporary storage for tool calls accumulated during an assistant turn
@@ -245,13 +240,13 @@ impl JsonlSessionStore {
 
         for evt in &events[start_idx..] {
             match &evt.payload {
-                EventPayload::UserTurn { prompt, .. } => {
-                    messages.push(ChatMessage {
-                        role: "user".to_string(),
-                        content: prompt.clone(),
-                        tool_calls: None,
-                        tool_call_id: None,
-                    });
+                EventPayload::UserTurn { prompt, attached_files } => {
+                    let msg = if attached_files.is_empty() {
+                        ChatMessage::user_text(prompt)
+                    } else {
+                        ChatMessage::user_multimodal(prompt, attached_files)
+                    };
+                    messages.push(msg);
                 }
                 EventPayload::ToolCall {
                     call_id,
@@ -277,7 +272,7 @@ impl JsonlSessionStore {
 
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
-                        content: content.clone(),
+                        content: content.as_str().into(),
                         tool_calls,
                         tool_call_id: None,
                     });
@@ -289,7 +284,7 @@ impl JsonlSessionStore {
                 } => {
                     messages.push(ChatMessage {
                         role: "tool".to_string(),
-                        content: output.clone(),
+                        content: output.as_str().into(),
                         tool_calls: None,
                         tool_call_id: Some(call_id.clone()),
                     });

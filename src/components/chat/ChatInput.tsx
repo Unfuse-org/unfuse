@@ -58,7 +58,7 @@ export const WORKSPACE_FILES: CodebaseFileItem[] = [
 ];
 
 interface ChatInputProps {
-  onSendMessage: (content: string, modelTarget?: ActiveModelTarget) => void;
+  onSendMessage: (content: string, modelTarget?: ActiveModelTarget, attachedImages?: string[]) => void;
   isStreaming?: boolean;
   onStopStreaming?: () => void;
   availableModels?: ActiveModelTarget[];
@@ -528,6 +528,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            if (dataUrl) {
+              setAttachedFiles((prev) => [...prev, dataUrl]);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if ((!input.trim() && attachedFiles.length === 0) || isStreaming) return;
@@ -546,10 +569,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
 
-    // Build final message payload with attached files if present
+    // Separate image attachments from file context mentions
+    const imageAttachments = attachedFiles.filter(
+      (f) => f.startsWith('data:image/') || /\.(png|jpg|jpeg|webp|gif)$/i.test(f)
+    );
+    const nonImageFiles = attachedFiles.filter((f) => !imageAttachments.includes(f));
+
+    // Build final message payload with attached non-image files if present
     let finalContent = input.trim();
-    if (attachedFiles.length > 0) {
-      const fileContextTags = attachedFiles.map((f) => `/${f}`).join(' ');
+    if (nonImageFiles.length > 0) {
+      const fileContextTags = nonImageFiles.map((f) => `/${f}`).join(' ');
       finalContent = finalContent ? `${fileContextTags} ${finalContent}` : fileContextTags;
     }
 
@@ -565,7 +594,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       }
     }
 
-    onSendMessage(finalContent, targetModel);
+    onSendMessage(
+      finalContent,
+      targetModel,
+      imageAttachments.length > 0 ? imageAttachments : undefined
+    );
     setInput('');
     setAttachedFiles([]);
     setMentionType(null);
@@ -704,14 +737,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           {attachedFiles.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 px-1 pb-2">
               {attachedFiles.map((filePath, idx) => {
+                const isImage = filePath.startsWith('data:image/') || /\.(png|jpg|jpeg|webp|gif)$/i.test(filePath);
                 const basename = filePath.split('/').pop() || filePath;
                 return (
                   <span
                     key={idx}
                     className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-400/20 text-[11px] font-mono text-emerald-300 select-none group"
                   >
-                    <FileCode className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span className="truncate max-w-[180px]">{basename}</span>
+                    {isImage ? (
+                      <img
+                        src={filePath}
+                        alt="Image"
+                        className="w-3.5 h-3.5 rounded object-cover shrink-0 border border-white/10"
+                      />
+                    ) : (
+                      <FileCode className="w-3 h-3 text-emerald-400 shrink-0" />
+                    )}
+                    <span className="truncate max-w-[180px]">
+                      {filePath.startsWith('data:image/') ? 'Image attachment' : basename}
+                    </span>
                     <button
                       type="button"
                       onClick={() => removeAttachedFile(filePath)}
@@ -731,6 +775,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <textarea
               ref={textareaRef}
               value={input}
+              onPaste={handlePaste}
               onChange={(e) => {
                 handleInputChange(e);
                 requestAnimationFrame(updateVimCursor);

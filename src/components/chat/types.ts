@@ -32,6 +32,7 @@ export interface Message {
   toolCalls?: ToolCall[];
   status?: 'idle' | 'streaming' | 'error';
   agentStatus?: string;
+  images?: string[];
 }
 
 export interface ClarificationOption {

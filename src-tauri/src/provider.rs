@@ -4,15 +4,220 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// Standard chat message representation for OpenAI-compatible APIs.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+pub mod capability;
+pub use capability::{CapabilitySource, CapabilityStatus, ModelCapabilities};
+
+/// Strongly typed representation of message content for OpenAI-compatible APIs.
+/// Serializes to a plain JSON string when Text, or an array of typed content parts when multimodal.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Text(String),
+    Parts(Vec<ContentPart>),
+}
+
+impl MessageContent {
+    pub fn as_text(&self) -> String {
+        match self {
+            MessageContent::Text(s) => s.clone(),
+            MessageContent::Parts(parts) => {
+                let mut out = String::new();
+                for p in parts {
+                    if let ContentPart::Text { text } = p {
+                        if !out.is_empty() {
+                            out.push(' ');
+                        }
+                        out.push_str(text);
+                    }
+                }
+                out
+            }
+        }
+    }
+
+    pub fn contains(&self, pat: &str) -> bool {
+        match self {
+            MessageContent::Text(s) => s.contains(pat),
+            MessageContent::Parts(_) => self.as_text().contains(pat),
+        }
+    }
+}
+
+impl std::fmt::Display for MessageContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_text())
+    }
+}
+
+impl PartialEq<str> for MessageContent {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            MessageContent::Text(s) => s.as_str() == other,
+            MessageContent::Parts(_) => self.as_text() == other,
+        }
+    }
+}
+
+impl PartialEq<&str> for MessageContent {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+impl PartialEq<String> for MessageContent {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
+}
+
+impl From<String> for MessageContent {
+    fn from(s: String) -> Self {
+        MessageContent::Text(s)
+    }
+}
+
+impl From<&str> for MessageContent {
+    fn from(s: &str) -> Self {
+        MessageContent::Text(s.to_string())
+    }
+}
+
+/// Strongly typed individual part in a multimodal message (OpenAI spec).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum ContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrlPayload },
+}
+
+/// Image payload containing data URL or HTTP URL according to OpenAI vision specification.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ImageUrlPayload {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Standard base64 encoding without external crate overhead.
+pub fn base64_encode(data: &[u8]) -> String {
+    const BASE64_ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        out.push(BASE64_ALPHABET[(triple >> 18) & 0x3F] as char);
+        out.push(BASE64_ALPHABET[(triple >> 12) & 0x3F] as char);
+
+        if chunk.len() > 1 {
+            out.push(BASE64_ALPHABET[(triple >> 6) & 0x3F] as char);
+        } else {
+            out.push('=');
+        }
+
+        if chunk.len() > 2 {
+            out.push(BASE64_ALPHABET[triple & 0x3F] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+/// Converts a local image path reference or URL into an OpenAI-compatible data URL in memory.
+/// Ensures session logs persist only lightweight paths, while wire transmissions receive base64 data.
+pub fn load_image_ref_to_data_url(path_or_url: &str) -> String {
+    let trimmed = path_or_url.trim();
+    if trimmed.starts_with("data:") || trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+    let clean_path = trimmed.strip_prefix("file://").unwrap_or(trimmed);
+    let path = std::path::Path::new(clean_path);
+    if let Ok(bytes) = std::fs::read(path) {
+        let ext = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        let mime = match ext.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => "image/png",
+        };
+        let b64 = base64_encode(&bytes);
+        format!("data:{};base64,{}", mime, b64)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Standard chat message representation for OpenAI-compatible APIs supporting text and vision.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    pub content: MessageContent,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn system(text: impl Into<String>) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: MessageContent::Text(text.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn user_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: MessageContent::Text(text.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn user_multimodal(text: impl Into<String>, image_references: &[String]) -> Self {
+        let mut parts = vec![ContentPart::Text {
+            text: text.into(),
+        }];
+        for ref_str in image_references {
+            let data_url = load_image_ref_to_data_url(ref_str);
+            parts.push(ContentPart::ImageUrl {
+                image_url: ImageUrlPayload {
+                    url: data_url,
+                    detail: None,
+                },
+            });
+        }
+        Self {
+            role: "user".to_string(),
+            content: MessageContent::Parts(parts),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn assistant_text(text: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: MessageContent::Text(text.into()),
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
 }
 
 /// Configuration for connecting to any OpenAI-compatible local model runner:
@@ -486,5 +691,69 @@ mod tests {
         assert_eq!(tools[0].id, "call_123");
         assert_eq!(tools[0].name, "read_file", "Repeated function name must not be concatenated");
         assert_eq!(tools[0].arguments, "{\"path\": \"src/main.rs\"}", "Arguments must remain concatenated");
+    }
+
+    #[test]
+    fn test_text_chat_message_wire_format() {
+        let msg = ChatMessage::user_text("Hello, vision world!");
+        let json_val = serde_json::to_value(&msg).unwrap();
+
+        // Must serialize to standard string content in wire format
+        assert_eq!(json_val["role"], "user");
+        assert_eq!(json_val["content"], "Hello, vision world!");
+        assert!(json_val["tool_calls"].is_null());
+
+        // Roundtrip deserialization
+        let deserialized: ChatMessage = serde_json::from_value(json_val).unwrap();
+        assert_eq!(deserialized.role, "user");
+        assert_eq!(deserialized.content, MessageContent::Text("Hello, vision world!".to_string()));
+    }
+
+    #[test]
+    fn test_multimodal_chat_message_wire_format() {
+        let image_data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+        let msg = ChatMessage::user_multimodal(
+            "What is in this diagram?",
+            &[image_data_url.to_string()],
+        );
+        let json_val = serde_json::to_value(&msg).unwrap();
+
+        assert_eq!(json_val["role"], "user");
+        let content_arr = json_val["content"].as_array().expect("Must serialize as content array");
+        assert_eq!(content_arr.len(), 2);
+
+        assert_eq!(content_arr[0]["type"], "text");
+        assert_eq!(content_arr[0]["text"], "What is in this diagram?");
+
+        assert_eq!(content_arr[1]["type"], "image_url");
+        assert_eq!(content_arr[1]["image_url"]["url"], image_data_url);
+
+        // Roundtrip deserialization
+        let deserialized: ChatMessage = serde_json::from_value(json_val).unwrap();
+        assert_eq!(deserialized.role, "user");
+        match &deserialized.content {
+            MessageContent::Parts(parts) => {
+                assert_eq!(parts.len(), 2);
+                assert_eq!(parts[0], ContentPart::Text { text: "What is in this diagram?".to_string() });
+                assert_eq!(parts[1], ContentPart::ImageUrl {
+                    image_url: ImageUrlPayload {
+                        url: image_data_url.to_string(),
+                        detail: None,
+                    }
+                });
+            }
+            _ => panic!("Expected MessageContent::Parts"),
+        }
+    }
+
+    #[test]
+    fn test_base64_encode() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
     }
 }

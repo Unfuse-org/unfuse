@@ -219,7 +219,7 @@ pub fn extract_modified_files(messages: &[ChatMessage]) -> Vec<String> {
                             });
 
                             if let Some(resp) = tool_resp {
-                                if is_tool_call_successful(name, &resp.content) {
+                                if is_tool_call_successful(name, &resp.content.as_text()) {
                                     if let Some(args_str) = func.get("arguments").and_then(|a| a.as_str()) {
                                         if let Ok(v) = serde_json::from_str::<Value>(args_str) {
                                             if let Some(path) = v.get("path").and_then(|p| p.as_str()) {
@@ -254,7 +254,7 @@ pub fn count_successful_tool_calls(messages: &[ChatMessage]) -> usize {
                     if let Some(tool_resp) = messages.iter().find(|m| {
                         m.role == "tool" && m.tool_call_id.as_deref() == Some(call_id)
                     }) {
-                        if is_tool_call_successful(tool_name, &tool_resp.content) {
+                        if is_tool_call_successful(tool_name, &tool_resp.content.as_text()) {
                             count += 1;
                         }
                     }
@@ -271,7 +271,7 @@ pub fn extract_final_assistant_content(messages: &[ChatMessage]) -> String {
         .iter()
         .rev()
         .find(|m| m.role == "assistant")
-        .map(|m| m.content.clone())
+        .map(|m| m.content.as_text())
         .unwrap_or_default()
 }
 
@@ -905,7 +905,7 @@ mod tests {
                     if sname == "Architect" {
                         on_chunk(StreamChunk::Text("ARCHITECTURE_PLAN: Split AuthSession into TokenManager and KeyRotator.".to_string()));
                     } else if sname == "Coder" {
-                        *s2_dest.lock().unwrap() = user_msg.content.clone();
+                        *s2_dest.lock().unwrap() = user_msg.content.as_text();
                         on_chunk(StreamChunk::Text("Implemented TokenManager.".to_string()));
                     }
                     Ok(vec![])

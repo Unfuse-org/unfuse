@@ -276,7 +276,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
     handleSendMessage(`Clarification: Use ${answerText}`, queriedModel);
   };
 
-  const handleSendMessage = async (content: string, targetModel?: ActiveModelTarget) => {
+  const handleSendMessage = async (
+    content: string,
+    targetModel?: ActiveModelTarget,
+    attachedImages?: string[]
+  ) => {
     if (isStreaming) return;
 
     const lower = content.toLowerCase().trim();
@@ -321,6 +325,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         id: `msg-${Date.now()}`,
         role: 'user',
         content,
+        images: attachedImages && attachedImages.length > 0 ? attachedImages : undefined,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -345,6 +350,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       id: `msg-${Date.now()}`,
       role: 'user',
       content,
+      images: attachedImages && attachedImages.length > 0 ? attachedImages : undefined,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -376,6 +382,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       sessionId,
       workspaceRoot,
       allowedTools: ['read', 'write', 'edit', 'bash'],
+      images: attachedImages && attachedImages.length > 0 ? attachedImages : undefined,
       llmConfig: {
         baseUrl,
         model: chosenModel.name || 'default',

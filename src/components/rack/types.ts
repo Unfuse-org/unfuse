@@ -1,6 +1,15 @@
 export type LocalProvider = 'ollama' | 'lmstudio' | 'vllm' | 'unsloth' | 'llamacpp' | 'mlx';
 
+export type CapabilityStatus = 'Supported' | 'Unsupported' | 'Unknown';
+export type CapabilitySource = 'Runtime' | 'Fallback';
+
+export interface ModelCapabilities {
+  image_input: CapabilityStatus;
+  source: CapabilitySource;
+}
+
 export type ModelRole =
+  | 'VL'
   | 'Coder'
   | 'Reasoning'
   | 'Vision / OCR'

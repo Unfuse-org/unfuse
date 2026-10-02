@@ -5,6 +5,7 @@ export interface AgentConfig {
   sessionId?: string;
   workspaceRoot?: string;
   allowedTools?: string[];
+  images?: string[];
   llmConfig: {
     baseUrl: string;
     model: string;
@@ -129,6 +130,7 @@ export const backendClient = {
           workspaceRoot: config.workspaceRoot || '.',
           sessionId: config.sessionId || `sess-${Date.now()}`,
           prompt,
+          images: config.images ?? null,
           llmConfig: {
             provider: 'custom',
             base_url: config.llmConfig.baseUrl,

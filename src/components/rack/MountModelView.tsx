@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LocalProvider, ModelRole, AvailableProviderModel, LocalModelBlade, ModelFamily } from './types';
 import { X, Plus, ArrowLeft, RefreshCw, AlertCircle, Key } from 'lucide-react';
 import { inferRole, normalizeFamilyForLogo } from './modelResolver';
+import { resolveModelCapabilities } from './capabilityDetector';
 import {
   OllamaLogo,
   LMStudioLogo,
@@ -202,7 +203,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
   const occupiedBlade = mountedModels.find((m) => m.provider === selectedProvider);
   const isOccupied = !!occupiedBlade;
 
-  async function inspectOllamaModel(name: string, port: number): Promise<{ contextLength: number; parameterSize?: string }> {
+  async function inspectOllamaModel(name: string, port: number): Promise<{ contextLength: number; parameterSize?: string; rawData?: any }> {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/show`, {
         method: 'POST',
@@ -223,6 +224,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
       return {
         contextLength: detectedCtx,
         parameterSize: data.details?.parameter_size,
+        rawData: data,
       };
     } catch {
       return { contextLength: 32768 };
@@ -259,8 +261,9 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               const tagsFamily = m.details?.family || normalizeFamilyForLogo(name);
               const sizeGb = m.size ? parseFloat((m.size / (1024 * 1024 * 1024)).toFixed(1)) : 4.0;
               const tagsQuant = m.details?.quantization_level || 'unknown';
-              const role = inferRole(name);
               const details = await inspectOllamaModel(name, port);
+              const caps = resolveModelCapabilities('ollama', details.rawData, name);
+              const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
 
               return {
                 id: `ollama-${name}`,
@@ -273,7 +276,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                 tokensUsed: 0,
                 defaultRole: role,
                 family: tagsFamily,
-                capabilities: m.capabilities || ['completion'],
+                capabilities: caps.image_input === 'Supported' ? ['completion', 'vision'] : ['completion'],
               };
             });
             const list = await Promise.all(listPromises);
@@ -297,12 +300,26 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
           });
           if (!res.ok) continue;
           const data = await res.json();
+          let llamacppProps: any = null;
+          if (p === 'llamacpp') {
+            try {
+              const propsRes = await fetch(`http://127.0.0.1:${port}/props`, {
+                signal: AbortSignal.timeout(1000),
+              });
+              if (propsRes.ok) {
+                llamacppProps = await propsRes.json();
+              }
+            } catch {}
+          }
+
           const modelsArr = data.data || data.models || [];
           if (Array.isArray(modelsArr) && modelsArr.length > 0) {
             const list: AvailableProviderModel[] = modelsArr.map((m: any) => {
               const name = m.id || m.name;
               const family = normalizeFamilyForLogo(name);
-              const role = inferRole(name);
+              const metadata = p === 'llamacpp' && llamacppProps ? { ...m, ...llamacppProps } : m;
+              const caps = resolveModelCapabilities(p, metadata, name);
+              const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
               const ctx = typeof m.context_length === 'number' && m.context_length > 0
                 ? m.context_length
                 : typeof m.max_model_len === 'number' && m.max_model_len > 0
@@ -319,6 +336,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                 tokensUsed: 0,
                 defaultRole: role,
                 family,
+                capabilities: caps.image_input === 'Supported' ? ['completion', 'vision'] : ['completion'],
               };
             });
             setActivePort(port);

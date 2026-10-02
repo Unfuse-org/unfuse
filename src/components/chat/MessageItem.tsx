@@ -121,6 +121,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onRetry }) =>
           className={`max-w-[85%] rounded-2xl rounded-tr-md px-4 py-3 border text-[13px] leading-relaxed shadow-sm transition-all duration-200 cursor-pointer select-text active:scale-[0.99] ${currentThemeClass}`}
           title="Double-click to change color (Easter Egg)"
         >
+          {message.images && message.images.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {message.images.map((img, i) => (
+                <img
+                  key={i}
+                  src={img.startsWith('data:') ? img : `file://${img}`}
+                  alt="Attachment"
+                  className="max-h-48 max-w-full rounded-lg border border-white/10 object-contain shadow-sm"
+                />
+              ))}
+            </div>
+          )}
           <p className="whitespace-pre-wrap selection:bg-white/20">{renderFormattedUserContent(message.content)}</p>
         </div>
       </div>

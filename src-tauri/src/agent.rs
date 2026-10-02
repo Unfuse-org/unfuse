@@ -126,10 +126,11 @@ pub fn run_agent_loop(
     stream_fn: StreamFn,
     emit_event: EventSink,
 ) -> Result<Vec<ChatMessage>, String> {
-    run_agent_loop_scoped(
+    run_agent_loop_multimodal(
         workspace_root,
         session_id,
         prompt,
+        None,
         config,
         None,
         None,
@@ -143,6 +144,31 @@ pub fn run_agent_loop_scoped(
     workspace_root: &Path,
     session_id: &str,
     prompt: &str,
+    config: &ProviderConfig,
+    allowed_tools: Option<&[String]>,
+    custom_system_prompt: Option<&str>,
+    stream_fn: StreamFn,
+    emit_event: EventSink,
+) -> Result<Vec<ChatMessage>, String> {
+    run_agent_loop_multimodal(
+        workspace_root,
+        session_id,
+        prompt,
+        None,
+        config,
+        allowed_tools,
+        custom_system_prompt,
+        stream_fn,
+        emit_event,
+    )
+}
+
+/// Runs the multi-turn agent loop with optional image attachments, tool restrictions, and custom system prompt.
+pub fn run_agent_loop_multimodal(
+    workspace_root: &Path,
+    session_id: &str,
+    prompt: &str,
+    images: Option<&[String]>,
     config: &ProviderConfig,
     allowed_tools: Option<&[String]>,
     custom_system_prompt: Option<&str>,
@@ -185,30 +211,28 @@ pub fn run_agent_loop_scoped(
         active_leaf = summary.and_then(|s| s.active_leaf_id);
     }
 
+    let attached_refs: Vec<String> = images.unwrap_or_default().to_vec();
+
     let user_evt = crate::storage::PersistedEvent::new(
         session_id,
         active_leaf.clone(),
         crate::storage::EventPayload::UserTurn {
             prompt: prompt.to_string(),
-            attached_files: Vec::new(),
+            attached_files: attached_refs.clone(),
         },
     );
     active_leaf = Some(user_evt.id.clone());
     let _ = storage.append_event(workspace_root, &user_evt);
 
+    let user_msg = if attached_refs.is_empty() {
+        ChatMessage::user_text(prompt)
+    } else {
+        ChatMessage::user_multimodal(prompt, &attached_refs)
+    };
+
     let mut messages: Vec<ChatMessage> = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: system_prompt.to_string(),
-            tool_calls: None,
-            tool_call_id: None,
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: prompt.to_string(),
-            tool_calls: None,
-            tool_call_id: None,
-        },
+        ChatMessage::system(system_prompt),
+        user_msg,
     ];
 
     let filtered_tools = tools::get_filtered_tool_definitions(allowed_tools);
@@ -326,7 +350,7 @@ pub fn run_agent_loop_scoped(
 
             messages.push(ChatMessage {
                 role: "assistant".to_string(),
-                content: turn_content,
+                content: turn_content.into(),
                 tool_calls: None,
                 tool_call_id: None,
             });
@@ -351,7 +375,7 @@ pub fn run_agent_loop_scoped(
 
         messages.push(ChatMessage {
             role: "assistant".to_string(),
-            content: turn_content,
+            content: turn_content.into(),
             tool_calls: Some(tool_calls_json),
             tool_call_id: None,
         });
@@ -424,7 +448,7 @@ pub fn run_agent_loop_scoped(
                     );
                     messages.push(ChatMessage {
                         role: "tool".to_string(),
-                        content: err_output,
+                        content: err_output.into(),
                         tool_calls: None,
                         tool_call_id: Some(tc.id),
                     });
@@ -568,7 +592,7 @@ pub fn run_agent_loop_scoped(
                 );
                 messages.push(ChatMessage {
                     role: "tool".to_string(),
-                    content: output,
+                    content: output.into(),
                     tool_calls: None,
                     tool_call_id: Some(tc.id),
                 });
@@ -657,7 +681,7 @@ pub fn run_agent_loop_scoped(
 
             messages.push(ChatMessage {
                 role: "tool".to_string(),
-                content: output,
+                content: output.into(),
                 tool_calls: None,
                 tool_call_id: Some(tc.id),
             });
@@ -697,6 +721,7 @@ pub async fn run_agent_turn(
     workspace_root: String,
     session_id: String,
     prompt: String,
+    images: Option<Vec<String>>,
     llm_config: LlmConfigPayload,
 ) -> Result<(), String> {
     use tauri::Emitter;
@@ -716,7 +741,17 @@ pub async fn run_agent_turn(
     );
 
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = run_agent_loop(&path, &session_id, &prompt, &config, stream_fn, emit_event);
+        let _ = run_agent_loop_multimodal(
+            &path,
+            &session_id,
+            &prompt,
+            images.as_deref(),
+            &config,
+            None,
+            None,
+            stream_fn,
+            emit_event,
+        );
         remove_session(&session_id);
     })
     .await
