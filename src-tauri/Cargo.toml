@@ -18,6 +18,9 @@ libc = "0.2"
 regex = "1.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 sha2 = "0.10"
+base64 = "0.23.1"
+lazy_static = "1.5.1"
+reqwest = { version = "0.13.5", features = ["blocking", "json"] }
 
 [features]
 default = ["custom-protocol"]

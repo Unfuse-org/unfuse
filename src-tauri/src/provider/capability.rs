@@ -22,20 +22,26 @@ pub enum CapabilitySource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCapabilities {
     pub image_input: CapabilityStatus,
+    pub omni: CapabilityStatus,
+    pub ocr: CapabilityStatus,
     pub source: CapabilitySource,
 }
 
 impl ModelCapabilities {
-    pub fn runtime(status: CapabilityStatus) -> Self {
+    pub fn runtime(image_input: CapabilityStatus, omni: CapabilityStatus, ocr: CapabilityStatus) -> Self {
         Self {
-            image_input: status,
+            image_input,
+            omni,
+            ocr,
             source: CapabilitySource::Runtime,
         }
     }
 
-    pub fn fallback(status: CapabilityStatus) -> Self {
+    pub fn fallback(image_input: CapabilityStatus, omni: CapabilityStatus, ocr: CapabilityStatus) -> Self {
         Self {
-            image_input: status,
+            image_input,
+            omni,
+            ocr,
             source: CapabilitySource::Fallback,
         }
     }
@@ -52,18 +58,22 @@ impl ModelCapabilities {
 /// - If `capabilities` array is absent or not an array: Unknown / Runtime
 pub fn inspect_ollama_capabilities(show_response: Option<&Value>) -> ModelCapabilities {
     let Some(data) = show_response else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
     if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
-        if caps.iter().any(|v| v.as_str() == Some("vision")) {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
+        let vision = caps.iter().any(|v| v.as_str() == Some("vision"));
+        let omni = caps.iter().any(|v| v.as_str() == Some("omni") || v.as_str() == Some("audio"));
+        let ocr = caps.iter().any(|v| v.as_str() == Some("ocr"));
+
+        return ModelCapabilities::runtime(
+            if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+            if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+            if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        );
     }
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown)
 }
 
 /// 2. LM Studio: Inspects model object from LM Studio API.
@@ -72,22 +82,30 @@ pub fn inspect_ollama_capabilities(show_response: Option<&Value>) -> ModelCapabi
 /// - If `capabilities` or `capabilities.vision` is absent: Unknown / Runtime
 pub fn inspect_lmstudio_capabilities(model_metadata: Option<&Value>) -> ModelCapabilities {
     let Some(data) = model_metadata else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
-    if let Some(vision_bool) = data
+    let vision = data
         .get("capabilities")
         .and_then(|c| c.get("vision"))
         .and_then(|v| v.as_bool())
-    {
-        if vision_bool {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+        .unwrap_or(false);
+    let omni = data
+        .get("capabilities")
+        .and_then(|c| c.get("omni"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let ocr = data
+        .get("capabilities")
+        .and_then(|c| c.get("ocr"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    ModelCapabilities::runtime(
+        if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+    )
 }
 
 /// 3. llama.cpp: Inspects llama.cpp server model/props metadata.
@@ -96,30 +114,33 @@ pub fn inspect_lmstudio_capabilities(model_metadata: Option<&Value>) -> ModelCap
 /// - If absent: Unknown / Runtime
 pub fn inspect_llamacpp_capabilities(server_metadata: Option<&Value>) -> ModelCapabilities {
     let Some(data) = server_metadata else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
-    if let Some(vision_bool) = data
+    let vision = data
         .get("modalities")
         .and_then(|m| m.get("vision"))
         .and_then(|v| v.as_bool())
-    {
-        if vision_bool {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+        .unwrap_or(false)
+        || data.get("multimodal").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    if let Some(multimodal_bool) = data.get("multimodal").and_then(|v| v.as_bool()) {
-        if multimodal_bool {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+    let omni = data
+        .get("modalities")
+        .and_then(|m| m.get("omni"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    let ocr = data
+        .get("modalities")
+        .and_then(|m| m.get("ocr"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    ModelCapabilities::runtime(
+        if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+    )
 }
 
 /// 4. vLLM: Inspects vLLM model object.
@@ -130,22 +151,30 @@ pub fn inspect_llamacpp_capabilities(server_metadata: Option<&Value>) -> ModelCa
 /// Otherwise: Unknown / Runtime
 pub fn inspect_vllm_capabilities(model_metadata: Option<&Value>) -> ModelCapabilities {
     let Some(data) = model_metadata else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
-    if let Some(vision_bool) = data
+    let vision = data
         .get("capabilities")
         .and_then(|c| c.get("vision"))
         .and_then(|v| v.as_bool())
-    {
-        if vision_bool {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+        .unwrap_or(false);
+    let omni = data
+        .get("capabilities")
+        .and_then(|c| c.get("omni"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let ocr = data
+        .get("capabilities")
+        .and_then(|c| c.get("ocr"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    ModelCapabilities::runtime(
+        if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+    )
 }
 
 /// 5. MLX: Inspects MLX runtime metadata.
@@ -155,24 +184,34 @@ pub fn inspect_vllm_capabilities(model_metadata: Option<&Value>) -> ModelCapabil
 /// - If insufficient metadata: Unknown / Runtime
 pub fn inspect_mlx_capabilities(runtime_metadata: Option<&Value>) -> ModelCapabilities {
     let Some(data) = runtime_metadata else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
-    if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
-        if caps.iter().any(|v| v.as_str() == Some("vision")) {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+    let vision = if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
+        caps.iter().any(|v| v.as_str() == Some("vision"))
+    } else if let Some(runtime_str) = data.get("runtime").and_then(|r| r.as_str()) {
+        runtime_str == "mlx-vlm"
+    } else {
+        false
+    };
 
-    if let Some(runtime_str) = data.get("runtime").and_then(|r| r.as_str()) {
-        if runtime_str == "mlx-vlm" {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        }
-    }
+    let omni = data
+        .get("capabilities")
+        .and_then(|c| c.as_array())
+        .map(|caps| caps.iter().any(|v| v.as_str() == Some("omni") || v.as_str() == Some("audio")))
+        .unwrap_or(false);
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    let ocr = data
+        .get("capabilities")
+        .and_then(|c| c.as_array())
+        .map(|caps| caps.iter().any(|v| v.as_str() == Some("ocr")))
+        .unwrap_or(false);
+
+    ModelCapabilities::runtime(
+        if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+    )
 }
 
 /// 6. Unsloth: Inspects Unsloth Studio / local inference model metadata.
@@ -181,34 +220,52 @@ pub fn inspect_mlx_capabilities(runtime_metadata: Option<&Value>) -> ModelCapabi
 /// - If insufficient metadata: Unknown / Runtime
 pub fn inspect_unsloth_capabilities(model_metadata: Option<&Value>) -> ModelCapabilities {
     let Some(data) = model_metadata else {
-        return ModelCapabilities::runtime(CapabilityStatus::Unknown);
+        return ModelCapabilities::runtime(CapabilityStatus::Unknown, CapabilityStatus::Unknown, CapabilityStatus::Unknown);
     };
 
-    if let Some(vision_bool) = data
+    let vision = if let Some(vision_bool) = data
         .get("capabilities")
         .and_then(|c| c.get("vision"))
         .and_then(|v| v.as_bool())
     {
-        if vision_bool {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+        vision_bool
+    } else if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
+        caps.iter().any(|v| v.as_str() == Some("vision"))
+    } else {
+        false
+    };
 
-    if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
-        if caps.iter().any(|v| v.as_str() == Some("vision")) {
-            return ModelCapabilities::runtime(CapabilityStatus::Supported);
-        } else {
-            return ModelCapabilities::runtime(CapabilityStatus::Unsupported);
-        }
-    }
+    let omni = data
+        .get("capabilities")
+        .and_then(|c| c.get("omni"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| {
+            data.get("capabilities")
+                .and_then(|c| c.as_array())
+                .map(|caps| caps.iter().any(|v| v.as_str() == Some("omni") || v.as_str() == Some("audio")))
+                .unwrap_or(false)
+        });
 
-    ModelCapabilities::runtime(CapabilityStatus::Unknown)
+    let ocr = data
+        .get("capabilities")
+        .and_then(|c| c.get("ocr"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| {
+            data.get("capabilities")
+                .and_then(|c| c.as_array())
+                .map(|caps| caps.iter().any(|v| v.as_str() == Some("ocr")))
+                .unwrap_or(false)
+        });
+
+    ModelCapabilities::runtime(
+        if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if omni { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+        if ocr { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
+    )
 }
 
 // ---------------------------------------------------------------------------
-// Unified Capability Dispatcher & Conservative Fallback
+// Unified Capability Dispatcher
 // ---------------------------------------------------------------------------
 
 /// Dispatches capability inspection to the specific runtime inspector.
@@ -227,45 +284,18 @@ pub fn inspect_provider_capabilities(
     }
 }
 
-/// Resolves model capabilities according to the strict priority contract:
-/// 1. Inspect actual provider/runtime metadata first.
-/// 2. If runtime explicitly says Supported or Unsupported, return immediately.
-///    A fallback mechanism must NEVER override an explicit runtime declaration!
-/// 3. ONLY if runtime returns Unknown may the fallback heuristic be evaluated.
+/// Resolves model capabilities according to the strict contract:
+/// 1. If verified runtime metadata explicitly says image input is supported:
+///    Supported / Runtime
+/// 2. If verified runtime metadata explicitly says image input is unsupported:
+///    Unsupported / Runtime
+/// 3. If runtime metadata does not provide reliable information:
+///    Unknown / Runtime
 pub fn resolve_model_capabilities(
     provider: &str,
     metadata: Option<&Value>,
-    model_id: &str,
 ) -> ModelCapabilities {
-    let runtime_caps = inspect_provider_capabilities(provider, metadata);
-
-    // Explicit runtime declarations are authoritative and final
-    if runtime_caps.image_input != CapabilityStatus::Unknown {
-        return runtime_caps;
-    }
-
-    // Only Unknown reaches fallback
-    apply_fallback_heuristic(model_id)
-}
-
-/// Conservative fallback heuristic for image input, clearly isolated from runtime detection.
-/// Marked with CapabilitySource::Fallback.
-pub fn apply_fallback_heuristic(model_id: &str) -> ModelCapabilities {
-    let lower = model_id.to_lowercase();
-    let is_likely_vision = lower.contains("-vl")
-        || lower.contains("_vl")
-        || lower.contains("vl-")
-        || lower.contains("-vision")
-        || lower.contains("_vision")
-        || lower.contains("llava")
-        || lower.contains("minicpm-v");
-
-    if is_likely_vision {
-        ModelCapabilities::fallback(CapabilityStatus::Supported)
-    } else {
-        // If there is insufficient evidence, Unknown is preferable to incorrectly claiming support or unsupport
-        ModelCapabilities::fallback(CapabilityStatus::Unknown)
-    }
+    inspect_provider_capabilities(provider, metadata)
 }
 
 // ---------------------------------------------------------------------------
@@ -318,39 +348,32 @@ mod tests {
         assert_eq!(none_res.source, CapabilitySource::Runtime);
     }
 
-    // 4. Fallback runs only after Unknown
+    // 4. Missing runtime metadata resolves to Unknown / Runtime
     #[test]
-    fn test_fallback_runs_only_after_unknown() {
-        // Unknown runtime metadata allows fallback to evaluate model_id
-        let res = resolve_model_capabilities("vllm", None, "Qwen/Qwen2.5-VL-7B-Instruct");
-        assert_eq!(res.image_input, CapabilityStatus::Supported);
-        assert_eq!(res.source, CapabilitySource::Fallback);
-
-        let unknown_res = resolve_model_capabilities("vllm", None, "meta-llama/Llama-3.1-8B-Instruct");
-        assert_eq!(unknown_res.image_input, CapabilityStatus::Unknown);
-        assert_eq!(unknown_res.source, CapabilitySource::Fallback);
+    fn test_missing_runtime_metadata_resolves_to_unknown_runtime() {
+        let res = resolve_model_capabilities("vllm", None);
+        assert_eq!(res.image_input, CapabilityStatus::Unknown);
+        assert_eq!(res.source, CapabilitySource::Runtime);
     }
 
-    // 5. Explicit Unsupported cannot be overridden by fallback
+    // 5. Explicit Unsupported resolves to Unsupported / Runtime
     #[test]
-    fn test_explicit_unsupported_cannot_be_overridden_by_fallback() {
-        // Model name has "vision" in it, but runtime explicitly reports capabilities without vision!
+    fn test_explicit_unsupported_resolves_to_unsupported_runtime() {
         let fixture = json!({
             "capabilities": ["completion", "tools"]
         });
-        let res = resolve_model_capabilities("ollama", Some(&fixture), "custom-vision-named-model");
+        let res = resolve_model_capabilities("ollama", Some(&fixture));
         assert_eq!(res.image_input, CapabilityStatus::Unsupported);
         assert_eq!(res.source, CapabilitySource::Runtime);
     }
 
-    // 6. Explicit Supported cannot be overridden by fallback
+    // 6. Explicit Supported resolves to Supported / Runtime
     #[test]
-    fn test_explicit_supported_cannot_be_overridden_by_fallback() {
-        // Model name has NO vision hints, but runtime explicitly reports vision support!
+    fn test_explicit_supported_resolves_to_supported_runtime() {
         let fixture = json!({
             "capabilities": ["completion", "vision"]
         });
-        let res = resolve_model_capabilities("ollama", Some(&fixture), "custom-unnamed-checkpoint");
+        let res = resolve_model_capabilities("ollama", Some(&fixture));
         assert_eq!(res.image_input, CapabilityStatus::Supported);
         assert_eq!(res.source, CapabilitySource::Runtime);
     }

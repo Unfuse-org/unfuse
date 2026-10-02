@@ -2,12 +2,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod agent;
-pub mod pipeline;
+pub mod orchestrator;
 pub mod provider;
+pub mod prompt;
 pub mod storage;
 pub mod tools;
+pub mod integrations;
 
-use std::env;
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
@@ -118,6 +120,45 @@ fn get_system_info() -> SystemInfo {
     }
 }
 
+/// Model Capabilities: Resolves a model's capabilities based on its provider and metadata.
+#[tauri::command]
+fn resolve_model_capabilities(provider: String, metadata: Option<serde_json::Value>) -> Result<provider::capability::ModelCapabilities, String> {
+    Ok(provider::capability::resolve_model_capabilities(&provider, metadata.as_ref()))
+}
+
+#[tauri::command]
+fn sync_integration_config(
+    session_id: String,
+    configs: HashMap<String, integrations::ServiceConfig>,
+) -> Result<(), String> {
+    let session = agent::get_or_create_session(&session_id);
+    let mut guard = session.lock().unwrap();
+    guard.integrations = configs;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn run_collaborative_turn(
+    app: tauri::AppHandle,
+    workspace_root: String,
+    session_id: String,
+    prompt: String,
+    llm_configs: HashMap<String, agent::LlmConfigPayload>,
+) -> Result<Vec<provider::ChatMessage>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestrator::Orchestrator::run_collaborative_turn(
+            app,
+            workspace_root,
+            session_id,
+            prompt,
+            llm_configs,
+        )
+    })
+    .await
+    .map_err(|e| format!("Collaborative turn task failed: {}", e))?
+    .await
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|_app| {
@@ -136,12 +177,14 @@ fn main() {
             agent::cancel_agent_turn,
             agent::resolve_tool_permission,
             agent::update_session_policy,
-            pipeline::run_pipeline_turn,
+            orchestrator::run_collaborative_turn,
             storage::create_session,
             storage::load_session,
             storage::list_sessions,
             storage::search_sessions,
-            storage::rebuild_index
+            storage::rebuild_index,
+            resolve_model_capabilities,
+            sync_integration_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

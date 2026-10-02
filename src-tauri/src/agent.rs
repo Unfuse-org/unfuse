@@ -11,7 +11,8 @@ use crate::provider::{self, AssembledToolCall, ChatMessage, ProviderConfig, Stre
 use crate::tools;
 
 /// Hard ceiling for agent iterations within a single user prompt turn to prevent runaway loops.
-pub const MAX_TURNS: usize = 15;
+/// Industry standard typically ranges from 10 to 30 for standard dev tasks.
+pub const MAX_TURNS: usize = 25;
 
 /// Tool approval policies for a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +47,8 @@ pub(crate) struct SessionState {
     pub(crate) policy: SessionPolicy,
     pub(crate) pending_permissions: HashMap<String, mpsc::Sender<PermissionDecision>>,
     pub(crate) active_pid: Option<u32>,
+    pub(crate) integrations: HashMap<String, crate::integrations::ServiceConfig>,
+    pub(crate) blackboard: HashMap<String, String>,
 }
 
 static REGISTRY: Mutex<Option<HashMap<String, Arc<Mutex<SessionState>>>>> = Mutex::new(None);
@@ -60,6 +63,7 @@ pub(crate) fn get_or_create_session(session_id: &str) -> Arc<Mutex<SessionState>
                 policy: SessionPolicy::default(),
                 pending_permissions: HashMap::new(),
                 active_pid: None,
+                integrations: HashMap::new(),
             }))
         })
         .clone()
@@ -168,7 +172,7 @@ pub fn run_agent_loop_multimodal(
     workspace_root: &Path,
     session_id: &str,
     prompt: &str,
-    images: Option<&[String]>,
+    media_refs: Option<&[String]>,
     config: &ProviderConfig,
     allowed_tools: Option<&[String]>,
     custom_system_prompt: Option<&str>,
@@ -190,14 +194,11 @@ pub fn run_agent_loop_multimodal(
         }),
     );
 
-    let default_system = "You are Unfuse, an expert autonomous AI coding assistant.\n\
-        You have access to 4 developer tools:\n\
-        - read_file: inspect file contents within the workspace\n\
-        - write_file: create or overwrite files in the workspace\n\
-        - edit_file: surgical unique replacement in files\n\
-        - bash: run shell commands in the workspace\n\n\
-        Always inspect files before modifying them. Prefer edit_file for precise changes.";
-    let system_prompt = custom_system_prompt.unwrap_or(default_system);
+    // Assemble system prompt using the PromptIngestor
+    let system_prompt = crate::prompt::PromptIngestor::assemble_system_prompt(
+        workspace_root,
+        custom_system_prompt,
+    );
 
     // Initialize persistence for this session
     let storage = crate::storage::get_storage();
@@ -211,7 +212,7 @@ pub fn run_agent_loop_multimodal(
         active_leaf = summary.and_then(|s| s.active_leaf_id);
     }
 
-    let attached_refs: Vec<String> = images.unwrap_or_default().to_vec();
+    let attached_refs: Vec<String> = media_refs.unwrap_or_default().to_vec();
 
     let user_evt = crate::storage::PersistedEvent::new(
         session_id,
@@ -721,7 +722,7 @@ pub async fn run_agent_turn(
     workspace_root: String,
     session_id: String,
     prompt: String,
-    images: Option<Vec<String>>,
+    media: Option<Vec<String>>,
     llm_config: LlmConfigPayload,
 ) -> Result<(), String> {
     use tauri::Emitter;
@@ -745,7 +746,7 @@ pub async fn run_agent_turn(
             &path,
             &session_id,
             &prompt,
-            images.as_deref(),
+            media.as_deref(),
             &config,
             None,
             None,

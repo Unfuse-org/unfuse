@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { LocalProvider, ModelRole, AvailableProviderModel, LocalModelBlade, ModelFamily } from './types';
 import { X, Plus, ArrowLeft, RefreshCw, AlertCircle, Key } from 'lucide-react';
 import { inferRole, normalizeFamilyForLogo } from './modelResolver';
-import { resolveModelCapabilities } from './capabilityDetector';
 import {
   OllamaLogo,
   LMStudioLogo,
@@ -262,7 +262,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               const sizeGb = m.size ? parseFloat((m.size / (1024 * 1024 * 1024)).toFixed(1)) : 4.0;
               const tagsQuant = m.details?.quantization_level || 'unknown';
               const details = await inspectOllamaModel(name, port);
-              const caps = resolveModelCapabilities('ollama', details.rawData, name);
+              const caps = await invoke('resolve_model_capabilities', { provider: 'ollama', metadata: details.rawData });
               const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
 
               return {
@@ -318,7 +318,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               const name = m.id || m.name;
               const family = normalizeFamilyForLogo(name);
               const metadata = p === 'llamacpp' && llamacppProps ? { ...m, ...llamacppProps } : m;
-              const caps = resolveModelCapabilities(p, metadata, name);
+              const caps = await invoke('resolve_model_capabilities', { provider: p, metadata });
               const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
               const ctx = typeof m.context_length === 'number' && m.context_length > 0
                 ? m.context_length

@@ -100,6 +100,118 @@ pub fn get_tool_definitions() -> Vec<Value> {
                     "required": ["command"]
                 }
             }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "ocr_extract",
+                "description": "Extract text from an image. This tool signals the model to perform a specialized OCR analysis on the provided image reference.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "image_ref": {
+                            "type": "string",
+                            "description": "The reference ID of the attached image to perform OCR on"
+                        },
+                        "focus_area": {
+                            "type": "string",
+                            "description": "Optional description of the specific area or text to extract"
+                        }
+                    },
+                    "required": ["image_ref"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web for real-time information, technical docs, or news using the best available provider (Tavily, Brave, etc.).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to execute"
+                        },
+                        "provider": {
+                            "type": "string",
+                            "description": "Optional provider override (e.g. 'tavily', 'brave', 'exa'). If omitted, the user's default is used."
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "web_extract",
+                "description": "Extract full-page content as clean Markdown from a specific URL using Firecrawl.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL of the page to scrape"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "knowledge_search",
+                "description": "Search and retrieve internal knowledge base pages (e.g. from Notion).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["read", "write"],
+                            "description": "Whether to read a page or append content to one."
+                        },
+                        "page_id": {
+                            "type": "string",
+                            "description": "The ID of the page to interact with"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "Content to append (required if action is 'write')"
+                        }
+                    },
+                    "required": ["action", "page_id"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "dev_ops",
+                "description": "Manage external development tools (GitHub, Linear, Sentry, Datadog). Use this for issue triaging, PR management, or checking metrics.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "service": {
+                            "type": "string",
+                            "enum": ["github", "linear", "sentry", "datadog"],
+                            "description": "The service to interact with"
+                        },
+                        "action": {
+                            "type": "string",
+                            "enum": ["read", "write"],
+                            "description": "Whether to fetch data or perform a modification"
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Service-specific parameters (e.g. { 'endpoint': '/repos/owner/repo/issues' } for GitHub read, or { 'query': '...' } for Datadog)"
+                        }
+                    },
+                    "required": ["service", "action", "params"]
+                }
+            }
         })
     ]
 }
@@ -111,6 +223,11 @@ pub fn canonical_tool_name(name: &str) -> &str {
         "write" | "write_file" => "write_file",
         "edit" | "edit_file" => "edit_file",
         "bash" | "execute_bash" => "bash",
+        "ocr" | "ocr_extract" => "ocr_extract",
+        "search" | "web_search" => "web_search",
+        "extract" | "web_extract" => "web_extract",
+        "knowledge" | "knowledge_search" => "knowledge_search",
+        "ops" | "dev_ops" => "dev_ops",
         other => other,
     }
 }
@@ -209,6 +326,64 @@ where
             } else {
                 Ok(res.output)
             }
+        }
+        "ocr_extract" | "ocr" => {
+            let image_ref = args["image_ref"]
+                .as_str()
+                .ok_or_else(|| "Missing required parameter 'image_ref'".to_string())?;
+
+            Ok(format!(
+                "OCR request received for image {}. Since OCR is handled by the model's own vision capabilities, the system will now perform a specialized extraction turn. Please extract all text from this image accurately.",
+                image_ref
+            ))
+        }
+        "web_search" | "search" => {
+            let query = args["query"].as_str().ok_or("Missing 'query' parameter")?;
+            let provider_id = args["provider"].as_str().unwrap_or("tavily");
+
+            // Integration config is stored in the current session state
+            // We must retrieve it from agent::get_or_create_session
+            let session = crate::agent::get_or_create_session("current_turn");
+            let guard = session.lock().unwrap();
+            let config = guard.integrations.get(provider_id)
+                .ok_or_else(|| format!("Search provider '{}' not configured", provider_id))?;
+
+            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(provider_id, args, config)?;
+            Ok(res.to_agent_string())
+        }
+        "web_extract" | "extract" => {
+            let config = {
+                let session = crate::agent::get_or_create_session("current_turn");
+                let guard = session.lock().unwrap();
+                guard.integrations.get("firecrawl")
+                    .cloned()
+                    .ok_or_else(|| "Firecrawl not configured".to_string())?
+            };
+            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("firecrawl", args, &config)?;
+            Ok(res.to_agent_string())
+        }
+        "knowledge_search" | "knowledge" => {
+            let config = {
+                let session = crate::agent::get_or_create_session("current_turn");
+                let guard = session.lock().unwrap();
+                guard.integrations.get("notion")
+                    .cloned()
+                    .ok_or_else(|| "Notion not configured".to_string())?
+            };
+            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("notion", args, &config)?;
+            Ok(res.to_agent_string())
+        }
+        "dev_ops" | "ops" => {
+            let service = args["service"].as_str().ok_or("Missing 'service' parameter")?;
+            let config = {
+                let session = crate::agent::get_or_create_session("current_turn");
+                let guard = session.lock().unwrap();
+                guard.integrations.get(service)
+                    .cloned()
+                    .ok_or_else(|| format!("Service '{}' not configured", service))?
+            };
+            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(service, args["params"].clone(), &config)?;
+            Ok(res.to_agent_string())
         }
         unknown => Err(format!("Unrecognized tool: '{}'", unknown)),
     }

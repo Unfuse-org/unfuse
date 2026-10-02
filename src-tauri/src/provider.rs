@@ -82,53 +82,29 @@ impl From<&str> for MessageContent {
     }
 }
 
-/// Strongly typed individual part in a multimodal message (OpenAI spec).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum ContentPart {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image_url")]
-    ImageUrl { image_url: ImageUrlPayload },
+    ImageUrl { image_url: MediaUrlPayload },
+    #[serde(rename = "audio_url")]
+    AudioUrl { audio_url: MediaUrlPayload },
+    #[serde(rename = "video_url")]
+    VideoUrl { video_url: MediaUrlPayload },
 }
 
-/// Image payload containing data URL or HTTP URL according to OpenAI vision specification.
+/// Media payload containing data URL or HTTP URL according to OpenAI multimodal specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct ImageUrlPayload {
+pub struct MediaUrlPayload {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
 /// Standard base64 encoding without external crate overhead.
-pub fn base64_encode(data: &[u8]) -> String {
-    const BASE64_ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as usize;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
-
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-
-        out.push(BASE64_ALPHABET[(triple >> 18) & 0x3F] as char);
-        out.push(BASE64_ALPHABET[(triple >> 12) & 0x3F] as char);
-
-        if chunk.len() > 1 {
-            out.push(BASE64_ALPHABET[(triple >> 6) & 0x3F] as char);
-        } else {
-            out.push('=');
-        }
-
-        if chunk.len() > 2 {
-            out.push(BASE64_ALPHABET[triple & 0x3F] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
-}
+use base64::{Engine as _, engine::general_purpose};
 
 /// Converts a local image path reference or URL into an OpenAI-compatible data URL in memory.
 /// Ensures session logs persist only lightweight paths, while wire transmissions receive base64 data.
@@ -152,7 +128,7 @@ pub fn load_image_ref_to_data_url(path_or_url: &str) -> String {
             "gif" => "image/gif",
             _ => "image/png",
         };
-        let b64 = base64_encode(&bytes);
+        let b64 = general_purpose::STANDARD.encode(&bytes);
         format!("data:{};base64,{}", mime, b64)
     } else {
         trimmed.to_string()
@@ -189,18 +165,30 @@ impl ChatMessage {
         }
     }
 
-    pub fn user_multimodal(text: impl Into<String>, image_references: &[String]) -> Self {
+    pub fn user_multimodal(text: impl Into<String>, media_references: &[String]) -> Self {
         let mut parts = vec![ContentPart::Text {
             text: text.into(),
         }];
-        for ref_str in image_references {
-            let data_url = load_image_ref_to_data_url(ref_str);
-            parts.push(ContentPart::ImageUrl {
-                image_url: ImageUrlPayload {
-                    url: data_url,
-                    detail: None,
+        for ref_str in media_references {
+            let data_url = load_media_ref_to_data_url(ref_str);
+            let ext = std::path::Path::new(ref_str)
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_lowercase())
+                .unwrap_or_default();
+
+            let part = match ext.as_str() {
+                "mp3" | "wav" | "ogg" => ContentPart::AudioUrl {
+                    audio_url: MediaUrlPayload { url: data_url, detail: None },
                 },
-            });
+                "mp4" | "webm" | "mov" => ContentPart::VideoUrl {
+                    video_url: MediaUrlPayload { url: data_url, detail: None },
+                },
+                _ => ContentPart::ImageUrl {
+                    image_url: MediaUrlPayload { url: data_url, detail: None },
+                },
+            };
+            parts.push(part);
         }
         Self {
             role: "user".to_string(),
