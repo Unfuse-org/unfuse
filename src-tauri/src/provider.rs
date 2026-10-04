@@ -103,8 +103,16 @@ pub struct MediaUrlPayload {
     pub detail: Option<String>,
 }
 
+/// Backwards compatibility alias for image media payload.
+pub type ImageUrlPayload = MediaUrlPayload;
+
 /// Standard base64 encoding without external crate overhead.
 use base64::{Engine as _, engine::general_purpose};
+
+/// Helper to encode raw bytes to standard base64 string.
+pub fn base64_encode(bytes: &[u8]) -> String {
+    general_purpose::STANDARD.encode(bytes)
+}
 
 /// Converts a local image path reference or URL into an OpenAI-compatible data URL in memory.
 /// Ensures session logs persist only lightweight paths, while wire transmissions receive base64 data.
@@ -128,7 +136,7 @@ pub fn load_image_ref_to_data_url(path_or_url: &str) -> String {
             "gif" => "image/gif",
             _ => "image/png",
         };
-        let b64 = general_purpose::STANDARD.encode(&bytes);
+        let b64 = base64_encode(&bytes);
         format!("data:{};base64,{}", mime, b64)
     } else {
         trimmed.to_string()
@@ -170,7 +178,7 @@ impl ChatMessage {
             text: text.into(),
         }];
         for ref_str in media_references {
-            let data_url = load_media_ref_to_data_url(ref_str);
+            let data_url = load_image_ref_to_data_url(ref_str);
             let ext = std::path::Path::new(ref_str)
                 .extension()
                 .and_then(|s| s.to_str())
@@ -213,6 +221,7 @@ impl ChatMessage {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
     pub base_url: String,
+    pub api_key: Option<String>,
     pub model: String,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
@@ -444,9 +453,18 @@ where
         .timeout_read(timeout_duration)
         .build();
 
-    let response = agent
+    let mut request = agent
         .post(&endpoint)
-        .set("Content-Type", "application/json")
+        .set("Content-Type", "application/json");
+
+    if let Some(ref key) = config.api_key {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            request = request.set("Authorization", &format!("Bearer {}", trimmed));
+        }
+    }
+
+    let response = request
         .send_json(payload)
         .map_err(|e| format!("Failed to connect to model runner at '{}': {}", endpoint, e))?;
 

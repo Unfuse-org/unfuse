@@ -1,12 +1,10 @@
-import { ModelRole, AvailableProviderModel, ModelFamily } from './types';
+import { AvailableProviderModel, ModelFamily } from './types';
 
 export interface ResolvedModelInfo {
   family: string;
-  role: ModelRole;
   parameters: string;
   contextWindow: string;
   description: string;
-  capabilities: string[];
   link: string;
 }
 
@@ -44,15 +42,12 @@ export function normalizeFamilyForLogo(familyStr: string): ModelFamily {
   return 'custom';
 }
 
-export function inferRole(arg1: string | string[], arg2?: string): ModelRole {
-  const name = (typeof arg1 === 'string' ? arg1 : arg2 || '').toLowerCase();
-  if (name.includes('coder') || name.includes('code') || name.includes('starcoder') || name.includes('devstral')) return 'Coder';
-  if (name.includes('embed') || name.includes('bge') || name.includes('nomic')) return 'Embeddings';
-  if (name.includes('vision') || name.includes('vl') || name.includes('llava') || name.includes('omni') || name.includes('ocr')) return 'Vision / OCR';
-  if (name.includes('r1') || name.includes('reason') || name.includes('think')) return 'Reasoning';
-  if (name.includes('whisper') || name.includes('audio') || name.includes('voice')) return 'Audio';
-  if (name.includes('rerank')) return 'Reranker';
-  return 'General';
+export function formatBytes(bytes?: number): string {
+  if (bytes === undefined || bytes === null || bytes <= 0) return '';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 export function formatModelSubtitle(family: string, params: string, quantization?: string, ctx?: number): string {
@@ -66,7 +61,6 @@ export function formatModelSubtitle(family: string, params: string, quantization
 export function resolveModelInfo(model: AvailableProviderModel, provider: string): ResolvedModelInfo {
   const rawId = (model.id || model.name || '').toLowerCase();
   const family = model.family || normalizeFamilyForLogo(rawId);
-  const role = model.defaultRole || inferRole(rawId);
 
   // Extract parameter size
   const paramMatch = rawId.match(/(\d+(?:\.\d+)?)[bB]/);
@@ -78,9 +72,6 @@ export function resolveModelInfo(model: AvailableProviderModel, provider: string
 
   // Description
   const description = model.description || formatModelSubtitle(family, parameters, model.quantization, ctxLength);
-
-  // Capabilities
-  const capabilities = model.capabilities || ['completion'];
 
   // Link
   let link = model.link || '';
@@ -97,11 +88,9 @@ export function resolveModelInfo(model: AvailableProviderModel, provider: string
 
   return {
     family,
-    role,
     parameters,
     contextWindow,
     description,
-    capabilities,
     link,
   };
 }

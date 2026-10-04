@@ -416,7 +416,7 @@ mod tests {
             Some(evt1_id.clone()),
             EventPayload::AssistantTurn {
                 content: "Hello! How can I assist you?".to_string(),
-                model: "gpt-4".to_string(),
+                model: "test-model".to_string(),
             },
         );
         storage.append_event(ws, &evt2).unwrap();
@@ -528,53 +528,6 @@ mod tests {
 
         let events = storage.load_session_events(ws, "sess-tools").unwrap();
         assert_eq!(events.len(), 3); // Meta + Call + Result
-    }
-
-    #[test]
-    fn test_pipeline_stage_persistence() {
-        use crate::pipeline::StageDeliverable;
-
-        let (storage, _dir) = test_storage();
-        let ws = Path::new("/tmp/test_ws");
-        storage.create_session(ws, "sess-pipe", None).unwrap();
-
-        let stage_start = PersistedEvent::new(
-            "sess-pipe",
-            None,
-            EventPayload::PipelineStageStart {
-                plan_id: "plan-1".to_string(),
-                stage_index: 0,
-                stage_name: "Architect".to_string(),
-                model: "gpt-4".to_string(),
-                allowed_tools: vec!["read_file".to_string()],
-            },
-        );
-        storage.append_event(ws, &stage_start).unwrap();
-
-        let deliverable = StageDeliverable {
-            stage_index: 0,
-            stage_name: "Architect".to_string(),
-            model_name: "gpt-4".to_string(),
-            output_text: "Architecture blueprint designed.".to_string(),
-            files_modified: vec![],
-            tool_calls_count: 1,
-            success: true,
-            duration_ms: 120,
-        };
-
-        let stage_complete = PersistedEvent::new(
-            "sess-pipe",
-            Some(stage_start.id.clone()),
-            EventPayload::PipelineStageComplete {
-                plan_id: "plan-1".to_string(),
-                stage_index: 0,
-                deliverable,
-            },
-        );
-        storage.append_event(ws, &stage_complete).unwrap();
-
-        let loaded = storage.load_session_events(ws, "sess-pipe").unwrap();
-        assert_eq!(loaded.len(), 3);
     }
 
     #[test]
@@ -732,7 +685,7 @@ mod tests {
             Some(u1_id),
             EventPayload::AssistantTurn {
                 content: "First assistant response".to_string(),
-                model: "gpt-4".to_string(),
+                model: "test-model".to_string(),
             },
         );
         let a1_id = a1.id.clone();

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { LocalProvider, ModelRole, AvailableProviderModel, LocalModelBlade, ModelFamily, ModelCapabilities } from './types';
+import { LocalProvider, AvailableProviderModel, LocalModelBlade, ModelFamily, ModelCapabilities } from './types';
 import { X, Plus, ArrowLeft, RefreshCw, AlertCircle, Key } from 'lucide-react';
-import { inferRole, normalizeFamilyForLogo } from './modelResolver';
+import { normalizeFamilyForLogo, formatBytes } from './modelResolver';
 import {
   OllamaLogo,
   LMStudioLogo,
@@ -259,24 +259,22 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
             const listPromises = data.models.map(async (m: any) => {
               const name = m.name || m.model;
               const tagsFamily = m.details?.family || normalizeFamilyForLogo(name);
-              const sizeGb = m.size ? parseFloat((m.size / (1024 * 1024 * 1024)).toFixed(1)) : 4.0;
+              const sizeBytes = typeof m.size === 'number' && m.size > 0 ? m.size : undefined;
               const tagsQuant = m.details?.quantization_level || 'unknown';
               const details = await inspectOllamaModel(name, port);
               const caps = (await invoke('resolve_model_capabilities', { provider: 'ollama', metadata: details.rawData })) as ModelCapabilities;
-              const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
 
               return {
                 id: `ollama-${name}`,
                 name,
                 displayName: name,
                 quantization: tagsQuant,
-                sizeGb,
+                sizeBytes,
                 contextLength: details.contextLength,
                 parameters: details.parameterSize || m.details?.parameter_size,
                 tokensUsed: 0,
-                defaultRole: role,
                 family: tagsFamily,
-                capabilities: caps.image_input === 'Supported' ? ['completion', 'vision'] : ['completion'],
+                capabilities: caps,
               };
             });
             const list = await Promise.all(listPromises);
@@ -291,7 +289,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
         } else {
           // OpenAI-compatible runners (MLX, LM Studio, vLLM, Unsloth, llama.cpp)
           const headers: Record<string, string> = {};
-          if (p === 'unsloth' && activeKey?.trim()) {
+          if (activeKey?.trim()) {
             headers['Authorization'] = `Bearer ${activeKey.trim()}`;
           }
           const res = await fetch(`http://127.0.0.1:${port}/v1/models`, {
@@ -319,7 +317,6 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               const family = normalizeFamilyForLogo(name);
               const metadata = p === 'llamacpp' && llamacppProps ? { ...m, ...llamacppProps } : m;
               const caps = (await invoke('resolve_model_capabilities', { provider: p, metadata })) as ModelCapabilities;
-              const role: ModelRole = caps.image_input === 'Supported' ? 'VL' : inferRole(name);
               const ctx = typeof m.context_length === 'number' && m.context_length > 0
                 ? m.context_length
                 : typeof m.max_model_len === 'number' && m.max_model_len > 0
@@ -331,12 +328,11 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                 name,
                 displayName: name,
                 quantization: 'unknown',
-                sizeGb: 0,
                 contextLength: ctx,
                 tokensUsed: 0,
-                defaultRole: role,
                 family,
-                capabilities: caps.image_input === 'Supported' ? ['completion', 'vision'] : ['completion'],
+                capabilities: caps,
+                apiKey: activeKey?.trim() || undefined,
               };
             });
             const list = await Promise.all(listPromises);
@@ -368,6 +364,10 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
   const handleMount = () => {
     if (!selectedModel || isOccupied) return;
 
+    const storedKey = selectedProvider === 'unsloth'
+      ? ((typeof window !== 'undefined' && window.localStorage?.getItem('unfuse_unsloth_api_key')) || unslothApiKey || undefined)
+      : undefined;
+
     const blade: LocalModelBlade = {
       id: `m-${Date.now()}`,
       name: selectedModel.name,
@@ -376,14 +376,14 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
       endpoint: `http://localhost:${activePort}`,
       port: activePort,
       quantization: selectedModel.quantization,
-      sizeGb: selectedModel.sizeGb,
-      vramUsageGb: selectedModel.sizeGb,
+      sizeBytes: selectedModel.sizeBytes,
       contextLength: selectedModel.contextLength,
       tokensUsed: selectedModel.tokensUsed || 0,
       speedTokPerSec: 0,
       status: 'loaded',
-      role: selectedModel.defaultRole,
       family: selectedModel.family,
+      capabilities: selectedModel.capabilities,
+      apiKey: selectedModel.apiKey || storedKey?.trim() || undefined,
     };
 
     onMountModel(blade);
@@ -564,7 +564,11 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                       )}
                     </div>
                     <div className="text-[10px] text-[#71717a] font-mono mt-0.5">
-                      {m.defaultRole} · {m.quantization} · {m.sizeGb} GB
+                      {[
+                        m.quantization !== 'unknown' ? m.quantization : null,
+                        m.sizeBytes ? formatBytes(m.sizeBytes) : null,
+                        m.contextLength ? `${m.contextLength.toLocaleString()} ctx` : null,
+                      ].filter(Boolean).join(' · ') || 'Ready'}
                     </div>
                   </div>
                 </div>

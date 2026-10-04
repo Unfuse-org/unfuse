@@ -14,6 +14,26 @@ use crate::tools;
 /// Industry standard typically ranges from 10 to 30 for standard dev tasks.
 pub const MAX_TURNS: usize = 25;
 
+/// Maximum character budget for an individual tool output in the active LLM context.
+/// 30,000 characters (~7,500 tokens) safely prevents context window blowouts on local & API models,
+/// while the full output is preserved in UI events and durable JSONL storage.
+pub const MAX_CONTEXT_TOOL_OUTPUT_CHARS: usize = 30_000;
+
+pub fn truncate_context_tool_output(output: &str) -> String {
+    let char_count = output.chars().count();
+    if char_count <= MAX_CONTEXT_TOOL_OUTPUT_CHARS {
+        output.to_string()
+    } else {
+        let truncated: String = output.chars().take(MAX_CONTEXT_TOOL_OUTPUT_CHARS).collect();
+        format!(
+            "{}\n\n[UNFUSE: Tool output truncated for model context (showing {} of {} chars). Full output preserved in session log.]",
+            truncated,
+            MAX_CONTEXT_TOOL_OUTPUT_CHARS,
+            char_count
+        )
+    }
+}
+
 /// Tool approval policies for a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionPolicy {
@@ -64,6 +84,7 @@ pub(crate) fn get_or_create_session(session_id: &str) -> Arc<Mutex<SessionState>
                 pending_permissions: HashMap::new(),
                 active_pid: None,
                 integrations: HashMap::new(),
+                blackboard: HashMap::new(),
             }))
         })
         .clone()
@@ -76,6 +97,7 @@ pub(crate) fn remove_session(session_id: &str) {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn is_session_cancelled(session_id: &str) -> bool {
     let session = get_or_create_session(session_id);
     let guard = session.lock().unwrap();
@@ -98,6 +120,7 @@ impl From<LlmConfigPayload> for ProviderConfig {
     fn from(p: LlmConfigPayload) -> Self {
         Self {
             base_url: p.base_url,
+            api_key: p.api_key,
             model: p.model,
             temperature: p.temperature,
             max_tokens: p.max_tokens,
@@ -119,7 +142,7 @@ pub type StreamFn = Box<
 >;
 
 /// Event sink closure signature for emitting Tauri events.
-pub type EventSink = Box<dyn Fn(&str, Value) + Send + Sync>;
+pub type EventSink = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 /// Runs the multi-turn agent loop for a prompt turn (unrestricted tools, default prompt).
 pub fn run_agent_loop(
@@ -144,6 +167,7 @@ pub fn run_agent_loop(
 }
 
 /// Runs the multi-turn agent loop with optional tool restrictions and custom system instructions.
+#[allow(clippy::too_many_arguments)]
 pub fn run_agent_loop_scoped(
     workspace_root: &Path,
     session_id: &str,
@@ -168,6 +192,7 @@ pub fn run_agent_loop_scoped(
 }
 
 /// Runs the multi-turn agent loop with optional image attachments, tool restrictions, and custom system prompt.
+#[allow(clippy::too_many_arguments)]
 pub fn run_agent_loop_multimodal(
     workspace_root: &Path,
     session_id: &str,
@@ -200,12 +225,19 @@ pub fn run_agent_loop_multimodal(
         custom_system_prompt,
     );
 
-    // Initialize persistence for this session
+    // Initialize persistence and reconstruct prior conversation history
     let storage = crate::storage::get_storage();
-    let mut active_leaf = storage
-        .load_session_events(workspace_root, session_id)
-        .ok()
-        .and_then(|evts| crate::storage::JsonlSessionStore::resolve_active_leaf_id(&evts));
+    let active_ctx = storage
+        .reconstruct_active_context(workspace_root, session_id, None)
+        .ok();
+
+    let mut active_leaf = active_ctx
+        .as_ref()
+        .and_then(|ctx| ctx.active_leaf_id.clone());
+
+    let prior_messages = active_ctx
+        .map(|ctx| ctx.chat_messages)
+        .unwrap_or_default();
 
     if active_leaf.is_none() {
         let summary = storage.create_session(workspace_root, session_id, None).ok();
@@ -231,10 +263,10 @@ pub fn run_agent_loop_multimodal(
         ChatMessage::user_multimodal(prompt, &attached_refs)
     };
 
-    let mut messages: Vec<ChatMessage> = vec![
-        ChatMessage::system(system_prompt),
-        user_msg,
-    ];
+    let mut messages: Vec<ChatMessage> = Vec::with_capacity(prior_messages.len() + 2);
+    messages.push(ChatMessage::system(system_prompt));
+    messages.extend(prior_messages);
+    messages.push(user_msg);
 
     let filtered_tools = tools::get_filtered_tool_definitions(allowed_tools);
     let tool_defs = if filtered_tools.is_empty() {
@@ -457,14 +489,15 @@ pub fn run_agent_loop_multimodal(
                 }
             }
 
-            let (needs_approval, tool_class) = {
+            let (action_type, tool_class) = tools::get_tool_action_type(&tc.name, &tc.arguments);
+            let needs_approval = {
                 let guard = session.lock().unwrap();
-                match tc.name.as_str() {
-                    "write_file" | "write" => (guard.policy.write_requires_approval, "write"),
-                    "edit_file" | "edit" => (guard.policy.edit_requires_approval, "edit"),
-                    "bash" | "execute_bash" => (guard.policy.bash_requires_approval, "bash"),
-                    "read_file" | "read" => (false, "read"),
-                    _ => (true, "unknown"),
+                match action_type {
+                    tools::ToolActionType::ReadOnly => false,
+                    tools::ToolActionType::WriteFile => guard.policy.write_requires_approval,
+                    tools::ToolActionType::EditFile => guard.policy.edit_requires_approval,
+                    tools::ToolActionType::ExecuteBash => guard.policy.bash_requires_approval,
+                    tools::ToolActionType::MutateExternal => true,
                 }
             };
 
@@ -510,10 +543,10 @@ pub fn run_agent_loop_multimodal(
                         }
                         Ok(PermissionDecision::AutoAllow) => {
                             let mut guard = session.lock().unwrap();
-                            match tool_class {
-                                "write" => guard.policy.write_requires_approval = false,
-                                "edit" => guard.policy.edit_requires_approval = false,
-                                "bash" => guard.policy.bash_requires_approval = false,
+                            match action_type {
+                                tools::ToolActionType::WriteFile => guard.policy.write_requires_approval = false,
+                                tools::ToolActionType::EditFile => guard.policy.edit_requires_approval = false,
+                                tools::ToolActionType::ExecuteBash => guard.policy.bash_requires_approval = false,
                                 _ => {}
                             }
                             perm_decision_record = Some(("auto_allow".to_string(), None, None));
@@ -632,14 +665,21 @@ pub fn run_agent_loop_multimodal(
                         guard.active_pid = Some(pid);
                     }
                 };
-                tools::execute_tool_with_pid_callback(
+                tools::execute_tool_with_context(
                     workspace_root,
+                    Some(session_id),
                     &tc.name,
                     &effective_args,
                     Some(on_pid),
                 )
             } else {
-                tools::execute_tool(workspace_root, &tc.name, &effective_args)
+                tools::execute_tool_with_context(
+                    workspace_root,
+                    Some(session_id),
+                    &tc.name,
+                    &effective_args,
+                    None::<fn(u32)>,
+                )
             };
 
             // Ensure active_pid is cleared after bash execution completes, including errors/timeouts
@@ -680,9 +720,10 @@ pub fn run_agent_loop_multimodal(
                 }),
             );
 
+            let context_output = truncate_context_tool_output(&output);
             messages.push(ChatMessage {
                 role: "tool".to_string(),
-                content: output.into(),
+                content: context_output.into(),
                 tool_calls: None,
                 tool_call_id: Some(tc.id),
             });
@@ -731,7 +772,7 @@ pub async fn run_agent_turn(
     let config = ProviderConfig::from(llm_config);
 
     let app_clone = app.clone();
-    let emit_event: EventSink = Box::new(move |event, payload| {
+    let emit_event: EventSink = Arc::new(move |event, payload| {
         let _ = app_clone.emit(event, payload);
     });
 
@@ -856,6 +897,7 @@ mod tests {
     fn make_test_config() -> ProviderConfig {
         ProviderConfig {
             base_url: "http://localhost:11434".to_string(),
+            api_key: None,
             model: "test-model".to_string(),
             temperature: None,
             max_tokens: None,
@@ -867,7 +909,7 @@ mod tests {
     fn make_capturing_sink() -> (EventSink, Arc<Mutex<Vec<(String, Value)>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
         let events_clone = events.clone();
-        let sink: EventSink = Box::new(move |event, payload| {
+        let sink: EventSink = Arc::new(move |event: &str, payload: Value| {
             events_clone
                 .lock()
                 .unwrap()
@@ -876,10 +918,18 @@ mod tests {
         (sink, events)
     }
 
+    fn cleanup_test_session(workspace_dir: &Path, session_id: &str) {
+        let storage = crate::storage::get_storage();
+        let file = storage.session_file_path(workspace_dir, session_id);
+        let _ = fs::remove_file(file);
+    }
+
     #[test]
     fn test_normal_text_only_turn() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_text");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_text";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
         let stream_mock: StreamFn = Box::new(|_, _, _, on_chunk| {
@@ -890,7 +940,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_text",
+            session_id,
             "Hi",
             &make_test_config(),
             stream_mock,
@@ -909,6 +959,7 @@ mod tests {
         assert!(evs.iter().any(|(_, v)| v["type"] == "content_delta"));
         assert!(evs.iter().any(|(_, v)| v["type"] == "turn_completed"));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -916,6 +967,8 @@ mod tests {
     fn test_single_tool_call() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_single_tool");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_single_tool";
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("sample.txt"), "File content hello");
 
         let (sink, events) = make_capturing_sink();
@@ -942,7 +995,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_single_tool",
+            session_id,
             "Read sample.txt",
             &make_test_config(),
             stream_mock,
@@ -964,6 +1017,7 @@ mod tests {
         assert!(evs.iter().any(|(_, v)| v["type"] == "tool_call_started"));
         assert!(evs.iter().any(|(_, v)| v["type"] == "tool_call_completed" && v["payload"]["is_error"] == false));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -971,6 +1025,8 @@ mod tests {
     fn test_multi_step_tool_calls() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multistep");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_multistep";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, _) = make_capturing_sink();
         let step = Arc::new(Mutex::new(0));
@@ -999,12 +1055,12 @@ mod tests {
         });
 
         // Set policy to auto-allow write so it runs without interactive gate in test
-        let sess = get_or_create_session("test_sess_multistep");
+        let sess = get_or_create_session(session_id);
         sess.lock().unwrap().policy.write_requires_approval = false;
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_multistep",
+            session_id,
             "Write then read",
             &make_test_config(),
             stream_mock,
@@ -1020,6 +1076,7 @@ mod tests {
         assert_eq!(msgs[5].role, "tool");
         assert_eq!(msgs[5].content, "data_a");
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1027,6 +1084,8 @@ mod tests {
     fn test_tool_failure_returned_to_model() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_fail");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_fail";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
         let turn = Arc::new(Mutex::new(0));
@@ -1053,7 +1112,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_fail",
+            session_id,
             "Read missing file",
             &make_test_config(),
             stream_mock,
@@ -1064,6 +1123,7 @@ mod tests {
         let evs = events.lock().unwrap();
         assert!(evs.iter().any(|(_, v)| v["type"] == "tool_call_completed" && v["payload"]["is_error"] == true));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1071,6 +1131,8 @@ mod tests {
     fn test_permission_rejection() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_perm_reject");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_reject";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
         let turn = Arc::new(Mutex::new(0));
@@ -1109,7 +1171,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_reject",
+            session_id,
             "Run bad command",
             &make_test_config(),
             stream_mock,
@@ -1121,6 +1183,7 @@ mod tests {
         assert!(evs.iter().any(|(_, v)| v["type"] == "tool_call_pending"));
         assert!(evs.iter().any(|(_, v)| v["type"] == "tool_call_completed" && v["payload"]["is_error"] == true));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1128,6 +1191,8 @@ mod tests {
     fn test_cancellation() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_cancel");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_cancel";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
         let stream_mock: StreamFn = Box::new(|_, _, _, _| {
@@ -1142,7 +1207,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_cancel",
+            session_id,
             "Cancelled prompt",
             &make_test_config(),
             stream_mock,
@@ -1153,6 +1218,7 @@ mod tests {
         let evs = events.lock().unwrap();
         assert!(evs.iter().any(|(_, v)| v["type"] == "turn_cancelled"));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1160,6 +1226,8 @@ mod tests {
     fn test_maximum_iteration_limit() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_max_iter");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_max_iter";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
         let loop_count = Arc::new(Mutex::new(0));
@@ -1178,7 +1246,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_max_iter",
+            session_id,
             "Endless loop",
             &make_test_config(),
             stream_mock,
@@ -1196,6 +1264,7 @@ mod tests {
 
         assert!(!evs.iter().any(|(_, v)| v["type"] == "turn_completed"), "Must not emit turn_completed on MAX_TURNS exhaustion");
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1203,6 +1272,8 @@ mod tests {
     fn test_multiple_tool_calls_in_one_response() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multi_tools");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_multi_tools";
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("f1.txt"), "content_1");
         let _ = fs::write(temp_dir.join("f2.txt"), "content_2");
 
@@ -1241,7 +1312,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_multi_tools",
+            session_id,
             "Read both files",
             &make_test_config(),
             stream_mock,
@@ -1256,6 +1327,7 @@ mod tests {
         assert_eq!(msgs[3].tool_call_id.as_deref(), Some("c_f1"));
         assert_eq!(msgs[4].tool_call_id.as_deref(), Some("c_f2"));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1263,6 +1335,8 @@ mod tests {
     fn test_conversation_history_ordering() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_history");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_history";
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("test.txt"), "hello history");
 
         let (sink, _) = make_capturing_sink();
@@ -1288,7 +1362,7 @@ mod tests {
 
         let res = run_agent_loop(
             &temp_dir,
-            "test_sess_history",
+            session_id,
             "Inspect test.txt",
             &make_test_config(),
             stream_mock,
@@ -1310,6 +1384,7 @@ mod tests {
         assert_eq!(msgs[4].role, "assistant");
         assert_eq!(msgs[4].content, "The file has hello history.");
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
@@ -1317,9 +1392,10 @@ mod tests {
     fn test_cancellation_terminates_in_flight_bash() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_cancel_bash");
         let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_cancel_bash";
+        cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
-        let session_id = "test_sess_cancel_bash";
 
         // Auto-allow bash for this test session
         let sess = get_or_create_session(session_id);
@@ -1376,6 +1452,81 @@ mod tests {
         let evs = events.lock().unwrap();
         assert!(evs.iter().any(|(_, v)| v["type"] == "turn_cancelled"));
 
+        cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_multi_turn_history_reconstruction() {
+        let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multiturn");
+        let _ = fs::create_dir_all(&temp_dir);
+        let session_id = "test_sess_multiturn";
+        cleanup_test_session(&temp_dir, session_id);
+
+        let (sink1, _) = make_capturing_sink();
+        let stream_mock1: StreamFn = Box::new(|_, _, _, on_chunk| {
+            on_chunk(StreamChunk::Text("Hello Alice!".to_string()));
+            Ok(vec![])
+        });
+
+        // Turn 1
+        let res1 = run_agent_loop(
+            &temp_dir,
+            session_id,
+            "My name is Alice",
+            &make_test_config(),
+            stream_mock1,
+            sink1,
+        );
+        assert!(res1.is_ok());
+        let msgs1 = res1.unwrap();
+        assert_eq!(msgs1.len(), 3); // system, user, assistant
+
+        // Turn 2
+        let (sink2, _) = make_capturing_sink();
+        let seen_msgs_turn2 = Arc::new(Mutex::new(Vec::new()));
+        let seen_msgs_clone = seen_msgs_turn2.clone();
+
+        let stream_mock2: StreamFn = Box::new(move |_, msgs, _, on_chunk| {
+            *seen_msgs_clone.lock().unwrap() = msgs.to_vec();
+            on_chunk(StreamChunk::Text("Your name is Alice.".to_string()));
+            Ok(vec![])
+        });
+
+        let res2 = run_agent_loop(
+            &temp_dir,
+            session_id,
+            "What is my name?",
+            &make_test_config(),
+            stream_mock2,
+            sink2,
+        );
+        assert!(res2.is_ok());
+        let msgs2 = res2.unwrap();
+        // Turn 2 must contain: system, user1, assistant1, user2, assistant2
+        assert_eq!(msgs2.len(), 5);
+        assert_eq!(msgs2[1].content, "My name is Alice");
+        assert_eq!(msgs2[2].content, "Hello Alice!");
+        assert_eq!(msgs2[3].content, "What is my name?");
+        assert_eq!(msgs2[4].content, "Your name is Alice.");
+
+        // And the model received the prior turn in its stream call!
+        let streamed = seen_msgs_turn2.lock().unwrap();
+        assert_eq!(streamed.len(), 4); // system, user1, assistant1, user2
+
+        cleanup_test_session(&temp_dir, session_id);
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_truncate_context_tool_output() {
+        let short = "Hello world";
+        assert_eq!(truncate_context_tool_output(short), short);
+
+        let huge = "x".repeat(35_000);
+        let truncated = truncate_context_tool_output(&huge);
+        assert!(truncated.contains("[UNFUSE: Tool output truncated for model context"));
+        assert!(truncated.contains("showing 30000 of 35000 chars"));
+        assert_eq!(truncated.chars().take(30_000).collect::<String>(), "x".repeat(30_000));
     }
 }

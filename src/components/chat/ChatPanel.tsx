@@ -385,6 +385,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       images: attachedImages && attachedImages.length > 0 ? attachedImages : undefined,
       llmConfig: {
         baseUrl,
+        apiKey: (activeModelProp as any)?.apiKey || undefined,
         model: chosenModel.name || 'default',
         temperature: (activeModelProp as any)?.temperature,
         topP: (activeModelProp as any)?.topP,

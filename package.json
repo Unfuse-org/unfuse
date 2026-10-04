@@ -9,14 +9,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@lobehub/fluent-emoji": "^4.1.1",
-    "@lobehub/icons": "^5.18.0",
-    "@lobehub/ui": "^5.47.1",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@types/diff": "^8.0.0",
     "@types/prismjs": "^1.26.6",
-    "antd": "^6.6.4",
     "diff": "^9.0.0",
     "eventsource-parser": "^4.1.0",
     "lucide-react": "^0.468.0",

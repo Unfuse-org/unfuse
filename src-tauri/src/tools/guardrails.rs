@@ -119,6 +119,7 @@ fn check_sensitive_segments(path_str: &str) -> Result<(), String> {
 /// 1. Does not escape the `workspace_root` (canonicalizes both target and parents; handles symlinks, dangling links, and breakouts).
 /// 2. Does not touch sensitive credential paths or system files (checked both on input and on resolved target relative to workspace).
 /// 3. Prevents write access to `.git` metadata and hooks when `access == Access::Write`.
+///
 /// Returns the canonical or validated absolute PathBuf.
 pub fn validate_path(workspace_root: &Path, input_path: &str, access: Access) -> Result<PathBuf, String> {
     if input_path.trim().is_empty() {

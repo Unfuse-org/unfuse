@@ -104,27 +104,6 @@ pub fn get_tool_definitions() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "ocr_extract",
-                "description": "Extract text from an image. This tool signals the model to perform a specialized OCR analysis on the provided image reference.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "image_ref": {
-                            "type": "string",
-                            "description": "The reference ID of the attached image to perform OCR on"
-                        },
-                        "focus_area": {
-                            "type": "string",
-                            "description": "Optional description of the specific area or text to extract"
-                        }
-                    },
-                    "required": ["image_ref"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
                 "name": "web_search",
                 "description": "Search the web for real-time information, technical docs, or news using the best available provider (Tavily, Brave, etc.).",
                 "parameters": {
@@ -223,7 +202,6 @@ pub fn canonical_tool_name(name: &str) -> &str {
         "write" | "write_file" => "write_file",
         "edit" | "edit_file" => "edit_file",
         "bash" | "execute_bash" => "bash",
-        "ocr" | "ocr_extract" => "ocr_extract",
         "search" | "web_search" => "web_search",
         "extract" | "web_extract" => "web_extract",
         "knowledge" | "knowledge_search" => "knowledge_search",
@@ -259,13 +237,48 @@ pub fn get_filtered_tool_definitions(allowed_tools: Option<&[String]>) -> Vec<Va
     }
 }
 
+/// Describes the permission profile of a tool invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolActionType {
+    ReadOnly,
+    WriteFile,
+    EditFile,
+    ExecuteBash,
+    MutateExternal,
+}
+
+/// Evaluates the permission category and UI classification for a tool call.
+pub fn get_tool_action_type(tool_name: &str, arguments_json: &str) -> (ToolActionType, &'static str) {
+    let canon = canonical_tool_name(tool_name);
+    match canon {
+        "read_file" => (ToolActionType::ReadOnly, "read"),
+        "web_search" => (ToolActionType::ReadOnly, "read"),
+        "web_extract" => (ToolActionType::ReadOnly, "read"),
+        "write_file" => (ToolActionType::WriteFile, "write"),
+        "edit_file" => (ToolActionType::EditFile, "edit"),
+        "bash" => (ToolActionType::ExecuteBash, "bash"),
+        "knowledge_search" | "dev_ops" => {
+            if let Ok(val) = serde_json::from_str::<Value>(arguments_json) {
+                if val.get("action").and_then(|a| a.as_str()) == Some("write") {
+                    (ToolActionType::MutateExternal, "write")
+                } else {
+                    (ToolActionType::ReadOnly, "read")
+                }
+            } else {
+                (ToolActionType::MutateExternal, "write")
+            }
+        }
+        _ => (ToolActionType::MutateExternal, "unknown"),
+    }
+}
+
 /// Dispatches and executes a tool call using the parsed JSON arguments.
 pub fn execute_tool(
     workspace_root: &Path,
     tool_name: &str,
     arguments_json: &str,
 ) -> Result<String, String> {
-    execute_tool_with_pid_callback(workspace_root, tool_name, arguments_json, None::<fn(u32)>)
+    execute_tool_with_context(workspace_root, None, tool_name, arguments_json, None::<fn(u32)>)
 }
 
 /// Dispatches and executes a tool call, optionally passing child process PID to a callback (e.g. for bash).
@@ -278,11 +291,26 @@ pub fn execute_tool_with_pid_callback<F>(
 where
     F: FnOnce(u32),
 {
+    execute_tool_with_context(workspace_root, None, tool_name, arguments_json, on_pid)
+}
+
+/// Dispatches and executes a tool call with dynamic session context and optional PID tracking.
+pub fn execute_tool_with_context<F>(
+    workspace_root: &Path,
+    session_id: Option<&str>,
+    tool_name: &str,
+    arguments_json: &str,
+    on_pid: Option<F>,
+) -> Result<String, String>
+where
+    F: FnOnce(u32),
+{
     let args: Value = serde_json::from_str(arguments_json)
         .map_err(|e| format!("Invalid JSON arguments for tool '{}': {}", tool_name, e))?;
 
-    match tool_name {
-        "read_file" | "read" => {
+    let canon = canonical_tool_name(tool_name);
+    match canon {
+        "read_file" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'path'".to_string())?;
@@ -291,7 +319,7 @@ where
 
             file_ops::read_file(workspace_root, path, offset, limit)
         }
-        "write_file" | "write" => {
+        "write_file" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'path'".to_string())?;
@@ -301,7 +329,7 @@ where
 
             file_ops::write_file(workspace_root, path, content)
         }
-        "edit_file" | "edit" => {
+        "edit_file" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'path'".to_string())?;
@@ -314,7 +342,7 @@ where
 
             file_ops::edit_file(workspace_root, path, old_text, new_text)
         }
-        "bash" | "execute_bash" => {
+        "bash" => {
             let command = args["command"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'command'".to_string())?;
@@ -327,60 +355,50 @@ where
                 Ok(res.output)
             }
         }
-        "ocr_extract" | "ocr" => {
-            let image_ref = args["image_ref"]
-                .as_str()
-                .ok_or_else(|| "Missing required parameter 'image_ref'".to_string())?;
-
-            Ok(format!(
-                "OCR request received for image {}. Since OCR is handled by the model's own vision capabilities, the system will now perform a specialized extraction turn. Please extract all text from this image accurately.",
-                image_ref
-            ))
-        }
-        "web_search" | "search" => {
-            let query = args["query"].as_str().ok_or("Missing 'query' parameter")?;
-            let provider_id = args["provider"].as_str().unwrap_or("tavily");
-
-            // Integration config is stored in the current session state
-            // We must retrieve it from agent::get_or_create_session
-            let session = crate::agent::get_or_create_session("current_turn");
+        "web_search" => {
+            let provider_id = args["provider"].as_str().unwrap_or("tavily").to_string();
+            let active_sess_id = session_id.unwrap_or("current_turn");
+            let session = crate::agent::get_or_create_session(active_sess_id);
             let guard = session.lock().unwrap();
-            let config = guard.integrations.get(provider_id)
-                .ok_or_else(|| format!("Search provider '{}' not configured", provider_id))?;
+            let config = guard.integrations.get(&provider_id)
+                .ok_or_else(|| format!("Search provider '{}' not configured for this session", provider_id))?;
 
-            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(provider_id, args, config)?;
+            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(&provider_id, args, config)?;
             Ok(res.to_agent_string())
         }
-        "web_extract" | "extract" => {
+        "web_extract" => {
+            let active_sess_id = session_id.unwrap_or("current_turn");
             let config = {
-                let session = crate::agent::get_or_create_session("current_turn");
+                let session = crate::agent::get_or_create_session(active_sess_id);
                 let guard = session.lock().unwrap();
                 guard.integrations.get("firecrawl")
                     .cloned()
-                    .ok_or_else(|| "Firecrawl not configured".to_string())?
+                    .ok_or_else(|| "Firecrawl integration not configured for this session".to_string())?
             };
             let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("firecrawl", args, &config)?;
             Ok(res.to_agent_string())
         }
-        "knowledge_search" | "knowledge" => {
+        "knowledge_search" => {
+            let active_sess_id = session_id.unwrap_or("current_turn");
             let config = {
-                let session = crate::agent::get_or_create_session("current_turn");
+                let session = crate::agent::get_or_create_session(active_sess_id);
                 let guard = session.lock().unwrap();
                 guard.integrations.get("notion")
                     .cloned()
-                    .ok_or_else(|| "Notion not configured".to_string())?
+                    .ok_or_else(|| "Notion integration not configured for this session".to_string())?
             };
             let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("notion", args, &config)?;
             Ok(res.to_agent_string())
         }
-        "dev_ops" | "ops" => {
+        "dev_ops" => {
             let service = args["service"].as_str().ok_or("Missing 'service' parameter")?;
+            let active_sess_id = session_id.unwrap_or("current_turn");
             let config = {
-                let session = crate::agent::get_or_create_session("current_turn");
+                let session = crate::agent::get_or_create_session(active_sess_id);
                 let guard = session.lock().unwrap();
                 guard.integrations.get(service)
                     .cloned()
-                    .ok_or_else(|| format!("Service '{}' not configured", service))?
+                    .ok_or_else(|| format!("Service '{}' not configured for this session", service))?
             };
             let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(service, args["params"].clone(), &config)?;
             Ok(res.to_agent_string())
@@ -419,9 +437,9 @@ mod tests {
 
     #[test]
     fn test_get_filtered_tool_definitions() {
-        // None -> returns all 4 tools
+        // None -> returns all tools
         let all = get_filtered_tool_definitions(None);
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 8);
 
         // Filter for only read
         let read_only = vec!["read".to_string()];
@@ -447,5 +465,21 @@ mod tests {
         let empty: Vec<String> = vec![];
         let filtered_empty = get_filtered_tool_definitions(Some(&empty));
         assert_eq!(filtered_empty.len(), 0);
+    }
+
+    #[test]
+    fn test_get_tool_action_type() {
+        assert_eq!(get_tool_action_type("read_file", "{}"), (ToolActionType::ReadOnly, "read"));
+        assert_eq!(get_tool_action_type("web_search", "{}"), (ToolActionType::ReadOnly, "read"));
+        assert_eq!(get_tool_action_type("web_extract", "{}"), (ToolActionType::ReadOnly, "read"));
+        assert_eq!(get_tool_action_type("write_file", "{}"), (ToolActionType::WriteFile, "write"));
+        assert_eq!(get_tool_action_type("edit_file", "{}"), (ToolActionType::EditFile, "edit"));
+        assert_eq!(get_tool_action_type("bash", "{}"), (ToolActionType::ExecuteBash, "bash"));
+
+        // External integrations: read vs write action
+        assert_eq!(get_tool_action_type("knowledge_search", r#"{"action":"read"}"#), (ToolActionType::ReadOnly, "read"));
+        assert_eq!(get_tool_action_type("knowledge_search", r#"{"action":"write"}"#), (ToolActionType::MutateExternal, "write"));
+        assert_eq!(get_tool_action_type("dev_ops", r#"{"action":"read"}"#), (ToolActionType::ReadOnly, "read"));
+        assert_eq!(get_tool_action_type("dev_ops", r#"{"action":"write"}"#), (ToolActionType::MutateExternal, "write"));
     }
 }

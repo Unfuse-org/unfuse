@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { LocalModelBlade } from './types';
 import { getModelLogo } from './MountModelView';
-import { resolveModelInfo } from './modelResolver';
+import { resolveModelInfo, formatBytes } from './modelResolver';
 import { X, ExternalLink } from 'lucide-react';
 
 interface ModelInfoModalProps {
@@ -28,8 +28,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
       name: model.name,
       displayName: model.displayName,
       quantization: model.quantization || 'Q4_K_M',
-      sizeGb: model.sizeGb,
-      defaultRole: model.role,
+      sizeBytes: model.sizeBytes,
       family: model.family,
     },
     model.provider
@@ -115,8 +114,10 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
                     <td className="py-2 px-3 text-white font-medium">{model.quantization || 'Q4_K_M'}</td>
                   </tr>
                   <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40">VRAM Allocation</td>
-                    <td className="py-2 px-3 text-white font-medium">{model.sizeGb} GB</td>
+                    <td className="py-2 px-3 text-white/40">Model Size</td>
+                    <td className="py-2 px-3 text-white font-medium">
+                      {model.sizeBytes ? formatBytes(model.sizeBytes) : 'Runner Managed'}
+                    </td>
                   </tr>
                   <tr>
                     <td className="py-2 px-3 text-white/40">Runtime Server</td>

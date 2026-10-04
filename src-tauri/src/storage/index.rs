@@ -194,10 +194,8 @@ impl SqliteIndex {
         .map_err(|e| format!("Query failed: {}", e))?;
 
         let mut results = Vec::new();
-        for r in rows {
-            if let Ok(item) = r {
-                results.push(item);
-            }
+        for item in rows.flatten() {
+            results.push(item);
         }
 
         Ok(results)
@@ -262,10 +260,8 @@ impl SqliteIndex {
         .map_err(|e| format!("Search failed: {}", e))?;
 
         let mut results = Vec::new();
-        for r in rows {
-            if let Ok(item) = r {
-                results.push(item);
-            }
+        for item in rows.flatten() {
+            results.push(item);
         }
 
         Ok(results)

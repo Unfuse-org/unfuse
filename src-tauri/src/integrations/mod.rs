@@ -84,11 +84,9 @@ impl ExternalTool for TavilyProvider {
 
         let filtered_data = json!({ "answer": answer, "results": results });
         let mut summary = format!("### Tavily Search Results\n**Answer:** {}\n\n", answer);
-        if let Some(res_arr) = results.as_array() {
-            for (i, res) in res_arr.iter().enumerate() {
-                summary.push_str(&format!("{}. [{}]({})\n{}", i+1, res["title"], res["url"], res["content"]));
-                summary.push_str("\n\n");
-            }
+        for (i, res) in results.iter().enumerate() {
+            summary.push_str(&format!("{}. [{}]({})\n{}", i+1, res["title"], res["url"], res["content"]));
+            summary.push_str("\n\n");
         }
         Ok(IntegrationResponse { data: filtered_data, summary })
     }
@@ -121,11 +119,9 @@ impl ExternalTool for BraveProvider {
 
         let filtered_data = json!({ "results": results });
         let mut summary = "### Brave Search Results\n".to_string();
-        if let Some(res_arr) = results.as_array() {
-            for (i, res) in res_arr.iter().enumerate() {
-                summary.push_str(&format!("{}. [{}]({})\n{}", i+1, res["title"], res["url"], res["snippets"]));
-                summary.push_str("\n\n");
-            }
+        for (i, res) in results.iter().enumerate() {
+            summary.push_str(&format!("{}. [{}]({})\n{}", i+1, res["title"], res["url"], res["snippets"]));
+            summary.push_str("\n\n");
         }
         Ok(IntegrationResponse { data: filtered_data, summary })
     }
@@ -252,7 +248,7 @@ impl ExternalTool for GitHubProvider {
                 };
 
                 Ok(IntegrationResponse {
-                    data: filtered_data,
+                    data: filtered_data.clone(),
                     summary: format!("### GitHub Read Result\nEndpoint: {}\n\n{}", endpoint, serde_json::to_string_pretty(&filtered_data).unwrap())
                 })
             }
@@ -275,7 +271,7 @@ impl ExternalTool for GitHubProvider {
                     .bearer_auth(api_key)
                     .json(&json!({
                         "message": commit_msg,
-                        "content": base64::encode(content),
+                        "content": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, content),
                         "branch": branch
                     }))
                     .send()
@@ -317,7 +313,7 @@ impl ExternalTool for LinearProvider {
 
                 let body: Value = response.json().map_err(|e| format!("Linear JSON parse error: {}", e))?;
                 Ok(IntegrationResponse {
-                    data: body,
+                    data: body.clone(),
                     summary: format!("### Linear GraphQL Result\n\n{}", serde_json::to_string_pretty(&body).unwrap())
                 })
             }
@@ -364,7 +360,7 @@ impl ExternalTool for SentryProvider {
 
                 let body: Value = response.json().map_err(|e| format!("Sentry JSON parse error: {}", e))?;
                 Ok(IntegrationResponse {
-                    data: body,
+                    data: body.clone(),
                     summary: format!("### Sentry Report\n\n{}", serde_json::to_string_pretty(&body).unwrap())
                 })
             }
@@ -474,7 +470,7 @@ impl ExternalTool for SlackProvider {
 
                 let body: Value = response.json().map_err(|e| format!("Slack JSON parse error: {}", e))?;
                 Ok(IntegrationResponse {
-                    data: body,
+                    data: body.clone(),
                     summary: format!("### Slack History for {}\n\n{}", channel, serde_json::to_string_pretty(&body).unwrap())
                 })
             }
@@ -507,6 +503,12 @@ impl ExternalTool for SlackProvider {
 pub struct IntegrationManager {
     tools: HashMap<String, Arc<dyn ExternalTool>>,
     circuit_breakers: Mutex<HashMap<String, Instant>>,
+}
+
+impl Default for IntegrationManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IntegrationManager {

@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::pipeline::StageDeliverable;
-
 /// Maximum character length for a persisted tool output in the JSONL log (100,000 chars).
 /// Outputs exceeding this are safely truncated with a trailing notice.
 pub const MAX_TOOL_OUTPUT_CHARS: usize = 100_000;
@@ -126,7 +124,7 @@ pub enum EventPayload {
     PipelineStageComplete {
         plan_id: String,
         stage_index: usize,
-        deliverable: StageDeliverable,
+        deliverable: serde_json::Value,
     },
     /// Explicit pointer update / branch switch in Pi-style tree
     ActiveLeaf {

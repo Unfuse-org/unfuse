@@ -30,7 +30,7 @@ import {
 } from '../rack/Logos';
 import { getModelLogo } from '../rack/MountModelView';
 import unfuseLogo from '../../assets/logo.png';
-import { inferRole, normalizeFamilyForLogo } from '../rack/modelResolver';
+import { normalizeFamilyForLogo } from '../rack/modelResolver';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -104,7 +104,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               size: m.size ? `${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB` : 'Local',
               family: fam,
               quant: m.details?.quantization_level || 'Q4_K_M',
-              role: inferRole([], mName),
+              role: 'General',
             });
           });
         }
@@ -129,7 +129,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               provider: 'LM Studio',
               size: 'Loaded in VRAM',
               family: normalizeFamilyForLogo(mName),
-              role: inferRole(mName),
+              role: 'General',
             });
           });
         }
@@ -155,7 +155,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                 provider: 'Apple MLX',
                 size: 'Unified Memory',
                 family: normalizeFamilyForLogo(mName),
-                role: inferRole(mName),
+                role: 'General',
               });
             });
             break;
@@ -182,7 +182,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               provider: 'llama.cpp',
               size: 'GGUF Matrix',
               family: normalizeFamilyForLogo(mName),
-              role: inferRole(mName),
+              role: 'General',
             });
           });
         }
@@ -207,7 +207,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
               provider: 'Unsloth',
               size: 'Loaded in VRAM',
               family: normalizeFamilyForLogo(mName),
-              role: inferRole(mName),
+              role: 'General',
             });
           });
         }

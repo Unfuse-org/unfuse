@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde_json::{json, Value};
 
-use crate::agent::{self, EventSink, ProviderConfig};
-use crate::provider::ChatMessage;
+use crate::agent::{self};
+use crate::provider::{ChatMessage, ProviderConfig};
 
 /// Represents a model mentioned in a collaborative prompt.
 #[derive(Debug, Clone)]
@@ -90,7 +89,7 @@ impl Orchestrator {
         }
 
         let app_clone = app_handle.clone();
-        let emit_event: agent::EventSink = Box::new(move |event, payload| {
+        let emit_event: agent::EventSink = Arc::new(move |event, payload| {
             let _ = app_clone.emit(event, payload);
         });
 

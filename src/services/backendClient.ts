@@ -8,6 +8,7 @@ export interface AgentConfig {
   images?: string[];
   llmConfig: {
     baseUrl: string;
+    apiKey?: string;
     model: string;
     temperature?: number;
     topP?: number;
@@ -134,7 +135,7 @@ export const backendClient = {
           llmConfig: {
             provider: 'custom',
             base_url: config.llmConfig.baseUrl,
-            api_key: null,
+            api_key: config.llmConfig.apiKey || null,
             model: config.llmConfig.model,
             temperature: config.llmConfig.temperature ?? 0.0,
             max_tokens: config.llmConfig.maxTokens ?? 4096,

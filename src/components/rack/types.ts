@@ -8,16 +8,6 @@ export interface ModelCapabilities {
   source: CapabilitySource;
 }
 
-export type ModelRole =
-  | 'VL'
-  | 'Coder'
-  | 'Reasoning'
-  | 'Vision / OCR'
-  | 'General'
-  | 'Embeddings'
-  | 'Reranker'
-  | 'Audio';
-
 /** Model family is dynamic — comes from Ollama API `details.family` or inferred from model name. */
 export type ModelFamily = string;
 
@@ -29,8 +19,7 @@ export interface LocalModelBlade {
   endpoint: string;
   port: number;
   quantization?: string;
-  sizeGb: number;
-  vramUsageGb: number;
+  sizeBytes?: number;
   contextLength?: number;
   tokensUsed: number;
   temperature?: number;
@@ -39,8 +28,9 @@ export interface LocalModelBlade {
   maxTokens?: number;
   speedTokPerSec: number;
   status: 'active' | 'loaded' | 'standby';
-  role: ModelRole;
   family: ModelFamily;
+  capabilities?: ModelCapabilities;
+  apiKey?: string;
 }
 
 export interface AvailableProviderModel {
@@ -48,13 +38,13 @@ export interface AvailableProviderModel {
   name: string;
   displayName: string;
   quantization: string;
-  sizeGb: number;
-  defaultRole: ModelRole;
+  sizeBytes?: number;
   family: ModelFamily;
   contextLength?: number;
   tokensUsed?: number;
   description?: string;
-  capabilities?: string[];
+  capabilities?: ModelCapabilities;
+  apiKey?: string;
   link?: string;
   contextWindow?: string;
   parameters?: string;

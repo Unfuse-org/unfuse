@@ -9,6 +9,8 @@ pub mod storage;
 pub mod tools;
 pub mod integrations;
 
+use tauri::Manager;
+use std::env;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -138,7 +140,7 @@ fn sync_integration_config(
 }
 
 #[tauri::command]
-pub async fn run_collaborative_turn(
+async fn run_collaborative_turn(
     app: tauri::AppHandle,
     workspace_root: String,
     session_id: String,
@@ -177,7 +179,7 @@ fn main() {
             agent::cancel_agent_turn,
             agent::resolve_tool_permission,
             agent::update_session_policy,
-            orchestrator::run_collaborative_turn,
+            run_collaborative_turn,
             storage::create_session,
             storage::load_session,
             storage::list_sessions,

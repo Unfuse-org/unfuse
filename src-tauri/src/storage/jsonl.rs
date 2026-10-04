@@ -282,6 +282,14 @@ impl JsonlSessionStore {
                     output,
                     ..
                 } => {
+                    if !pending_tool_calls.is_empty() {
+                        messages.push(ChatMessage {
+                            role: "assistant".to_string(),
+                            content: "".into(),
+                            tool_calls: Some(std::mem::take(&mut pending_tool_calls)),
+                            tool_call_id: None,
+                        });
+                    }
                     messages.push(ChatMessage {
                         role: "tool".to_string(),
                         content: output.as_str().into(),
@@ -291,6 +299,15 @@ impl JsonlSessionStore {
                 }
                 _ => {}
             }
+        }
+
+        if !pending_tool_calls.is_empty() {
+            messages.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: "".into(),
+                tool_calls: Some(pending_tool_calls),
+                tool_call_id: None,
+            });
         }
 
         messages
@@ -360,14 +377,13 @@ impl SessionRecoveryScanner {
                 EventPayload::ToolResult { call_id, .. } => {
                     open_tool_calls.remove(call_id);
                 }
-                EventPayload::AssistantTurn { .. } => {
+                EventPayload::AssistantTurn { .. }
                     // An assistant turn without open tool calls concludes a step or turn
-                    if open_tool_calls.is_empty() {
+                    if open_tool_calls.is_empty() => {
                         in_active_turn = false;
                         completed_turns += 1;
                         last_turn_completed_leaf = Some(evt.id.clone());
                     }
-                }
                 EventPayload::Error { .. } | EventPayload::Cancellation { .. } => {
                     in_active_turn = false;
                     last_turn_completed_leaf = Some(evt.id.clone());
