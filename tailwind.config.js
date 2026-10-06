@@ -27,7 +27,7 @@ export default {
       },
       fontFamily: {
         serif: ['Instrument Serif', 'Georgia', 'serif'],
-        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
         pixel: ['"Press Start 2P"', 'monospace'],
         tiny5: ['Tiny5', 'monospace'],

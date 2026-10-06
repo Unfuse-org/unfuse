@@ -8,6 +8,7 @@ pub mod prompt;
 pub mod storage;
 pub mod tools;
 pub mod integrations;
+mod terminal;
 
 use tauri::Manager;
 use std::env;
@@ -163,6 +164,7 @@ async fn run_collaborative_turn(
 
 fn main() {
     tauri::Builder::default()
+        .manage(terminal::TerminalState::default())
         .setup(|_app| {
             #[cfg(target_os = "macos")]
             {
@@ -173,6 +175,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            terminal::terminal_open,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_close,
             get_system_telemetry,
             get_system_info,
             agent::run_agent_turn,

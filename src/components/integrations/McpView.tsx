@@ -141,7 +141,7 @@ export const McpView: React.FC = () => {
       timeout: Number.isFinite(parsedTimeout) ? parsedTimeout : undefined,
       env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined,
       enabled: isAdding ? true : selectedServer?.enabled ?? true,
-      toolsCount: selectedServer?.toolsCount || 4,
+      toolsCount: selectedServer?.toolsCount ?? 0,
       status: 'connected',
     };
 
@@ -174,6 +174,13 @@ export const McpView: React.FC = () => {
     setIsTesting(true);
     setTestResult(null);
     try {
+      let parsedEnv: Record<string, string> = {};
+      if (formEnv.trim()) {
+        try {
+          parsedEnv = JSON.parse(formEnv);
+        } catch {}
+      }
+
       const mockConfig: McpServerConfig = {
         id: selectedServer?.id || 'temp',
         name: formName,
@@ -182,6 +189,7 @@ export const McpView: React.FC = () => {
         args: formArgs.split(' ').filter(Boolean),
         url: formUrl,
         cwd: formCwd.trim() || undefined,
+        env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined,
         status: 'connected',
         enabled: true,
       };

@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import Prism from 'prismjs';
-import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-tsx';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-rust';
 import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-css';
 import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-go';
 import { Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
@@ -20,6 +21,28 @@ interface CodeBlockProps {
   filename?: string;
   initialCollapsed?: boolean;
 }
+
+const CONTROL_FLOW_KEYWORDS = new Set([
+  'import', 'export', 'from', 'as', 'default', 'return', 'if', 'else', 'for', 'while',
+  'do', 'switch', 'case', 'break', 'continue', 'try', 'catch', 'finally', 'throw',
+  'yield', 'await', 'async'
+]);
+
+Prism.hooks.add('wrap', (env) => {
+  if (env.type === 'keyword' && typeof env.content === 'string' && CONTROL_FLOW_KEYWORDS.has(env.content.trim())) {
+    env.classes.push('control-flow');
+  }
+});
+
+['javascript', 'jsx', 'typescript', 'tsx', 'python', 'rust', 'go'].forEach((lang) => {
+  if (Prism.languages[lang]) {
+    Prism.languages.insertBefore(lang, 'punctuation', {
+      property: /(?<=\.)[a-zA-Z_$][a-zA-Z0-9_$]*/,
+      'class-name': /\b[A-Z][a-zA-Z0-9_$]*\b/,
+      variable: /\b[a-z_$][a-zA-Z0-9_$]*\b/,
+    });
+  }
+});
 
 export const CodeBlock: React.FC<CodeBlockProps> = ({
   language,
@@ -39,7 +62,8 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
 
   const cleanLang = (language || 'typescript').toLowerCase().replace('language-', '');
   const grammar = Prism.languages[cleanLang] || Prism.languages.typescript || Prism.languages.javascript;
-  const lines = code.split('\n');
+  const highlightedFull = Prism.highlight(code, grammar, cleanLang);
+  const lines = highlightedFull.split('\n');
 
   return (
     <div className="my-3 select-text w-full">
@@ -98,22 +122,19 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
       {/* 2. RECTANGULAR CONTAINER WITH SUBTLE CURVED EDGES APPEARS FOR CODE ITSELF */}
       {!isCollapsed && (
         <div className="mt-1.5 border border-white/[0.08] bg-[#111113] rounded-lg overflow-hidden py-2.5 px-1 font-mono text-[12.5px] leading-relaxed select-text shadow-sm">
-          {lines.map((line, idx) => {
-            const highlightedLine = Prism.highlight(line, grammar, cleanLang);
-            return (
-              <div key={idx} className="flex hover:bg-white/[0.02] transition-colors">
-                {/* LINE NUMBER (NO VERTICAL DIVIDER LINE, NO BACKGROUND COLOR) */}
-                <span className="w-8 shrink-0 text-white/25 select-none text-right pr-3.5 font-mono tabular-nums text-[11.5px] leading-relaxed">
-                  {idx + 1}
-                </span>
-                {/* CODE LINE (WRAPS NATURALLY WITHOUT HORIZONTAL SCROLL) */}
-                <span
-                  className="flex-1 whitespace-pre-wrap break-words text-zinc-100 font-mono leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: highlightedLine || '&nbsp;' }}
-                />
-              </div>
-            );
-          })}
+          {lines.map((highlightedLine, idx) => (
+            <div key={idx} className="flex hover:bg-white/[0.02] transition-colors">
+              {/* LINE NUMBER (NO VERTICAL DIVIDER LINE, NO BACKGROUND COLOR) */}
+              <span className="w-8 shrink-0 text-white/25 select-none text-right pr-3.5 font-mono tabular-nums text-[11.5px] leading-relaxed">
+                {idx + 1}
+              </span>
+              {/* CODE LINE (WRAPS NATURALLY WITHOUT HORIZONTAL SCROLL) */}
+              <span
+                className="flex-1 whitespace-pre-wrap break-words text-zinc-100 font-mono leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: highlightedLine || '&nbsp;' }}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>

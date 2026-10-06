@@ -23,6 +23,164 @@ export const HomeIcon: React.FC<{ size?: number; className?: string }> = ({
   </svg>
 );
 
+// Official Dashboard SVG (Official SF Symbols square.grid.2x2)
+export const DashboardIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 14,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <rect x="2" y="2" width="5" height="5" rx="1.25" stroke="currentColor" strokeWidth="1.25" />
+    <rect x="9" y="2" width="5" height="5" rx="1.25" stroke="currentColor" strokeWidth="1.25" />
+    <rect x="2" y="9" width="5" height="5" rx="1.25" stroke="currentColor" strokeWidth="1.25" />
+    <rect x="9" y="9" width="5" height="5" rx="1.25" stroke="currentColor" strokeWidth="1.25" />
+  </svg>
+);
+
+// Official Integrations SVG (Official SF Symbols puzzlepiece.extension)
+export const IntegrationsIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 14,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      d="M7 2a1 1 0 0 1 2 0v1h2.5A1.5 1.5 0 0 1 13 4.5V7h-1a1 1 0 1 0 0 2h1v2.5a1.5 1.5 0 0 1-1.5 1.5H9v-1a1 1 0 1 0-2 0v1H4.5A1.5 1.5 0 0 1 3 11.5V9h1a1 1 0 0 0 0-2H3V4.5A1.5 1.5 0 0 1 4.5 3H7V2Z"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+// Official Library SVG (Official SF Symbols books.vertical)
+export const LibraryIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 14,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <rect x="2" y="2.5" width="3" height="11" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+    <rect x="6.5" y="2.5" width="3" height="11" rx="0.75" stroke="currentColor" strokeWidth="1.25" />
+    <path
+      d="M11 3.25L13.75 4.5V13.75L11 12.5V3.25Z"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinejoin="round"
+    />
+    <line x1="3.25" y1="5.5" x2="3.75" y2="5.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+    <line x1="7.75" y1="5.5" x2="8.25" y2="5.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+  </svg>
+);
+
+// INDUSTRY-STANDARD 24x24 SOLID (FILLED) ICONS
+export const HomeFilledIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path d="M11.47 3.84a.75.75 0 011.06 0l8.69 8.69a.75.75 0 101.06-1.06l-8.689-8.69a2.25 2.25 0 00-3.182 0l-8.69 8.69a.75.75 0 001.061 1.06l8.69-8.69z" />
+    <path d="M12 5.432l8.159 8.159c.03.03.06.058.091.086v6.198c0 1.035-.84 1.875-1.875 1.875H15a.75.75 0 01-.75-.75v-4.5a.75.75 0 00-.75-.75h-3a.75.75 0 00-.75.75V21a.75.75 0 01-.75.75H5.625a1.875 1.875 0 01-1.875-1.875v-6.198a2.29 2.29 0 00.091-.086L12 5.432z" />
+  </svg>
+);
+
+export const DashboardFilledIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <rect x="3" y="3" width="8" height="8" rx="2" />
+    <rect x="13" y="3" width="8" height="8" rx="2" />
+    <rect x="3" y="13" width="8" height="8" rx="2" />
+    <rect x="13" y="13" width="8" height="8" rx="2" />
+  </svg>
+);
+
+// Official SquaresPlus (Integrations / Extensions) - 3 modular blocks + connection plus
+export const IntegrationsFilledIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path d="M6 3a3 3 0 0 0-3 3v2.25a3 3 0 0 0 3 3h2.25a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3H6ZM15.75 3a3 3 0 0 0-3 3v2.25a3 3 0 0 0 3 3H18a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3h-2.25ZM6 12.75a3 3 0 0 0-3 3V18a3 3 0 0 0 3 3h2.25a3 3 0 0 0 3-3v-2.25a3 3 0 0 0-3-3H6ZM17.25 12.75a.75.75 0 0 1 .75.75v2.25H20.25a.75.75 0 0 1 0 1.5H18v2.25a.75.75 0 0 1-1.5 0V17.25H14.25a.75.75 0 0 1 0-1.5h2.25V13.5a.75.75 0 0 1 .75-.75Z" />
+  </svg>
+);
+
+export const LibraryFilledIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
+  </svg>
+);
+
+export const SettingsFilledIcon: React.FC<{ size?: number; className?: string }> = ({
+  size = 20,
+  className = '',
+}) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567L9.05 4.889c-.02.12-.115.26-.297.348a7.493 7.493 0 00-.986.57c-.166.115-.334.126-.45.083L6.14 5.374a1.875 1.875 0 00-2.282.819l-.92 1.59a1.875 1.875 0 00.416 2.385l1.011.833c.095.078.146.219.11.391a7.496 7.496 0 000 1.134c.036.172-.015.313-.11.391l-1.011.834a1.875 1.875 0 00-.416 2.384l.92 1.591a1.875 1.875 0 002.282.818l1.177-.516c.116-.043.284-.032.45.083.318.22.648.411.986.57.182.088.277.228.297.349l.178 1.071c.151.904.933 1.567 1.85 1.567h1.844c.916 0 1.699-.663 1.85-1.567l.178-1.072c.02-.12.114-.26.297-.349.337-.158.667-.35.985-.57.167-.114.335-.125.45-.082l1.178.516a1.875 1.875 0 002.282-.818l.92-1.591a1.875 1.875 0 00-.415-2.384l-1.012-.834c-.095-.078-.146-.219-.11-.391a7.487 7.487 0 000-1.134c-.036-.172.015-.313.11-.391l1.012-.833a1.875 1.875 0 00.415-2.385l-.92-1.59a1.875 1.875 0 00-2.282-.819l-1.178.516c-.115.043-.283.032-.45-.083a7.49 7.49 0 00-.985-.57c-.183-.088-.278-.228-.297-.349l-.178-1.071A1.875 1.875 0 0012.922 2.25h-1.844zM12 15a3 3 0 100-6 3 3 0 000 6z"
+    />
+  </svg>
+);
+
 // Official Square Pen / New Chat SVG (Official SF Symbols square.and.pencil)
 export const NewChatIcon: React.FC<{ size?: number; className?: string }> = ({
   size = 15,

@@ -12,21 +12,22 @@
 
 @layer base {
   :root {
-    --bg-app: #0e0e11;
-    --bg-header: #16161a;
-    --bg-rail: #0a0a0c;
-    --bg-panel: #16161a;
-    --bg-surface: #1e1e24;
-    --bg-surface-hover: #292933;
-    --bg-active: rgba(217, 70, 239, 0.15);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.16);
-    --text-main: #f4f4f5;
-    --text-muted: #a1a1aa;
-    --text-faint: #52525b;
-    --accent: #d946ef;
-    --accent-hover: #e879f9;
-    --accent-fg: #ffffff;
+    --bg-app: #18191c;
+    --bg-header: #111214;
+    --bg-rail: #111214;
+    --bg-panel: #141518;
+    --bg-surface: #202226;
+    --bg-surface-hover: #2a2d32;
+    --bg-active: #30343b;
+    --border-subtle: #303238;
+    --border-strong: #50545d;
+    --text-main: #f0f1f3;
+    --text-muted: #b0b4bd;
+    --text-faint: #9197a3;
+    --accent: #d3d8e0;
+    --accent-hover: #eef0f4;
+    --accent-fg: #18191c;
+
   }
 
   html, body, #root {
@@ -241,3 +242,22 @@
 }
 
 
+
+.workspace-panel-motion {
+  opacity: 1;
+  visibility: visible;
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease, visibility 0s;
+}
+
+.workspace-panel-closed {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease, visibility 0s 220ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-panel-motion {
+    transition: none;
+  }
+}
