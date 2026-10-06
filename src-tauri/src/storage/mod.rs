@@ -1,6 +1,7 @@
 pub mod event;
 pub mod index;
 pub mod jsonl;
+mod sqlite;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,15 +14,24 @@ pub use jsonl::{
     ActiveContext, JsonlSessionStore, RecoveryReport, RecoveryStatus, SessionRecoveryScanner,
 };
 
-/// Default storage directory name located inside the user's home folder.
-const STORAGE_ROOT_DIR: &str = ".unfuse";
+/// Returns home storage or an error; never falls back to /tmp.
+pub fn default_storage_dir() -> Result<PathBuf, String> {
+    storage_dir_from_home(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
+}
 
-/// Returns default storage root: ~/.unfuse
-pub fn default_storage_dir() -> PathBuf {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join(STORAGE_ROOT_DIR)
+fn storage_dir_from_home(
+    home: Option<std::ffi::OsString>,
+    profile: Option<std::ffi::OsString>,
+) -> Result<PathBuf, String> {
+    let home = home
+        .filter(|p| !p.is_empty())
+        .or_else(|| profile.filter(|p| !p.is_empty()))
+        .ok_or("Cannot locate the home directory for Unfuse storage")?;
+    let path = PathBuf::from(home);
+    if !path.is_absolute() {
+        return Err("Unfuse home storage path must be absolute".into());
+    }
+    Ok(path.join(".unfuse"))
 }
 
 /// Computes a deterministic SHA-256 hash for a workspace path.
@@ -35,188 +45,104 @@ pub fn compute_workspace_hash(workspace_path: &Path) -> String {
     format!("{:x}", result)[..16].to_string()
 }
 
-/// Central persistence orchestrator for UNFUSE.
-/// Manages JSONL append-only source-of-truth logs and the rebuildable SQLite cache.
+/// SQLite authority; JSONL and index.db are legacy import sources only.
 #[derive(Clone)]
 pub struct StorageManager {
     base_dir: PathBuf,
-    index: Arc<SqliteIndex>,
+    database: Arc<sqlite::SessionDatabase>,
 }
 
 impl StorageManager {
-    /// Initializes StorageManager with the default base directory (~/.unfuse).
     pub fn new() -> Result<Self, String> {
-        Self::with_base_dir(default_storage_dir())
+        Self::with_base_dir(default_storage_dir()?)
     }
 
-    /// Initializes StorageManager with an explicit base directory (ideal for testing).
     pub fn with_base_dir(base_dir: PathBuf) -> Result<Self, String> {
-        let db_path = base_dir.join("index.db");
-        let index = Arc::new(SqliteIndex::open(&db_path)?);
-
-        Ok(Self { base_dir, index })
+        let database = Arc::new(sqlite::SessionDatabase::open(&base_dir)?);
+        let storage = Self { base_dir, database };
+        storage.rebuild_index()?;
+        Ok(storage)
     }
 
-    /// Returns base directory.
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
     }
-
-    /// Returns the sessions directory: <base_dir>/sessions
+    pub fn database_path(&self) -> &Path {
+        &self.database.path
+    }
     pub fn sessions_dir(&self) -> PathBuf {
         self.base_dir.join("sessions")
     }
 
-    /// Returns the path to a session's JSONL file:
-    /// <base_dir>/sessions/<workspace_hash>/<session_id>.jsonl
+    /// Legacy file location; live history is in sessions.db.
     pub fn session_file_path(&self, workspace_path: &Path, session_id: &str) -> PathBuf {
-        let ws_hash = compute_workspace_hash(workspace_path);
         self.sessions_dir()
-            .join(ws_hash)
+            .join(compute_workspace_hash(workspace_path))
             .join(format!("{}.jsonl", session_id))
     }
 
-    /// Creates a new session, appends the initial SessionMetadata event, and indexes it.
     pub fn create_session(
         &self,
         workspace_path: &Path,
         session_id: &str,
         title: Option<&str>,
     ) -> Result<SessionSummary, String> {
-        let file_path = self.session_file_path(workspace_path, session_id);
-        let ws_hash = compute_workspace_hash(workspace_path);
-        let ws_str = workspace_path
-            .canonicalize()
-            .unwrap_or_else(|_| workspace_path.to_path_buf())
-            .to_string_lossy()
-            .to_string();
-
-        let initial_title = title.unwrap_or("New Session").to_string();
-
-        let meta_event = PersistedEvent::new(
-            session_id,
-            None,
-            EventPayload::SessionMetadata {
-                workspace_path: ws_str.clone(),
-                workspace_hash: ws_hash.clone(),
-                title: initial_title.clone(),
-            },
-        );
-
-        // Session creation is a durability boundary
-        JsonlSessionStore::append_event_durable(&file_path, &meta_event)?;
-
-        let summary = SessionSummary {
-            session_id: session_id.to_string(),
-            workspace_hash: ws_hash,
-            workspace_path: ws_str,
-            title: initial_title,
-            created_at: meta_event.timestamp,
-            updated_at: meta_event.timestamp,
-            turn_count: 0,
-            active_leaf_id: Some(meta_event.id),
-        };
-
-        self.index.upsert_session(&summary, None)?;
-        Ok(summary)
+        self.database
+            .create_session(workspace_path, session_id, title)
     }
 
-    /// Appends an event to the session's JSONL log and refreshes the SQLite index entry.
-    /// Uses append + flush without forced fsync on every event.
     pub fn append_event(
         &self,
         workspace_path: &Path,
         event: &PersistedEvent,
     ) -> Result<(), String> {
-        let file_path = self.session_file_path(workspace_path, &event.session_id);
-        JsonlSessionStore::append_event(&file_path, event)?;
-
-        // Update active leaf in SQLite cache
-        let ws_hash = compute_workspace_hash(workspace_path);
-        let ws_str = workspace_path
-            .canonicalize()
-            .unwrap_or_else(|_| workspace_path.to_path_buf())
-            .to_string_lossy()
-            .to_string();
-
-        let prompt_snippet = match &event.payload {
-            EventPayload::UserTurn { prompt, .. } => Some(prompt.as_str()),
-            _ => None,
-        };
-
-        // Determine if this event constitutes a user turn
-        let turn_increment = match &event.payload {
-            EventPayload::UserTurn { .. } => 1,
-            _ => 0,
-        };
-
-        let title_candidate = match &event.payload {
-            EventPayload::UserTurn { prompt, .. } if !prompt.trim().is_empty() => {
-                let excerpt: String = prompt.chars().take(40).collect();
-                excerpt
-            }
-            _ => String::new(),
-        };
-
-        let summary = SessionSummary {
-            session_id: event.session_id.clone(),
-            workspace_hash: ws_hash,
-            workspace_path: ws_str,
-            title: title_candidate,
-            created_at: event.timestamp,
-            updated_at: event.timestamp,
-            turn_count: turn_increment,
-            active_leaf_id: Some(event.id.clone()),
-        };
-
-        self.index.upsert_session(&summary, prompt_snippet)?;
-        Ok(())
+        self.database.append(workspace_path, event)
     }
 
-    /// Appends an event with an explicit durability boundary (flush + fsync).
+    /// All appends commit with synchronous=FULL, including completion.
     pub fn append_event_durable(
         &self,
         workspace_path: &Path,
         event: &PersistedEvent,
     ) -> Result<(), String> {
-        let file_path = self.session_file_path(workspace_path, &event.session_id);
-        JsonlSessionStore::append_event_durable(&file_path, event)?;
-        Ok(())
+        self.append_event(workspace_path, event)
     }
 
-    /// Loads all raw events for a session from its JSONL log.
     pub fn load_session_events(
         &self,
         workspace_path: &Path,
         session_id: &str,
     ) -> Result<Vec<PersistedEvent>, String> {
-        let file_path = self.session_file_path(workspace_path, session_id);
-        JsonlSessionStore::read_events(&file_path)
+        self.database
+            .load(workspace_path, session_id)
+            .map(|(events, _)| events)
     }
 
-    /// Reconstructs the active branch messages by traversing backward from active_leaf_id to root.
     pub fn reconstruct_active_context(
         &self,
         workspace_path: &Path,
         session_id: &str,
         target_leaf_id: Option<&str>,
     ) -> Result<ActiveContext, String> {
-        let events = self.load_session_events(workspace_path, session_id)?;
-        JsonlSessionStore::reconstruct_active_context(&events, target_leaf_id)
+        let (events, leaf) = self.database.load(workspace_path, session_id)?;
+        let target = target_leaf_id.or(leaf.as_deref());
+        if let Some(target) = target {
+            if !events.iter().any(|e| e.id == target) {
+                return Err("Active leaf does not belong to session".into());
+            }
+        }
+        JsonlSessionStore::reconstruct_active_context(&events, target)
     }
 
-    /// Audits a session for abnormal shutdown or unclosed tool executions without mutating JSONL.
     pub fn recover_session(
         &self,
         workspace_path: &Path,
         session_id: &str,
     ) -> Result<RecoveryReport, String> {
-        let events = self.load_session_events(workspace_path, session_id)?;
-        Ok(SessionRecoveryScanner::audit_session(&events))
+        let context = self.reconstruct_active_context(workspace_path, session_id, None)?;
+        Ok(SessionRecoveryScanner::audit_session(&context.events))
     }
 
-    /// Switches the active branch leaf by appending an ActiveLeaf event.
-    /// Preserves all past and alternate branch histories.
     pub fn switch_active_leaf(
         &self,
         workspace_path: &Path,
@@ -225,36 +151,133 @@ impl StorageManager {
     ) -> Result<(), String> {
         let event = PersistedEvent::new(
             session_id,
-            Some(target_leaf_id.to_string()),
+            Some(target_leaf_id.into()),
             EventPayload::ActiveLeaf {
-                leaf_id: target_leaf_id.to_string(),
+                leaf_id: target_leaf_id.into(),
             },
         );
         self.append_event(workspace_path, &event)
     }
 
-    /// Lists sessions sorted by updated_at descending, optionally filtered by workspace.
     pub fn list_sessions(
         &self,
         workspace_path: Option<&Path>,
     ) -> Result<Vec<SessionSummary>, String> {
-        let ws_hash = workspace_path.map(compute_workspace_hash);
-        self.index.list_sessions(ws_hash.as_deref())
+        self.database.list(workspace_path, None)
     }
 
-    /// Searches sessions by title and user prompt snippets.
     pub fn search_sessions(
         &self,
         workspace_path: Option<&Path>,
         query: &str,
     ) -> Result<Vec<SessionSummary>, String> {
-        let ws_hash = workspace_path.map(compute_workspace_hash);
-        self.index.search_sessions(ws_hash.as_deref(), query)
+        self.database.list(workspace_path, Some(query))
     }
 
-    /// Rebuilds the SQLite index entirely from JSONL files on disk.
+    pub fn backup(&self, destination: &Path) -> Result<(), String> {
+        self.database.backup(destination)
+    }
+
+    /// Fresh-directory restore only; never overwrites an existing authority.
+    pub fn restore_backup(source: &Path, base_dir: PathBuf) -> Result<Self, String> {
+        let runtime_lock = sqlite::lock_runtime(&base_dir)?;
+        sqlite::SessionDatabase::verify_backup(source)?;
+        let destination = base_dir.join("sessions.db");
+        let input = rusqlite::Connection::open_with_flags(
+            source,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|e| e.to_string())?;
+        sqlite::snapshot(&input, &destination)?;
+        sqlite::SessionDatabase::verify_backup(&destination)?;
+        drop(input);
+        let database = Arc::new(sqlite::SessionDatabase::open_locked(
+            &base_dir,
+            runtime_lock,
+        )?);
+        let storage = Self { base_dir, database };
+        storage.rebuild_index()?;
+        Ok(storage)
+    }
+
+    /// IPC-compatible name: idempotent legacy import, never clears the authority.
     pub fn rebuild_index(&self) -> Result<usize, String> {
-        self.index.rebuild_from_jsonl(&self.sessions_dir())
+        let sessions_dir = self.sessions_dir();
+        if !sessions_dir.exists() {
+            return Ok(0);
+        }
+        let mut sources = Vec::new();
+        for directory in std::fs::read_dir(&sessions_dir).map_err(|e| e.to_string())? {
+            let directory = directory.map_err(|e| e.to_string())?;
+            if !directory.file_type().map_err(|e| e.to_string())?.is_dir() {
+                continue;
+            }
+            for entry in std::fs::read_dir(directory.path()).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                if !entry.file_type().map_err(|e| e.to_string())?.is_file()
+                    || entry.path().extension().and_then(|e| e.to_str()) != Some("jsonl")
+                {
+                    continue;
+                }
+                let path = entry.path();
+                let key = path
+                    .strip_prefix(&sessions_dir)
+                    .map_err(|e| e.to_string())?
+                    .to_string_lossy()
+                    .into_owned();
+                let contents = std::fs::read(&path)
+                    .map_err(|e| format!("Cannot read legacy file {key}: {e}"))?;
+                if self.database.needs_import(&key, &contents)? {
+                    sources.push((key, contents));
+                }
+            }
+        }
+        sources.sort_by(|a, b| a.0.cmp(&b.0));
+        if sources.is_empty() {
+            return Ok(0);
+        }
+        let backup_dir = self
+            .base_dir
+            .join("backups")
+            .join(format!("legacy_{}", event::generate_event_id()));
+        std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+        for (key, contents) in &sources {
+            let destination = backup_dir.join("sessions").join(key);
+            std::fs::create_dir_all(destination.parent().ok_or("Invalid backup path")?)
+                .map_err(|e| e.to_string())?;
+            use std::io::Write;
+            let mut file = std::fs::File::create_new(&destination).map_err(|e| e.to_string())?;
+            file.write_all(contents).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            if std::fs::read(&destination).map_err(|e| e.to_string())? != *contents {
+                return Err("Legacy backup verification failed".into());
+            }
+        }
+        let old_index = self.base_dir.join("index.db");
+        if old_index.exists() {
+            let conn = rusqlite::Connection::open_with_flags(
+                &old_index,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .map_err(|e| e.to_string())?;
+            sqlite::snapshot(&conn, &backup_dir.join("index.db"))?;
+        }
+        let mut imported = 0;
+        let mut errors = Vec::new();
+        for (key, contents) in sources {
+            match self.database.import_file(&key, &contents) {
+                Ok(true) => imported += 1,
+                Ok(false) => {}
+                Err(e) => errors.push(format!("{key}: {e}")),
+            }
+        }
+        if !errors.is_empty() {
+            return Err(format!(
+                "Legacy import requires review (originals preserved):\n{}",
+                errors.join("\n")
+            ));
+        }
+        Ok(imported)
     }
 }
 
@@ -264,12 +287,26 @@ impl StorageManager {
 
 use std::sync::OnceLock;
 
-static GLOBAL_STORAGE: OnceLock<StorageManager> = OnceLock::new();
+static GLOBAL_STORAGE: OnceLock<Result<StorageManager, String>> = OnceLock::new();
 
-pub fn get_storage() -> &'static StorageManager {
-    GLOBAL_STORAGE.get_or_init(|| {
-        StorageManager::new().expect("Failed to initialize persistent storage manager")
-    })
+pub fn get_storage() -> Result<&'static StorageManager, String> {
+    GLOBAL_STORAGE
+        .get_or_init(|| {
+            #[cfg(test)]
+            {
+                StorageManager::with_base_dir(std::env::temp_dir().join(format!(
+                    "unfuse_agent_storage_{}_{}",
+                    std::process::id(),
+                    now_epoch_ms()
+                )))
+            }
+            #[cfg(not(test))]
+            {
+                StorageManager::new()
+            }
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +319,7 @@ pub fn create_session(
     session_id: String,
     title: Option<String>,
 ) -> Result<SessionSummary, String> {
-    let storage = get_storage();
+    let storage = get_storage()?;
     storage.create_session(Path::new(&workspace_root), &session_id, title.as_deref())
 }
 
@@ -292,7 +329,7 @@ pub fn load_session(
     session_id: String,
     target_leaf_id: Option<String>,
 ) -> Result<ActiveContextPayload, String> {
-    let storage = get_storage();
+    let storage = get_storage()?;
     let ctx = storage.reconstruct_active_context(
         Path::new(&workspace_root),
         &session_id,
@@ -312,7 +349,7 @@ pub fn load_session(
 
 #[tauri::command]
 pub fn list_sessions(workspace_root: Option<String>) -> Result<Vec<SessionSummary>, String> {
-    let storage = get_storage();
+    let storage = get_storage()?;
     let path = workspace_root.as_ref().map(Path::new);
     storage.list_sessions(path)
 }
@@ -322,14 +359,14 @@ pub fn search_sessions(
     query: String,
     workspace_root: Option<String>,
 ) -> Result<Vec<SessionSummary>, String> {
-    let storage = get_storage();
+    let storage = get_storage()?;
     let path = workspace_root.as_ref().map(Path::new);
     storage.search_sessions(path, &query)
 }
 
 #[tauri::command]
 pub fn rebuild_index() -> Result<usize, String> {
-    let storage = get_storage();
+    let storage = get_storage()?;
     storage.rebuild_index()
 }
 
@@ -375,6 +412,15 @@ mod tests {
         let storage = StorageManager::with_base_dir(dir.path.clone())
             .expect("Failed to initialize test storage");
         (storage, dir)
+    }
+
+    #[test]
+    fn test_home_storage_requires_an_absolute_available_home() {
+        assert!(storage_dir_from_home(None,None).is_err());
+        assert!(storage_dir_from_home(Some("".into()),Some("".into())).is_err());
+        assert!(storage_dir_from_home(Some("relative".into()),None).is_err());
+        let home = std::env::temp_dir();
+        assert_eq!(storage_dir_from_home(None,Some(home.clone().into_os_string())).unwrap(),home.join(".unfuse"));
     }
 
     #[test]
@@ -571,33 +617,22 @@ mod tests {
     }
 
     #[test]
-    fn test_index_rebuild_from_jsonl() {
+    fn test_legacy_import_is_idempotent_and_preserves_originals() {
         let (storage, _dir) = test_storage();
         let ws = Path::new("/tmp/test_ws");
-
-        storage
-            .create_session(ws, "s-1", Some("First Session"))
-            .unwrap();
-        storage
-            .create_session(ws, "s-2", Some("Second Session"))
-            .unwrap();
-
-        // Verify initial listing has 2 sessions
-        let list1 = storage.list_sessions(Some(ws)).unwrap();
-        assert_eq!(list1.len(), 2);
-
-        // Wipe the SQLite index table directly to simulate db deletion/corruption
-        storage.index.clear_all_for_test().unwrap();
-
-        let list_empty = storage.list_sessions(Some(ws)).unwrap();
-        assert_eq!(list_empty.len(), 0);
-
-        // Rebuild from JSONL files on disk
-        let count = storage.rebuild_index().unwrap();
-        assert_eq!(count, 2);
-
-        let list_restored = storage.list_sessions(Some(ws)).unwrap();
-        assert_eq!(list_restored.len(), 2);
+        let path = storage.session_file_path(ws,"legacy-1");
+        let metadata = PersistedEvent::new("legacy-1",None,EventPayload::SessionMetadata {
+            workspace_path:ws.to_string_lossy().into_owned(),workspace_hash:compute_workspace_hash(ws),title:"Legacy".into()
+        });
+        let user = PersistedEvent::new("legacy-1",Some(metadata.id.clone()),EventPayload::UserTurn { prompt:"hello".into(),attached_files:vec![] });
+        JsonlSessionStore::append_event(&path,&metadata).unwrap();
+        JsonlSessionStore::append_event(&path,&user).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        assert_eq!(storage.rebuild_index().unwrap(),1);
+        assert_eq!(storage.rebuild_index().unwrap(),0);
+        assert_eq!(storage.load_session_events(ws,"legacy-1").unwrap(),vec![metadata,user]);
+        assert_eq!(std::fs::read(&path).unwrap(),original);
+        assert!(storage.base_dir().join("backups").is_dir());
     }
 
     #[test]
@@ -737,7 +772,8 @@ mod tests {
         let file_path = storage.session_file_path(ws, "sess-corrupt");
 
         // Create session
-        storage.create_session(ws, "sess-corrupt", None).unwrap();
+        let initial = PersistedEvent::new("sess-corrupt",None,EventPayload::SessionMetadata { workspace_path:ws.to_string_lossy().into_owned(), workspace_hash:compute_workspace_hash(ws),title:"New Session".into() });
+        JsonlSessionStore::append_event(&file_path,&initial).unwrap();
 
         // Append valid event
         let u1 = PersistedEvent::new(
@@ -748,7 +784,7 @@ mod tests {
                 attached_files: vec![],
             },
         );
-        storage.append_event(ws, &u1).unwrap();
+        JsonlSessionStore::append_event(&file_path,&u1).unwrap();
 
         // Intentionally inject corrupted JSON in the middle
         {
@@ -775,7 +811,7 @@ mod tests {
         }
 
         // Reading must fail with corruption error rather than silently swallowing
-        let res = storage.load_session_events(ws, "sess-corrupt");
+        let res = JsonlSessionStore::read_events(&file_path);
         assert!(res.is_err(), "Expected error for corrupted middle line");
         let err_msg = res.unwrap_err();
         assert!(err_msg.contains("Corrupted session log at line 3"));

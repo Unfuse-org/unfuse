@@ -225,23 +225,23 @@ pub fn run_agent_loop_multimodal(
         custom_system_prompt,
     );
 
-    // Initialize persistence and reconstruct prior conversation history
-    let storage = crate::storage::get_storage();
+    // Storage failures must stop the turn and reach the UI, not become empty history.
+    let storage_error = |error: String| {
+        emit_event("agent_event", json!({
+            "type": "turn_error",
+            "payload": { "session_id": session_id, "error": error }
+        }));
+        error
+    };
+    let storage = crate::storage::get_storage().map_err(&storage_error)?;
     let active_ctx = storage
         .reconstruct_active_context(workspace_root, session_id, None)
-        .ok();
-
-    let mut active_leaf = active_ctx
-        .as_ref()
-        .and_then(|ctx| ctx.active_leaf_id.clone());
-
-    let prior_messages = active_ctx
-        .map(|ctx| ctx.chat_messages)
-        .unwrap_or_default();
-
+        .map_err(&storage_error)?;
+    let mut active_leaf = active_ctx.active_leaf_id;
+    let prior_messages = active_ctx.chat_messages;
     if active_leaf.is_none() {
-        let summary = storage.create_session(workspace_root, session_id, None).ok();
-        active_leaf = summary.and_then(|s| s.active_leaf_id);
+        active_leaf = storage.create_session(workspace_root, session_id, None)
+            .map_err(&storage_error)?.active_leaf_id;
     }
 
     let attached_refs: Vec<String> = media_refs.unwrap_or_default().to_vec();
@@ -255,7 +255,7 @@ pub fn run_agent_loop_multimodal(
         },
     );
     active_leaf = Some(user_evt.id.clone());
-    let _ = storage.append_event(workspace_root, &user_evt);
+    storage.append_event(workspace_root, &user_evt).map_err(&storage_error)?;
 
     let user_msg = if attached_refs.is_empty() {
         ChatMessage::user_text(prompt)
@@ -288,7 +288,7 @@ pub fn run_agent_loop_multimodal(
                     stage_index: None,
                 },
             );
-            let _ = storage.append_event_durable(workspace_root, &cancel_evt);
+            storage.append_event_durable(workspace_root, &cancel_evt).map_err(&storage_error)?;
 
             emit_event(
                 "agent_event",
@@ -335,7 +335,7 @@ pub fn run_agent_loop_multimodal(
                         stage_index: None,
                     },
                 );
-                let _ = storage.append_event_durable(workspace_root, &err_evt);
+                storage.append_event_durable(workspace_root, &err_evt).map_err(&storage_error)?;
 
                 emit_event(
                     "agent_event",
@@ -357,7 +357,7 @@ pub fn run_agent_loop_multimodal(
                     stage_index: None,
                 },
             );
-            let _ = storage.append_event_durable(workspace_root, &cancel_evt);
+            storage.append_event_durable(workspace_root, &cancel_evt).map_err(&storage_error)?;
 
             emit_event(
                 "agent_event",
@@ -379,7 +379,7 @@ pub fn run_agent_loop_multimodal(
                     model: config.model.clone(),
                 },
             );
-            let _ = storage.append_event_durable(workspace_root, &asst_evt);
+            storage.append_event_durable(workspace_root, &asst_evt).map_err(&storage_error)?;
 
             messages.push(ChatMessage {
                 role: "assistant".to_string(),
@@ -426,7 +426,7 @@ pub fn run_agent_loop_multimodal(
                 },
             );
             active_leaf = Some(tc_evt.id.clone());
-            let _ = storage.append_event(workspace_root, &tc_evt);
+            storage.append_event(workspace_root, &tc_evt).map_err(&storage_error)?;
 
             if cancelled.load(Ordering::Relaxed) {
                 let cancel_evt = crate::storage::PersistedEvent::new(
@@ -437,7 +437,7 @@ pub fn run_agent_loop_multimodal(
                         stage_index: None,
                     },
                 );
-                let _ = storage.append_event_durable(workspace_root, &cancel_evt);
+                storage.append_event_durable(workspace_root, &cancel_evt).map_err(&storage_error)?;
 
                 emit_event(
                     "agent_event",
@@ -465,7 +465,7 @@ pub fn run_agent_loop_multimodal(
                         },
                     );
                     active_leaf = Some(res_evt.id.clone());
-                    let _ = storage.append_event(workspace_root, &res_evt);
+                    storage.append_event(workspace_root, &res_evt).map_err(&storage_error)?;
 
                     emit_event(
                         "agent_event",
@@ -592,7 +592,7 @@ pub fn run_agent_loop_multimodal(
                         },
                     );
                     active_leaf = Some(perm_evt.id.clone());
-                    let _ = storage.append_event(workspace_root, &perm_evt);
+                    storage.append_event(workspace_root, &perm_evt).map_err(&storage_error)?;
                 }
             }
 
@@ -610,7 +610,7 @@ pub fn run_agent_loop_multimodal(
                     },
                 );
                 active_leaf = Some(res_evt.id.clone());
-                let _ = storage.append_event(workspace_root, &res_evt);
+                storage.append_event(workspace_root, &res_evt).map_err(&storage_error)?;
 
                 emit_event(
                     "agent_event",
@@ -705,7 +705,9 @@ pub fn run_agent_loop_multimodal(
                 },
             );
             active_leaf = Some(res_evt.id.clone());
-            let _ = storage.append_event(workspace_root, &res_evt);
+            storage.append_event(workspace_root, &res_evt).map_err(|error| {
+                storage_error(format!("The tool may have acted, but its result could not be saved: {error}"))
+            })?;
 
             emit_event(
                 "agent_event",
@@ -741,7 +743,7 @@ pub fn run_agent_loop_multimodal(
             stage_index: None,
         },
     );
-    let _ = storage.append_event_durable(workspace_root, &err_evt);
+    storage.append_event_durable(workspace_root, &err_evt).map_err(&storage_error)?;
 
     emit_event(
         "agent_event",
@@ -783,7 +785,7 @@ pub async fn run_agent_turn(
     );
 
     tauri::async_runtime::spawn_blocking(move || {
-        let _ = run_agent_loop_multimodal(
+        let result = run_agent_loop_multimodal(
             &path,
             &session_id,
             &prompt,
@@ -795,9 +797,10 @@ pub async fn run_agent_turn(
             emit_event,
         );
         remove_session(&session_id);
+        result.map(|_| ())
     })
     .await
-    .map_err(|e| format!("Task execution failed: {}", e))
+    .map_err(|e| format!("Task execution failed: {}", e))?
 }
 
 #[tauri::command]
@@ -919,7 +922,7 @@ mod tests {
     }
 
     fn cleanup_test_session(workspace_dir: &Path, session_id: &str) {
-        let storage = crate::storage::get_storage();
+        let storage = crate::storage::get_storage().expect("Test storage must initialize");
         let file = storage.session_file_path(workspace_dir, session_id);
         let _ = fs::remove_file(file);
     }
@@ -1482,6 +1485,25 @@ mod tests {
         let msgs1 = res1.unwrap();
         assert_eq!(msgs1.len(), 3); // system, user, assistant
 
+        // Diagnose persistence separately from message reconstruction: the model's
+        // in-memory reply alone is not evidence that turn 1 was saved.
+        let storage = crate::storage::get_storage().expect("Test storage must initialize");
+        let saved = storage
+            .load_session_events(&temp_dir, session_id)
+            .expect("Turn 1 history must be readable");
+        assert_eq!(
+            saved.len(),
+            3,
+            "Turn 1 must persist metadata, user and assistant events at {}",
+            storage.session_file_path(&temp_dir, session_id).display()
+        );
+        let restored = storage
+            .reconstruct_active_context(&temp_dir, session_id, None)
+            .expect("Turn 1 history must reconstruct");
+        assert_eq!(restored.chat_messages.len(), 2);
+        assert_eq!(restored.chat_messages[0].content, "My name is Alice");
+        assert_eq!(restored.chat_messages[1].content, "Hello Alice!");
+
         // Turn 2
         let (sink2, _) = make_capturing_sink();
         let seen_msgs_turn2 = Arc::new(Mutex::new(Vec::new()));
@@ -1516,6 +1538,24 @@ mod tests {
 
         cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_storage_error_stops_before_inference_and_reaches_ui() {
+        let workspace = std::env::temp_dir().join("unfuse_agent_storage_error");
+        fs::create_dir_all(&workspace).unwrap();
+        let session_id = "test_sess_storage_error";
+        crate::storage::get_storage().unwrap()
+            .create_session(&workspace,session_id,None).unwrap();
+        let (sink,events) = make_capturing_sink();
+        let stream: StreamFn = Box::new(|_,_,_,_| panic!("Inference must not start after a storage error"));
+        let other_workspace = workspace.join("another-project");
+        let result = run_agent_loop(&other_workspace,session_id,"hello",&make_test_config(),stream,sink);
+        assert!(result.unwrap_err().contains("different workspace"));
+        assert!(events.lock().unwrap().iter().any(|(_,event)| {
+            event["type"] == "turn_error" && event["payload"]["session_id"] == session_id
+        }));
+        fs::remove_dir_all(workspace).unwrap();
     }
 
     #[test]
