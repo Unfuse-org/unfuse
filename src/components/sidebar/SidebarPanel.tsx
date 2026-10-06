@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { ChatSession } from './types';
 import {
-  HomeIcon,
   NewChatIcon,
   SearchIcon,
   MessageBubbleIcon,
@@ -9,7 +8,6 @@ import {
   TrashIcon,
 } from './SidebarSVGs';
 
-import { BtopTelemetryPopover } from '../chat/BtopTelemetryPopover';
 
 export const INITIAL_SESSIONS: ChatSession[] = [
   {
@@ -31,7 +29,7 @@ interface SidebarPanelProps {
 }
 
 export const SidebarPanel: React.FC<SidebarPanelProps> = ({
-  activeSessionId = 's-1',
+  activeSessionId = 's-main',
   sessions: propSessions,
   onSelectSession,
   onNewChat,
@@ -65,6 +63,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
     };
     setSessions((prev) => [newSess, ...prev]);
     setActiveId(newSess.id);
+    onSelectSession?.(newSess.id);
     onNewChat?.();
   };
 
@@ -72,10 +71,9 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
     e.stopPropagation();
     const updated = sessions.filter((s) => s.id !== id);
     setSessions(updated);
-    onUpdateSessions?.(updated);
-    if (activeId === id && updated.length > 0) {
-      setActiveId(updated[0].id);
-      onSelectSession?.(updated[0].id);
+    if (activeId === id) {
+      setActiveId(updated[0]?.id ?? '');
+      onSelectSession?.(updated[0]?.id ?? '');
     }
   };
 
@@ -85,7 +83,6 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
       s.id === id ? { ...s, pinned: !s.pinned } : s
     );
     setSessions(updated);
-    onUpdateSessions?.(updated);
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
@@ -94,79 +91,46 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
       s.id === id ? { ...s, title: newTitle.trim() } : s
     );
     setSessions(updated);
-    onUpdateSessions?.(updated);
   };
 
   const filteredSessions = sessions.filter((s) =>
-    s.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    [s.title, s.modelUsed ?? ''].join(' ').toLowerCase().includes(searchQuery.toLowerCase())
+  ).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   const pinnedSessions = filteredSessions.filter((s) => s.pinned);
   const unpinnedSessions = filteredSessions.filter((s) => !s.pinned);
 
   return (
-    <div className="flex flex-col h-full w-full select-none text-white/90 overflow-hidden font-sans">
-      {/* 1. TOP TITLEBAR DRAG REGION (MACOS TRAFFIC LIGHT PADDING) */}
-      <div
-        className="h-8 w-full flex-shrink-0"
-        data-tauri-drag-region
-      />
-
-      {/* 2. ACTIONS: SEARCH BAR */}
-      <div className="px-3 mb-2">
-        <div className="relative flex items-center">
-          <div className="absolute left-2.5 text-white/30 pointer-events-none flex items-center">
-            <SearchIcon size={13} />
-          </div>
-          <input
-            type="text"
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-7 pl-7 pr-7 bg-white/[0.04] hover:bg-white/[0.06] focus:bg-white/[0.08] border border-white/[0.08] focus:border-white/20 rounded-lg text-xs text-white placeholder-white/30 outline-none transition-all"
-          />
-          <span className="absolute right-2 text-[9.5px] font-mono text-white/25 pointer-events-none">
-            ⌘K
-          </span>
+    <div className="flex flex-col h-full w-full select-none text-[var(--text-main)] overflow-hidden font-sans">
+      <div className="px-4 pt-5 pb-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold">Chats</h2>
         </div>
-      </div>
-
-      {/* 3. TOOLBAR BUTTONS: HOME, NEW CHAT, SYSTEM INFO (EVENLY ALIGNED) */}
-      <div className="px-3 mb-3 grid grid-cols-3 gap-1.5">
-        {/* HOME BUTTON */}
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('open-launcher'))}
-          title="Home / Workspace Launcher"
-          className="h-7 px-1.5 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[#a1a1aa] hover:text-white"
-        >
-          <HomeIcon size={12} />
-          <span className="text-[11px] font-medium tracking-tight">Home</span>
+        <button type="button" onClick={handleCreateNew}
+          className="w-full flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium border"
+          style={{ backgroundColor: 'var(--bg-active)', borderColor: 'var(--border-subtle)' }}>
+          <NewChatIcon size={13} /> New chat
         </button>
-
-        {/* NEW CHAT BUTTON */}
-        <button
-          type="button"
-          onClick={handleCreateNew}
-          title="New Chat (⌘N)"
-          className="h-7 px-1.5 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 text-[#a1a1aa] hover:text-white"
-        >
-          <NewChatIcon size={12} />
-          <span className="text-[11px] font-medium tracking-tight">New</span>
-        </button>
-
-        {/* SYSTEM MONITOR / TELEMETRY */}
-        <div className="h-7 rounded-lg bg-[#121215] hover:bg-[#18181c] border border-[#222228] hover:border-[#33333a] transition-all flex items-center justify-center">
-          <BtopTelemetryPopover />
+        <div className="relative mt-3">
+          <span className="absolute left-3 top-2.5 opacity-50 pointer-events-none"><SearchIcon size={14} /></span>
+          <input type="search" aria-label="Search chats by title or model" placeholder="Search chats..."
+            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-lg border pl-9 pr-3 py-2 text-xs outline-none focus:ring-1 focus:ring-current"
+            style={{ backgroundColor: 'var(--bg-app)', borderColor: 'var(--border-subtle)' }} />
         </div>
       </div>
 
       {/* 3. CHAT SESSIONS LIST */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-3 pb-3">
+      <div className="flex-1 overflow-y-auto px-2 space-y-5 pb-4">
+        {filteredSessions.length === 0 && (
+          <p className="text-xs opacity-60 px-3 py-5 text-center">
+            {searchQuery ? 'No chats match your search.' : 'Start a new chat to begin.'}
+          </p>
+        )}
         {/* PINNED SESSIONS */}
         {pinnedSessions.length > 0 && (
           <div>
-            <div className="px-2 mb-1 text-[10px] font-semibold text-white/30 uppercase tracking-wider">
+            <div className="px-2 mb-1 text-[10px] font-semibold text-[var(--text-main)] opacity-50 uppercase tracking-wider">
               Pinned
             </div>
             <div className="space-y-0.5">
@@ -187,7 +151,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
         {/* RECENT SESSIONS */}
         <div>
-          <div className="px-2 mb-1 text-[10px] font-semibold text-white/30 uppercase tracking-wider">
+          <div className="px-2 mb-1 text-[10px] font-semibold text-[var(--text-main)] opacity-50 uppercase tracking-wider">
             Recent
           </div>
           <div className="space-y-0.5">
@@ -265,16 +229,24 @@ const SessionItem: React.FC<SessionItemProps> = ({
     <div
       onClick={() => onSelect(session.id)}
       onDoubleClick={handleDoubleClick}
-      className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+      role="button"
+      tabIndex={0}
+      aria-current={isActive ? 'true' : undefined}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(session.id); }
+        if (e.key === 'F2') { setEditTitle(session.title); setIsEditing(true); }
+      }}
+      className={`group relative flex items-center justify-between px-1.5 py-0.5 rounded text-xs transition-all cursor-pointer ${
         isActive
-          ? 'bg-[#18181c] text-white font-medium shadow-xs border border-[#27272a]'
-          : 'text-[#a1a1aa] hover:text-[#f4f4f5] hover:bg-[#121215]'
+          ? 'bg-[var(--bg-active)] text-[var(--text-main)] font-medium border border-[var(--border-subtle)]'
+          : 'text-[var(--text-main)] hover:bg-[var(--bg-active)] border border-transparent'
       }`}
     >
       <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
         <MessageBubbleIcon
           size={13}
-          className={isActive ? 'text-white shrink-0' : 'text-white/30 shrink-0'}
+          className={isActive ? 'text-[var(--text-main)] shrink-0' : 'text-[var(--text-main)] opacity-50 shrink-0'}
         />
         {isEditing ? (
           <input
@@ -285,26 +257,23 @@ const SessionItem: React.FC<SessionItemProps> = ({
             onBlur={handleSubmit}
             onKeyDown={handleKeyDown}
             onClick={(e) => e.stopPropagation()}
-            className="w-full bg-transparent text-white text-[11.5px] border-b border-white/60 pb-0.5 outline-none font-medium leading-tight focus:border-white"
+            className="w-full bg-transparent text-[var(--text-main)] text-[13px] border-b border-white/60 pb-0.5 outline-none font-medium leading-tight focus:border-white"
           />
         ) : (
-          <span
-            className="truncate tracking-tight text-[11.5px]"
-            title="Double click to rename"
-          >
-            {session.title}
-          </span>
+          <div className="min-w-0">
+            <p className="truncate tracking-tight text-[13px]" title="Double click or press F2 to rename">{session.title}</p>
+          </div>
         )}
       </div>
 
       {/* HOVER ACTIONS */}
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0">
         <button
           type="button"
           onClick={(e) => onTogglePin(e, session.id)}
           title={session.pinned ? 'Unpin' : 'Pin'}
-          className={`p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer ${
-            session.pinned ? 'text-white/80' : ''
+          className={`p-1.5 rounded-md text-[var(--text-main)] opacity-60 hover:text-[var(--text-main)] hover:bg-white/[0.08] transition-all cursor-pointer ${
+            session.pinned ? 'text-[var(--text-main)]' : ''
           }`}
         >
           <PinIcon size={13.5} />
@@ -313,7 +282,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
           type="button"
           onClick={(e) => onDelete(e, session.id)}
           title="Delete Chat"
-          className="p-1.5 rounded-md text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+          className="p-1.5 rounded-md text-[var(--text-main)] opacity-60 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
         >
           <TrashIcon size={13.5} />
         </button>

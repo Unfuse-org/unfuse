@@ -11,11 +11,31 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-app: #0e0e11;
+    --bg-header: #16161a;
+    --bg-rail: #0a0a0c;
+    --bg-panel: #16161a;
+    --bg-surface: #1e1e24;
+    --bg-surface-hover: #292933;
+    --bg-active: rgba(217, 70, 239, 0.15);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --text-faint: #52525b;
+    --accent: #d946ef;
+    --accent-hover: #e879f9;
+    --accent-fg: #ffffff;
+  }
+
   html, body, #root {
     height: 100%;
     margin: 0;
     padding: 0;
-    background-color: transparent;
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -93,72 +113,112 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Syntax Highlighting Colors (Vercel / Geist Dark Minimalist Theme) */
+/* Official VS Code Dark+ Syntax Highlighting Theme */
 .token.comment,
 .token.prolog,
 .token.doctype,
 .token.cdata {
-  color: #52525b;
-  font-style: italic;
+  color: #7ee787 !important;
+  opacity: 0.65;
+  font-style: italic !important;
 }
 
 .token.punctuation {
-  color: #71717a;
+  color: #e6edf3 !important;
 }
 
-.token.keyword,
-.token.atrule,
+.token.tag .token.punctuation {
+  color: #58a6ff !important;
+}
+
 .token.tag,
-.token.selector {
-  color: #f43f5e;
+.token.tag .token.tag {
+  color: #4fc1ff !important;
   font-weight: 500;
+}
+
+.token.tag .token.class-name {
+  color: #4ef0c9 !important;
+  font-weight: 600;
+}
+
+.token.attr-name {
+  color: #79c0ff !important;
+}
+
+.token.attr-value,
+.token.string,
+.token.char,
+.token.inserted {
+  color: #ff9e79 !important;
+}
+
+.token.attr-value .token.punctuation {
+  color: #ff9e79 !important;
+}
+
+.token.attr-value .token.punctuation.attr-equals {
+  color: #e6edf3 !important;
+}
+
+.token.keyword {
+  color: #4fc1ff !important;
+}
+
+.token.keyword.control-flow,
+.token.atrule {
+  color: #d2a8ff !important;
+  font-weight: 500;
+}
+
+.token.selector {
+  color: #ffd166 !important;
 }
 
 .token.function,
 .token.function-variable {
-  color: #38bdf8;
+  color: #ffdf5d !important;
 }
 
 .token.class-name,
 .token.type,
 .token.builtin {
-  color: #7dd3fc;
+  color: #4ef0c9 !important;
+  font-weight: 500;
 }
 
-.token.string,
-.token.char,
-.token.attr-value,
-.token.inserted {
-  color: #6ee7b7;
+.token.number {
+  color: #7ee787 !important;
 }
 
-.token.number,
 .token.boolean,
-.token.constant,
-.token.symbol {
-  color: #fbbf24;
+.token.constant {
+  color: #ff7b72 !important;
 }
 
-.token.property,
+.token.property {
+  color: #79c0ff !important;
+}
+
 .token.variable,
 .token.parameter {
-  color: #f4f4f5;
+  color: #9cdcfe !important;
 }
 
 .token.operator,
 .token.entity,
 .token.url {
-  color: #a1a1aa;
+  color: #ff7b72 !important;
 }
 
 .token.regex,
 .token.important {
-  color: #fda4af;
+  color: #ff7b72 !important;
 }
 
 .token.deleted {
-  color: #ef4444;
-  opacity: 0.8;
+  color: #ff7b72 !important;
+  opacity: 0.8 !important;
 }
 
 @keyframes fluid-flow {
