@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LocalModelBlade } from './types';
-import { getModelLogo } from './MountModelView';
-import { ArrowLeft, PowerOff, Save, Check } from 'lucide-react';
+import { getProviderLogo } from './Logos';
+import { ArrowLeft, Save, Check, ChevronDown, SlidersHorizontal, Server, Trash2 } from 'lucide-react';
 
 interface BladeConfigViewProps {
   model: LocalModelBlade;
@@ -10,355 +10,71 @@ interface BladeConfigViewProps {
   onUnload: (id: string) => void;
 }
 
-const CONTEXT_PRESETS = [4096, 8192, 16384, 32768, 65536, 128000];
-const MAX_TOKENS_PRESETS = [1024, 2048, 4096, 8192, 16384];
-
-export const BladeConfigView: React.FC<BladeConfigViewProps> = ({
-  model,
-  onClose,
-  onSave,
-  onUnload,
-}) => {
-  const [contextLength, setContextLength] = useState<number>(model.contextLength || 32768);
-  const [temperature, setTemperature] = useState<number>(
-    model.temperature !== undefined ? model.temperature : 0.2
-  );
-  const [topP, setTopP] = useState<number>(model.topP !== undefined ? model.topP : 0.9);
-  const [repetitionPenalty, setRepetitionPenalty] = useState<number>(
-    model.repetitionPenalty !== undefined ? model.repetitionPenalty : 1.1
-  );
-  const [maxTokens, setMaxTokens] = useState<number>(
-    model.maxTokens !== undefined ? model.maxTokens : 4096
-  );
-  const [isPrimary, setIsPrimary] = useState<boolean>(model.status === 'active');
-
-  const handleSave = () => {
-    onSave({
-      ...model,
-      contextLength,
-      temperature,
-      topP,
-      repetitionPenalty,
-      maxTokens,
-      status: isPrimary ? 'active' : model.status === 'active' ? 'loaded' : model.status,
-    });
+export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, onClose, onSave, onUnload }) => {
+  const [temperature, setTemperature] = useState(model.temperature ?? 0.0);
+  const [maxTokens, setMaxTokens] = useState(model.maxTokens ?? 4096);
+  const [isPrimary, setIsPrimary] = useState(model.status === 'active');
+  const [advanced, setAdvanced] = useState(false);
+  const valid = Number.isFinite(temperature) && temperature >= 0 && temperature <= 2 && Number.isSafeInteger(maxTokens) && maxTokens > 0 && maxTokens <= 4294967295;
+  const save = () => {
+    if (!valid) return;
+    onSave({ ...model, temperature, maxTokens, status: isPrimary ? 'active' : model.status === 'active' ? 'loaded' : model.status });
     onClose();
   };
-
-  const handleUnloadClick = () => {
-    onUnload(model.id);
-    onClose();
-  };
-
+  const fieldClass = 'w-24 border rounded-md px-2 py-1.5 text-xs tabular-nums outline-none focus:border-[var(--accent)]';
+  const fieldStyle = { backgroundColor: 'var(--bg-app)', borderColor: 'var(--border-subtle)' };
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#121215] px-3.5 pt-2.5 pb-3 text-[#f4f4f5] overflow-y-auto select-none font-sans">
-      {/* 1. TOP HEADER & MODEL IDENTITY (UNIFIED SINGLE BAR) */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#1e1e24]" data-tauri-drag-region>
-        <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
-          <button
-            type="button"
-            onClick={onClose}
-            title="Back to Active Models"
-            className="p-1 -ml-1 rounded-md text-white/40 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer shrink-0"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-
-          {/* WHITE LOGO BADGE (ALIGNED AT SAME HEIGHT) */}
-          <div className="w-6 h-6 rounded-md bg-white flex items-center justify-center p-0.5 shrink-0 shadow-sm border border-white/20">
-            {getModelLogo(model.family, model.provider, 14)}
+    <div className="flex-1 min-h-0 flex flex-col" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-main)' }}>
+      <header className="flex items-center gap-3 px-4 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+        <button onClick={onClose} aria-label="Back to model rack" className="p-1.5 rounded-md hover:bg-[var(--bg-active)]"><ArrowLeft size={16} /></button>
+        <div className="min-w-0"><h2 className="text-sm font-medium truncate">{model.displayName}</h2><p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Model configuration</p></div>
+      </header>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-6">
+        <div className="flex items-center gap-3">{getProviderLogo(model.provider, 24)}<div className="min-w-0"><p className="text-xs font-medium">{model.provider === 'lmstudio' ? 'LM Studio' : model.provider === 'llamacpp' ? 'llama.cpp' : model.provider === 'mlx' ? 'Apple MLX' : model.provider === 'vllm' ? 'vLLM' : model.provider === 'unsloth' ? 'Unsloth' : 'Ollama'}</p><p className="text-[11px] mt-1 break-all select-text" style={{ color: 'var(--text-muted)' }}>{model.endpoint}</p></div></div>
+        <button onClick={() => setIsPrimary(!isPrimary)} aria-pressed={isPrimary} className="w-full flex items-center justify-between text-xs p-3 rounded-lg border" style={{ borderColor: 'var(--border-subtle)', backgroundColor: isPrimary ? 'var(--bg-active)' : undefined }}>Default in rack{isPrimary ? <Check size={15} /> : <span style={{ color: 'var(--text-muted)' }}>Set default</span>}</button>
+        <section>
+          <h3 className="text-xs font-medium flex items-center gap-2"><SlidersHorizontal size={14} />Generation</h3>
+          <p className="text-[11px] leading-5 mt-2" style={{ color: 'var(--text-muted)' }}>Saved for this rack session. The main chat is not connected to execution yet.</p>
+          <div className="py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="flex justify-between items-center gap-3"><label htmlFor="model-temperature" className="text-xs">Temperature</label><input id="model-temperature" type="number" min={0} max={2} step={0.01} value={Number.isNaN(temperature) ? '' : temperature} onChange={(e) => setTemperature(e.target.value === '' ? NaN : Number(e.target.value))} className={fieldClass} style={fieldStyle} /></div>
+            <input aria-label="Temperature slider" type="range" min={0} max={2} step={0.01} value={Number.isFinite(temperature) ? temperature : 0} onChange={(event) => setTemperature(Number(event.target.value))} className="w-full mt-4 cursor-pointer accent-[var(--accent)]" />
+            <div className="flex justify-between text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}><span>0 · Less variation</span><span>2 · More variation</span></div>
+            <p className="text-[11px] leading-5 mt-2" style={{ color: 'var(--text-muted)' }}>Lower values reduce sampling variation. Provider and model limits still apply.</p>
           </div>
-
-          {/* MODEL NAME & PORT ALIGNED ON EXACT HORIZONTAL BASELINE */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="text-xs font-bold text-white tracking-tight truncate">
-              {model.displayName}
-            </span>
-            <span className="text-[10px] font-mono font-bold text-white bg-white/10 px-1.5 py-0.2 rounded border border-white/15 shrink-0">
-              {model.port}
-            </span>
+          <div className="py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="flex justify-between items-center gap-3"><label htmlFor="model-max-tokens" className="text-xs">Maximum output tokens</label><input id="model-max-tokens" type="number" min={1} max={4294967295} step={1} value={Number.isNaN(maxTokens) ? '' : maxTokens} onChange={(e) => setMaxTokens(e.target.value === '' ? NaN : Number(e.target.value))} className={fieldClass} style={fieldStyle} /></div>
+            <input aria-label="Maximum output tokens slider" type="range" min={1} max={Math.max(32768, Number.isFinite(maxTokens) ? maxTokens : 32768)} step={1} value={Number.isFinite(maxTokens) ? maxTokens : 1} onChange={(event) => setMaxTokens(Number(event.target.value))} className="w-full mt-4 cursor-pointer accent-[var(--accent)]" />
+            <div className="flex gap-2 mt-2">{[1024, 4096, 8192, 16384].map((value) => <button key={value} onClick={() => setMaxTokens(value)} aria-pressed={maxTokens === value} className="flex-1 text-[10px] py-1.5 rounded-md border hover:bg-[var(--bg-active)]" style={{ borderColor: 'var(--border-subtle)', backgroundColor: maxTokens === value ? 'var(--bg-active)' : undefined }}>{value.toLocaleString()}</button>)}</div>
+            <p className="text-[11px] leading-5 mt-2" style={{ color: 'var(--text-muted)' }}>Output budget per request, including reasoning where the provider counts it.</p>
           </div>
-        </div>
-
-        {/* PRIMARY TOGGLE PILL */}
-        <button
-          type="button"
-          onClick={() => setIsPrimary(!isPrimary)}
-          className={`h-5 px-2 rounded text-[9.5px] font-mono font-bold tracking-tight transition-all cursor-pointer flex items-center gap-1 shrink-0 ${
-            isPrimary
-              ? 'bg-white text-black shadow-xs'
-              : 'bg-white/[0.06] text-white/40 hover:text-white hover:bg-white/[0.12] border border-white/10'
-          }`}
-        >
-          {isPrimary && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-          <span>{isPrimary ? 'PRIMARY' : 'SET PRIMARY'}</span>
-        </button>
+        </section>
+        <section>
+          <button onClick={() => setAdvanced(!advanced)} aria-expanded={advanced} className="w-full flex justify-between items-center text-xs font-medium">Advanced sampling<ChevronDown size={15} className={advanced ? 'rotate-180' : ''} /></button>
+          {advanced && <div className="mt-3"><p className="text-[11px] leading-5 mb-2" style={{ color: 'var(--text-muted)' }}>Not wired to requests. These controls remain disabled until provider support is implemented.</p>
+            {[
+              { label: 'Top-P', value: model.topP, hint: 'Probability mass used for nucleus sampling.', step: '0.01' },
+              { label: 'Top-K', hint: 'Limit sampling to the highest-ranked tokens.', step: '1' },
+              { label: 'Min-P', hint: 'Filter tokens relative to the most likely token.', step: '0.01' },
+              { label: 'Repetition penalty', value: model.repetitionPenalty, hint: 'Provider-specific repetition control.', step: '0.01' },
+              { label: 'Frequency penalty', hint: 'Penalize tokens based on how often they appear.', step: '0.01' },
+              { label: 'Presence penalty', hint: 'Penalize tokens that have already appeared.', step: '0.01' },
+              { label: 'Seed', hint: 'Reproducibility depends on the inference engine.', step: '1' },
+            ].map((field) => <div key={field.label} className="py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}><div className="flex justify-between gap-3 items-center"><label className="text-xs" htmlFor={`param-${field.label}`}>{field.label}</label><input id={`param-${field.label}`} type="number" disabled value={field.value ?? ''} placeholder="Provider" step={field.step} className={`${fieldClass} opacity-40 cursor-not-allowed`} style={fieldStyle} /></div><p className="text-[11px] mt-1.5 leading-5" style={{ color: 'var(--text-muted)' }}>{field.hint}</p></div>)}
+            <label className="text-xs block mt-4" htmlFor="model-stop">Stop sequences</label><textarea id="model-stop" disabled placeholder="Not connected" rows={2} className="w-full mt-2 text-xs p-2 border rounded-md opacity-40 cursor-not-allowed resize-none" style={fieldStyle} />
+          </div>}
+        </section>
+        <section className="border-t pt-5" style={{ borderColor: 'var(--border-subtle)' }}>
+          <h3 className="text-xs font-medium flex items-center gap-2"><Server size={14} />Provider runtime</h3>
+          <dl className="text-[11px] space-y-3 mt-4"><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported context capacity</dt><dd>{model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Quantization</dt><dd>{model.quantization || 'Not reported'}</dd></div></dl>
+          <div className="mt-4"><label htmlFor="model-context-slider" className="text-xs">Context allocation · Provider managed</label><input id="model-context-slider" type="range" disabled min={1} max={Math.max(1, model.contextLength || 1)} value={Math.max(1, model.contextLength || 1)} className="w-full mt-3 opacity-40 cursor-not-allowed accent-[var(--accent)]" /><p className="text-[11px] leading-5 mt-1" style={{ color: 'var(--text-muted)' }}>Uses the provider’s current configuration. Reported capacity does not necessarily mean all of it is allocated.</p></div>
+          <p className="text-[11px] leading-5 mt-4" style={{ color: 'var(--text-muted)' }}>Context allocation, GPU offload, KV cache, and loading are managed in your inference provider. Unfuse cannot change them yet.</p>
+          <button disabled className="text-xs mt-3 opacity-40 cursor-not-allowed">Unload from provider · Not connected</button>
+        </section>
       </div>
-
-      {/* 2. UNIFIED HARDWARE INSPECTOR PARAMETERS */}
-      <div className="flex-1 bg-[#18181c] border border-[#27272a] rounded-xl p-3.5 space-y-4 shadow-sm">
-        {/* CONTEXT LIMIT */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-[#a1a1aa]">Context Limit</span>
-            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
-              {contextLength.toLocaleString()} tok
-            </span>
-          </div>
-
-          <input
-            type="range"
-            min="2048"
-            max="131072"
-            step="2048"
-            value={contextLength}
-            onChange={(e) => setContextLength(Number(e.target.value))}
-            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
-          />
-
-          <div className="flex items-center justify-between mt-2.5 gap-1.5">
-            {CONTEXT_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setContextLength(preset)}
-                className={`py-1 px-1.5 rounded-md text-[10px] font-mono transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                  contextLength === preset
-                    ? 'bg-white text-black font-bold border-white shadow-sm'
-                    : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-                }`}
-              >
-                {preset >= 1000 ? `${preset / 1024}k` : preset}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="border-t border-[#222228]" />
-
-        {/* TEMPERATURE */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-[#a1a1aa]">Temperature</span>
-            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
-              {temperature.toFixed(2)}
-            </span>
-          </div>
-
-          <input
-            type="range"
-            min="0.0"
-            max="1.0"
-            step="0.05"
-            value={temperature}
-            onChange={(e) => setTemperature(Number(e.target.value))}
-            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
-          />
-
-          <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
-            <button
-              type="button"
-              onClick={() => setTemperature(0.0)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                temperature === 0.0
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              0.00 Strict
-            </button>
-            <button
-              type="button"
-              onClick={() => setTemperature(0.2)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                temperature === 0.2
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              0.20 Code
-            </button>
-            <button
-              type="button"
-              onClick={() => setTemperature(0.7)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                temperature === 0.7
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              0.70 Chat
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-[#222228]" />
-
-        {/* TOP-P SAMPLING */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-[#a1a1aa]">Top-P (Nucleus)</span>
-            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
-              {topP.toFixed(2)}
-            </span>
-          </div>
-
-          <input
-            type="range"
-            min="0.1"
-            max="1.0"
-            step="0.05"
-            value={topP}
-            onChange={(e) => setTopP(Number(e.target.value))}
-            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
-          />
-
-          <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
-            <button
-              type="button"
-              onClick={() => setTopP(0.5)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                topP === 0.5
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              0.50 Focused
-            </button>
-            <button
-              type="button"
-              onClick={() => setTopP(0.9)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                topP === 0.9
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              0.90 Normal
-            </button>
-            <button
-              type="button"
-              onClick={() => setTopP(1.0)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                topP === 1.0
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              1.00 Max
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-[#222228]" />
-
-        {/* REPETITION PENALTY */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-[#a1a1aa]">Repetition Penalty</span>
-            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
-              {repetitionPenalty.toFixed(2)}
-            </span>
-          </div>
-
-          <input
-            type="range"
-            min="1.0"
-            max="1.3"
-            step="0.02"
-            value={repetitionPenalty}
-            onChange={(e) => setRepetitionPenalty(Number(e.target.value))}
-            className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-zinc-300 hover:accent-zinc-200 transition-all"
-          />
-
-          <div className="flex items-center justify-between mt-2.5 gap-1.5 text-[10.5px] font-medium">
-            <button
-              type="button"
-              onClick={() => setRepetitionPenalty(1.0)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                repetitionPenalty === 1.0
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              1.00 Off
-            </button>
-            <button
-              type="button"
-              onClick={() => setRepetitionPenalty(1.1)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                repetitionPenalty === 1.1
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              1.10 Normal
-            </button>
-            <button
-              type="button"
-              onClick={() => setRepetitionPenalty(1.2)}
-              className={`py-1 px-2 rounded-md transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                repetitionPenalty === 1.2
-                  ? 'bg-white text-black font-bold border-white shadow-sm'
-                  : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-              }`}
-            >
-              1.20 Strict
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-[#222228]" />
-
-        {/* MAX OUTPUT TOKENS */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-[#a1a1aa]">Max Output</span>
-            <span className="text-[11px] font-mono font-bold text-[#f4f4f5] tabular-nums">
-              {maxTokens.toLocaleString()} tok
-            </span>
-          </div>
-
-          <div className="flex items-center justify-between gap-1.5 mt-2.5">
-            {MAX_TOKENS_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setMaxTokens(preset)}
-                className={`py-1 px-1.5 rounded-md text-[10px] font-mono transition-all cursor-pointer flex-1 text-center shadow-xs border ${
-                  maxTokens === preset
-                    ? 'bg-white text-black font-bold border-white shadow-sm'
-                    : 'bg-[#141418] hover:bg-[#1f1f24] border-[#27272a] hover:border-[#3f3f46] text-[#a1a1aa] hover:text-[#f4f4f5]'
-                }`}
-              >
-                {preset >= 1024 ? `${preset / 1024}k` : preset}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 3. BOTTOM ACTIONS: STEALTH UNLOAD & SOLID WHITE SAVE */}
-      <div className="pt-3 flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          onClick={handleUnloadClick}
-          className="flex-1 py-2 rounded-lg border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 text-red-400 hover:text-red-300 active:scale-[0.98] font-medium text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          title="Frees slot from rack without deleting model file"
-        >
-          <PowerOff className="w-3.5 h-3.5" />
-          <span>Unload Blade</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleSave}
-          className="flex-1 py-2 rounded-lg bg-white text-black hover:bg-white/90 active:scale-[0.98] font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <Save className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Save Config</span>
-        </button>
-      </div>
+      <footer className="border-t p-4 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+        {!valid && <p role="alert" className="text-xs mb-3 text-red-400">Use a temperature from 0–2 and a positive whole-number output limit.</p>}
+        <div className="flex gap-2"><button onClick={() => { onUnload(model.id); onClose(); }} title="Removes this connection; does not free provider memory" className="flex-1 flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg hover:bg-[var(--bg-active)]"><Trash2 size={14} />Remove</button><button onClick={save} disabled={!valid} className="flex-1 flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}><Save size={14} />Save to rack</button></div>
+      </footer>
     </div>
   );
 };

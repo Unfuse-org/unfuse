@@ -2,10 +2,16 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Check,
   Plus,
-  Settings,
+  Search,
   X,
   Blocks,
-  Sparkles,
+  BookOpen,
+  FileText,
+  FileSpreadsheet,
+  Presentation,
+  Files,
+  FolderOpen,
+  ExternalLink,
   ChevronRight,
 } from 'lucide-react';
 import {
@@ -21,13 +27,6 @@ import {
 } from './integrationStore';
 import { renderIntegrationLogo, McpLogo } from './IntegrationLogos';
 import { PluginDetailCanvas } from './PluginDetailCanvas';
-
-interface SkillItem {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-}
 
 interface CategorySection {
   id: string;
@@ -68,97 +67,15 @@ const PLUGIN_CATEGORIES: CategorySection[] = [
   },
 ];
 
-interface SkillCategorySection {
-  id: string;
-  name: string;
-  skills: SkillItem[];
-}
-
-const SKILL_CATEGORIES: SkillCategorySection[] = [
-  {
-    id: 'engineering',
-    name: 'Engineering & Quality',
-    skills: [
-      {
-        id: 'code-review',
-        name: 'Code Review & Quality',
-        category: 'Engineering',
-        description: 'Multi-axis code review evaluating correctness, readability, architecture, and performance.',
-      },
-      {
-        id: 'api-design',
-        name: 'API & Interface Design',
-        category: 'Engineering',
-        description: 'Stable REST and GraphQL endpoint design, type contracts, and module boundaries.',
-      },
-      {
-        id: 'code-simplification',
-        name: 'Code Simplification',
-        category: 'Engineering',
-        description: 'Refactoring code for clarity and maintainability without changing behavior.',
-      },
-    ],
-  },
-  {
-    id: 'testing',
-    name: 'Testing & Reliability',
-    skills: [
-      {
-        id: 'test-driven-development',
-        name: 'Test-Driven Development',
-        category: 'Testing',
-        description: 'Red-green-refactor loop enforcement, automated edge-case test generation and assertions.',
-      },
-      {
-        id: 'browser-testing',
-        name: 'Browser DevTools Testing',
-        category: 'Testing',
-        description: 'Live DOM inspection, console error capture, network request tracing, and visual audits.',
-      },
-    ],
-  },
-  {
-    id: 'security-perf',
-    name: 'Security & Performance',
-    skills: [
-      {
-        id: 'security-hardening',
-        name: 'Security & Hardening',
-        category: 'Security',
-        description: 'OWASP Top 10 auditing, credential leak prevention, and untrusted input sanitization.',
-      },
-      {
-        id: 'perf-optimization',
-        name: 'Performance Optimization',
-        category: 'Performance',
-        description: 'Runtime memory leak detection, N+1 query elimination, and web vitals profiling.',
-      },
-    ],
-  },
-  {
-    id: 'workflows',
-    name: 'Workflows & Git',
-    skills: [
-      {
-        id: 'git-workflow',
-        name: 'Git Workflow & Versioning',
-        category: 'Workflows',
-        description: 'Atomic git commit splitting, semantic version bumping, and PR branch rebasing.',
-      },
-    ],
-  },
-];
-
 export const IntegrationsView: React.FC = () => {
   const [states, setStates] = useState(getAllServiceStates());
   const [activeTab, setActiveTab] = useState<'plugins' | 'skills'>('plugins');
+  const [query, setQuery] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState<'browse' | 'saved'>('browse');
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [creationModalType, setCreationModalType] = useState<'plugin' | 'mcpm' | null>(null);
-  const [installedSkillIds, setInstalledSkillIds] = useState<string[]>([
-    'code-review',
-    'git-workflow',
-  ]);
+
 
   // Custom creation form state
   const [customName, setCustomName] = useState('');
@@ -174,6 +91,15 @@ export const IntegrationsView: React.FC = () => {
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!selectedServiceId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedServiceId(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [selectedServiceId]);
 
   // Close add menu on outside click
   useEffect(() => {
@@ -205,12 +131,6 @@ export const IntegrationsView: React.FC = () => {
     setSelectedServiceId(service.id);
   };
 
-  const handleToggleSkill = (skillId: string) => {
-    setInstalledSkillIds((prev) =>
-      prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]
-    );
-  };
-
   const handleCreateCustom = () => {
     if (!customName.trim()) return;
     setCreationModalType(null);
@@ -221,49 +141,34 @@ export const IntegrationsView: React.FC = () => {
 
   return (
     <div
-      className="flex flex-row h-full w-full overflow-hidden font-sans select-none"
+      className="integrations-view relative flex h-full w-full min-w-0 overflow-hidden font-sans select-none"
       style={{
+        containerType: 'inline-size',
         backgroundColor: 'var(--bg-app)',
         color: 'var(--text-main)',
       }}
     >
+      <div className="integrations-layout flex flex-1 min-w-0 min-h-0">
       {/* 1. LEFT CANVAS: OFFERINGS (REMAINING CANVAS) OR FULL INFO CANVAS */}
-      <div className="flex-1 h-full overflow-y-auto px-8 py-7 flex flex-col gap-6 min-w-0">
-        {selectedServiceId ? (
-          <PluginDetailCanvas
-            serviceId={selectedServiceId}
-            onBack={() => setSelectedServiceId(null)}
-          />
-        ) : (
-          <>
+      <div className="integrations-content flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-5 min-w-0">
+        <>
             {/* CANVAS HEADER: TITLE + SETTINGS & ADD MENU ON THE RIGHT */}
             <div
               className="flex items-center justify-between pb-3 border-b"
               style={{ borderColor: 'var(--border-subtle)' }}
             >
               <h1 className="text-xl font-bold tracking-tight capitalize" style={{ color: 'var(--text-main)' }}>
-                {activeTab}
+                {activeTab === 'plugins' ? 'Integrations' : 'Skills'}
               </h1>
 
           {/* RIGHT ACTIONS: SETTINGS + ADD MENU */}
-          <div className="flex items-center gap-2 relative" ref={addMenuRef}>
-            {/* SETTINGS MENU BUTTON */}
-            <button
-              onClick={() => {
-                if (installedPlugins.length > 0) {
-                  setSelectedServiceId(installedPlugins[0].id);
-                }
-              }}
-              className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/[0.06] transition-colors"
-              title="Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-
+          {activeTab === 'skills' ? (
+            <button disabled title="Skill import requires the skill-loading backend" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] text-xs font-medium opacity-40 cursor-not-allowed"><Plus size={14} /> Import skill</button>
+          ) : <div className="flex items-center gap-2 relative" ref={addMenuRef}>
             {/* ADD MENU BUTTON */}
             <button
               onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-semibold transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-main)] text-xs font-semibold transition-all active:scale-95"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add</span>
@@ -271,15 +176,15 @@ export const IntegrationsView: React.FC = () => {
 
             {/* ADD MENU DROPDOWN */}
             {isAddMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-[#141518] border border-white/[0.1] shadow-2xl p-1 z-30 flex flex-col gap-0.5">
+              <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-[var(--bg-panel)] border border-white/[0.1] shadow-2xl p-1 z-30 flex flex-col gap-0.5">
                 <button
                   onClick={() => {
                     setIsAddMenuOpen(false);
                     setCreationModalType('plugin');
                   }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-xs text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors flex items-center gap-2.5"
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition-colors flex items-center gap-2.5"
                 >
-                  <Blocks className="w-3.5 h-3.5 text-white/70" />
+                  <Blocks className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   <span>Create Plugin</span>
                 </button>
 
@@ -288,23 +193,28 @@ export const IntegrationsView: React.FC = () => {
                     setIsAddMenuOpen(false);
                     setCreationModalType('mcpm');
                   }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-xs text-white/80 hover:text-white hover:bg-white/[0.08] transition-colors flex items-center gap-2.5"
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition-colors flex items-center gap-2.5"
                 >
-                  <McpLogo size={14} className="text-white/70" />
+                  <McpLogo size={14} className="text-[var(--text-muted)]" />
                   <span>Create MCP</span>
                 </button>
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
-        {/* OFFERINGS CATALOG: DIVIDED INTO CATEGORIES, BIGGER OFFICIAL LOGOS, FILLING THE CANVAS */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 rounded-lg bg-[var(--bg-surface)] p-1 text-xs">
+            {(['browse', 'saved'] as const).map(filter => <button key={filter} onClick={() => setCatalogFilter(filter)} className={`px-3 py-1.5 rounded-md transition-colors ${catalogFilter === filter ? 'bg-[var(--bg-active)] text-[var(--text-main)]' : 'text-[var(--text-muted)]'}`}>{filter === 'browse' ? 'Browse' : activeTab === 'plugins' ? 'Configured' : 'Installed'}</button>)}
+          </div>
+          <label className="flex items-center gap-2 border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-[var(--text-muted)] flex-1 max-w-xs min-w-0"><Search size={14} /><input aria-label={`Search ${activeTab === 'plugins' ? 'integrations' : 'skills'}`} value={query} onChange={e => setQuery(e.target.value)} placeholder={`Search ${activeTab === 'plugins' ? 'integrations' : 'skills'}…`} className="bg-transparent outline-none w-full min-w-0 text-xs text-[var(--text-main)]" /></label>
+        </div>
         {activeTab === 'plugins' ? (
-          <div className="flex flex-col gap-8 pb-10">
+          <div className="flex flex-col gap-5 pb-5">
             {PLUGIN_CATEGORIES.map((category) => {
               const services = category.serviceIds
                 .map((id) => SERVICE_METADATA[id])
-                .filter(Boolean);
+                .filter(service => service && (catalogFilter === 'browse' || states[service.id]?.isConnected) && `${service.name} ${service.tagline} ${service.description}`.toLowerCase().includes(query.toLowerCase()));
 
               if (services.length === 0) return null;
 
@@ -312,34 +222,34 @@ export const IntegrationsView: React.FC = () => {
                 <div key={category.id} className="flex flex-col gap-3">
                   {/* CATEGORY HEADER */}
                   <div className="flex items-center">
-                    <span className="text-sm font-bold text-white tracking-tight">
+                    <span className="text-xs font-semibold text-[var(--text-main)] tracking-tight">
                       {category.name}
                     </span>
                   </div>
 
                   {/* GRID OF PLUGINS */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                  <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))' }}>
                     {services.map((plugin) => {
                       const isInstalled = states[plugin.id]?.isConnected || false;
 
                       return (
                         <div
                           key={plugin.id}
-                          className="py-3 px-3.5 rounded-xl hover:bg-white/[0.04] transition-all flex items-center justify-between gap-3.5 group"
+                          className="p-4 hover:bg-[var(--bg-surface)] transition-all flex items-center justify-between gap-2 group min-w-0"
                         >
                           {/* LEFT: BIGGER OFFICIAL LOGO + NAME & FULL INFORMATION */}
                           <div
-                            className="flex items-center gap-3.5 min-w-0 flex-1 cursor-pointer"
+                            className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
                             onClick={() => setSelectedServiceId(plugin.id)}
                           >
-                            <div className="w-12 h-12 rounded-xl bg-white/[0.04] flex items-center justify-center shrink-0">
-                              {renderIntegrationLogo(plugin.id, 30)}
+                            <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                              {renderIntegrationLogo(plugin.id, 26)}
                             </div>
                             <div className="flex flex-col min-w-0 pr-1">
-                              <span className="text-sm font-semibold text-white tracking-tight">
+                              <span className="text-xs font-semibold text-[var(--text-main)] tracking-tight truncate">
                                 {plugin.name}
                               </span>
-                              <span className="text-xs text-white/50 mt-0.5 leading-snug break-words">
+                              <span title={plugin.tagline || plugin.description} className="text-[11px] text-[var(--text-muted)] mt-0.5 leading-snug truncate">
                                 {plugin.tagline || plugin.description}
                               </span>
                             </div>
@@ -355,12 +265,12 @@ export const IntegrationsView: React.FC = () => {
                                 title="View plugin tools & configuration"
                               >
                                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>Added</span>
+                                <span>Saved</span>
                               </button>
                             ) : (
                               <button
                                 onClick={() => handleAddPlugin(plugin)}
-                                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[var(--bg-active)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-main)] transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                                 <span>Add</span>
@@ -376,75 +286,31 @@ export const IntegrationsView: React.FC = () => {
             })}
           </div>
         ) : (
-          <div className="flex flex-col gap-8 pb-10">
-            {SKILL_CATEGORIES.map((category) => (
-              <div key={category.id} className="flex flex-col gap-3">
-                {/* CATEGORY HEADER */}
-                <div className="flex items-center">
-                  <span className="text-sm font-bold text-white tracking-tight">
-                    {category.name}
-                  </span>
-                </div>
-
-                {/* GRID OF SKILLS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-                  {category.skills.map((skill) => {
-                    const isInstalled = installedSkillIds.includes(skill.id);
-
-                    return (
-                      <div
-                        key={skill.id}
-                        className="py-3 px-3.5 rounded-xl hover:bg-white/[0.04] transition-all flex items-center justify-between gap-3.5 group"
-                      >
-                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                          <div className="w-12 h-12 rounded-xl bg-white/[0.04] flex items-center justify-center shrink-0 text-white/70">
-                            <Sparkles className="w-6 h-6 text-amber-300/80" />
-                          </div>
-                          <div className="flex flex-col min-w-0 pr-1">
-                            <span className="text-sm font-semibold text-white tracking-tight">
-                              {skill.name}
-                            </span>
-                            <span className="text-xs text-white/50 mt-0.5 leading-snug break-words">
-                              {skill.description}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="shrink-0 pl-1">
-                          {isInstalled ? (
-                            <button
-                              onClick={() => handleToggleSkill(skill.id)}
-                              className="flex items-center gap-1.5 text-xs font-medium text-emerald-400/90 px-2.5 py-1 hover:text-rose-400 transition-colors"
-                              title="Click to remove"
-                            >
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Added</span>
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleToggleSkill(skill.id)}
-                              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-all flex items-center gap-1.5 active:scale-95"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+          <div className="pb-6">
+            {catalogFilter === 'saved' ? <div className="py-16 text-center"><FolderOpen size={28} strokeWidth={1.3} className="mx-auto mb-4 text-[var(--text-muted)]" /><h2 className="text-sm font-medium">Your installed skills</h2><p className="text-xs text-[var(--text-muted)] mt-2">Local discovery is not connected yet.</p></div> : <>
+              <p className="text-xs text-[var(--text-muted)] mb-5">Source references from Anthropic · Import is not connected yet.</p>
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
+                {[
+                  {icon: FileText, id: 'docx', name: 'Word documents', description: 'Create and edit Word documents.'},
+                  {icon: Files, id: 'pdf', name: 'PDF', description: 'Work with PDF documents and forms.'},
+                  {icon: Presentation, id: 'pptx', name: 'Presentations', description: 'Create and edit slide decks.'},
+                  {icon: FileSpreadsheet, id: 'xlsx', name: 'Spreadsheets', description: 'Work with spreadsheets, formulas, and data.'},
+                ].filter(skill => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map(skill => <div key={skill.id} className="rounded-2xl border border-[var(--border-subtle)] p-4 hover:bg-[var(--bg-surface)] transition-colors">
+                  <div className="flex items-center justify-between mb-4"><skill.icon size={22} strokeWidth={1.5} /><button disabled title="Requires the skill-loading backend" className="text-xs text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 opacity-40 cursor-not-allowed">Import</button></div>
+                  <h2 className="text-sm font-medium">{skill.name}</h2><p className="text-xs text-[var(--text-muted)] leading-5 mt-1 mb-4">{skill.description}</p>
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]"><span>Anthropic</span><a className="inline-flex items-center gap-1 hover:text-[var(--text-main)]" href={`https://github.com/anthropics/skills/blob/main/skills/${skill.id}/SKILL.md`} target="_blank" rel="noreferrer">View instructions<ExternalLink size={12} /></a></div>
+                </div>)}
               </div>
-            ))}
+            </>}
           </div>
         )}
-          </>
-        )}
+        {activeTab === 'plugins' && catalogFilter === 'saved' && installedPlugins.length === 0 && <p className="text-center text-xs text-[var(--text-muted)] py-12">No integrations configured yet.</p>}
+        </>
       </div>
 
       {/* 2. RIGHT SIDE PANEL: INTEGRATIONS, PLUGINS/SKILLS (WITH LOGOS), AND INSTALLED LIST (NO SURROUNDING BOXES, NO DIVIDER LINE) */}
       <div
-        className="w-72 h-full border-l p-6 flex flex-col gap-6 shrink-0 overflow-y-auto"
+        className="integrations-navigation w-52 border-l p-4 flex flex-col gap-4 shrink-0 overflow-y-auto min-h-0"
         style={{
           backgroundColor: 'var(--bg-panel)',
           borderColor: 'var(--border-subtle)',
@@ -457,7 +323,7 @@ export const IntegrationsView: React.FC = () => {
         </div>
 
         {/* TWO TITLES WITH LOGOS: PLUGINS AND SKILLS */}
-        <div className="flex flex-col gap-1">
+        <div className="integrations-tabs flex flex-col gap-1">
           <button
             onClick={() => {
               setActiveTab('plugins');
@@ -465,15 +331,15 @@ export const IntegrationsView: React.FC = () => {
             }}
             className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-between ${
               activeTab === 'plugins' && !selectedServiceId
-                ? 'bg-white/10 text-white font-semibold'
-                : 'text-white/50 hover:text-white hover:bg-white/[0.04]'
+                ? 'bg-[var(--bg-active)] text-[var(--text-main)] font-semibold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface)]'
             }`}
           >
             <div className="flex items-center gap-2.5">
-              <Blocks className="w-3.5 h-3.5 text-white/70" />
+              <Blocks className="w-3.5 h-3.5 text-[var(--text-muted)]" />
               <span>Plugins</span>
             </div>
-            {activeTab === 'plugins' && !selectedServiceId && <ChevronRight className="w-3 h-3 text-white/40" />}
+            {activeTab === 'plugins' && !selectedServiceId && <ChevronRight className="w-3 h-3 text-[var(--text-faint)]" />}
           </button>
 
           <button
@@ -483,32 +349,32 @@ export const IntegrationsView: React.FC = () => {
             }}
             className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-between ${
               activeTab === 'skills'
-                ? 'bg-white/10 text-white font-semibold'
-                : 'text-white/50 hover:text-white hover:bg-white/[0.04]'
+                ? 'bg-[var(--bg-active)] text-[var(--text-main)] font-semibold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface)]'
             }`}
           >
             <div className="flex items-center gap-2.5">
-              <Sparkles className="w-3.5 h-3.5 text-white/70" />
+              <BookOpen className="w-3.5 h-3.5 text-[var(--text-muted)]" />
               <span>Skills</span>
             </div>
-            {activeTab === 'skills' && <ChevronRight className="w-3 h-3 text-white/40" />}
+            {activeTab === 'skills' && <ChevronRight className="w-3 h-3 text-[var(--text-faint)]" />}
           </button>
         </div>
 
         {/* INSTALLED SECTION (NO LINE ABOVE IT) */}
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-white/90 tracking-tight">Installed</span>
-            <span className="text-[10px] font-mono text-white/30">
-              {activeTab === 'plugins' ? installedPlugins.length : installedSkillIds.length}
+        <details className="integrations-installed min-w-0">
+          <summary className="flex items-center justify-between cursor-pointer gap-3 py-1">
+            <span className="text-xs font-semibold text-[var(--text-main)] tracking-tight">{activeTab === 'plugins' ? 'Installed' : 'Local skills'}</span>
+            <span className="text-[10px] font-mono text-[var(--text-faint)]">
+              {activeTab === 'plugins' ? installedPlugins.length : '—'}
             </span>
-          </div>
+          </summary>
 
           {/* INSTALLED LIST: NO BOXES, JUST LOGO AND NAME */}
           <div className="flex flex-col gap-1">
             {activeTab === 'plugins' ? (
               installedPlugins.length === 0 ? (
-                <span className="text-xs text-white/30 py-1 px-1">No plugins installed yet</span>
+                <span className="text-xs text-[var(--text-faint)] py-1 px-1">No plugins installed yet</span>
               ) : (
                 installedPlugins.map((plugin) => (
                   <div
@@ -516,8 +382,8 @@ export const IntegrationsView: React.FC = () => {
                     onClick={() => setSelectedServiceId(plugin.id)}
                     className={`py-1.5 px-2 rounded-lg flex items-center justify-between gap-2 transition-colors group cursor-pointer ${
                       selectedServiceId === plugin.id
-                        ? 'bg-white/10 text-white font-medium'
-                        : 'text-white/80 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-[var(--bg-active)] text-[var(--text-main)] font-medium'
+                        : 'text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -538,7 +404,7 @@ export const IntegrationsView: React.FC = () => {
                           setSelectedServiceId(null);
                         }
                       }}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-white/30 hover:text-rose-400 p-0.5 transition-all cursor-pointer"
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-[var(--text-faint)] hover:text-rose-400 p-0.5 transition-all cursor-pointer"
                       title="Remove"
                     >
                       <X className="w-3 h-3" />
@@ -546,44 +412,18 @@ export const IntegrationsView: React.FC = () => {
                   </div>
                 ))
               )
-            ) : installedSkillIds.length === 0 ? (
-              <span className="text-xs text-white/30 py-1 px-1">No skills enabled yet</span>
             ) : (
-              installedSkillIds.map((skillId) => {
-                const skill = SKILL_CATEGORIES.flatMap((c) => c.skills).find(
-                  (s) => s.id === skillId
-                );
-                if (!skill) return null;
-                return (
-                  <div
-                    key={skill.id}
-                    className="py-1.5 px-1 flex items-center justify-between gap-2 text-white/80 hover:text-white transition-colors group"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-5 h-5 flex items-center justify-center shrink-0 text-white/70">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-300/80" />
-                      </div>
-                      <span className="text-xs font-medium truncate">
-                        {skill.name}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => handleToggleSkill(skill.id)}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-white/30 hover:text-rose-400 p-0.5 transition-all"
-                      title="Remove"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })
+              <span className="text-xs text-[var(--text-faint)] py-2 px-1 leading-5">Discovery unavailable</span>
             )}
           </div>
-        </div>
+        </details>
       </div>
 
 
+
+      </div>
+
+      {selectedServiceId && <div className="absolute inset-0 z-40 bg-black/30 flex justify-end" onClick={() => setSelectedServiceId(null)}><div role="dialog" aria-modal="true" aria-label="Integration details" className="w-full max-w-lg h-full overflow-y-auto bg-[var(--bg-panel)] border-l border-[var(--border-subtle)] p-6 shadow-2xl" onClick={event => event.stopPropagation()}><PluginDetailCanvas key={selectedServiceId} serviceId={selectedServiceId} onBack={() => setSelectedServiceId(null)} /></div></div>}
 
       {/* CREATE PLUGIN / CREATE MCP MODAL */}
       {creationModalType && (
@@ -592,17 +432,17 @@ export const IntegrationsView: React.FC = () => {
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
               <div className="flex items-center gap-2">
                 {creationModalType === 'plugin' ? (
-                  <Blocks className="w-4 h-4 text-white/70" />
+                  <Blocks className="w-4 h-4 text-[var(--text-muted)]" />
                 ) : (
-                  <McpLogo size={16} className="text-white/70" />
+                  <McpLogo size={16} className="text-[var(--text-muted)]" />
                 )}
-                <h3 className="text-sm font-semibold text-white">
+                <h3 className="text-sm font-semibold text-[var(--text-main)]">
                   {creationModalType === 'plugin' ? 'Create Custom Plugin' : 'Create MCP Server'}
                 </h3>
               </div>
               <button
                 onClick={() => setCreationModalType(null)}
-                className="text-white/40 hover:text-white transition-colors"
+                className="text-[var(--text-faint)] hover:text-[var(--text-main)] transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -610,7 +450,7 @@ export const IntegrationsView: React.FC = () => {
 
             <div className="flex flex-col gap-3">
               <div>
-                <label className="block text-[11px] font-medium text-white/60 mb-1">
+                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
                   Name
                 </label>
                 <input
@@ -618,12 +458,12 @@ export const IntegrationsView: React.FC = () => {
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder={creationModalType === 'plugin' ? 'my-custom-plugin' : 'my-mcp-server'}
-                  className="w-full h-8 px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] focus:border-white/25 text-xs text-white outline-none"
+                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-white/60 mb-1">
+                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
                   Description
                 </label>
                 <input
@@ -631,12 +471,12 @@ export const IntegrationsView: React.FC = () => {
                   value={customDesc}
                   onChange={(e) => setCustomDesc(e.target.value)}
                   placeholder="Short description of capabilities"
-                  className="w-full h-8 px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] focus:border-white/25 text-xs text-white outline-none"
+                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-white/60 mb-1">
+                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
                   Command or Entrypoint
                 </label>
                 <input
@@ -644,7 +484,7 @@ export const IntegrationsView: React.FC = () => {
                   value={customCommand}
                   onChange={(e) => setCustomCommand(e.target.value)}
                   placeholder="npx -y @my-org/mcp-server"
-                  className="w-full h-8 px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] focus:border-white/25 text-xs text-white font-mono outline-none"
+                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] font-mono outline-none"
                 />
               </div>
             </div>
@@ -652,7 +492,7 @@ export const IntegrationsView: React.FC = () => {
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
               <button
                 onClick={() => setCreationModalType(null)}
-                className="px-3 py-1.5 rounded-lg text-xs text-white/50 hover:text-white"
+                className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--text-main)]"
               >
                 Cancel
               </button>

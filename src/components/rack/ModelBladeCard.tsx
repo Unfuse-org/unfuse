@@ -23,7 +23,7 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
   const percentUsed = contextLength ? Math.min(100, Math.round((tokensUsed / contextLength) * 100)) : 0;
 
   return (
-    <div className="bg-[#18181c] border border-[#27272a] hover:border-[#3f3f46] rounded-xl p-3 select-none transition-all group shadow-sm">
+    <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[var(--border-strong)] rounded-xl p-3 select-none transition-all group shadow-sm">
       {/* TOP ROW: LOGO, MODEL NAME, PORT & CONFIG BUTTON */}
       <div className="flex items-center gap-2.5">
         {/* WHITE LOGO BADGE (CLICKABLE EASTER EGG FOR MODEL INFO) */}
@@ -38,11 +38,11 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
 
         {/* MODEL NAME & PORT ALIGNED HORIZONTALLY ON THE SAME LEVEL */}
         <div className="flex items-center justify-between min-w-0 flex-1">
-          <div className="text-[12.5px] font-semibold text-[#f4f4f5] tracking-tight truncate">
+          <div className="text-[12.5px] font-semibold text-[var(--text-main)] tracking-tight truncate">
             {model.displayName}
           </div>
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            <span className="text-[11px] text-[#f4f4f5] font-mono font-bold">
+            <span className="text-[11px] text-[var(--text-main)] font-mono font-bold">
               {model.port}
             </span>
 
@@ -50,8 +50,8 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
             <button
               type="button"
               onClick={() => onOpenConfig?.(model)}
-              className="p-1 rounded-md text-[#71717a] hover:text-[#f4f4f5] hover:bg-[#27272a] transition-colors cursor-pointer"
-              title="Configure blade & unload options"
+              className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-active)] transition-colors cursor-pointer"
+              aria-label={`Configure ${model.displayName}`} title="Configure model"
             >
               <Settings className="w-3.5 h-3.5" />
             </button>
@@ -59,20 +59,21 @@ export const ModelBladeCard: React.FC<ModelBladeCardProps> = ({
         </div>
       </div>
 
+      <div className="flex items-center justify-between gap-2 mt-3 text-[10px]" style={{ color: 'var(--text-muted)' }}><span className="capitalize">{model.provider}</span><span>{model.status === 'active' ? 'Default in rack' : 'Connected'}</span></div>
       {/* DOWNSIDE: SMALL CONTEXT WINDOW BAR */}
-      <div className="mt-3 pt-2.5 border-t border-[#222228]">
-        <div className="flex items-center justify-between text-[9.5px] font-mono mb-1.5 text-[#71717a]">
-          <span>Tokens</span>
-          <span className="text-[#a1a1aa]">
+      <div className="mt-3 pt-2.5 border-t border-[var(--border-subtle)]">
+        <div className="flex items-center justify-between text-[9.5px] font-mono mb-1.5 text-[var(--text-muted)]">
+          <span>Context usage</span>
+          <span className="text-[var(--text-muted)]">
             {tokensUsed.toLocaleString()} / {contextLength ? contextLength.toLocaleString() : 'Auto'}
           </span>
         </div>
 
         {/* PROGRESS BAR TRACK */}
-        <div className="h-1 w-full bg-[#27272a] rounded-full overflow-hidden">
+        <div className="h-1 w-full bg-[var(--bg-active)] rounded-full overflow-hidden">
           {/* PROGRESS BAR FILL */}
           <div
-            className="h-full bg-[#f4f4f5] rounded-full transition-all duration-300"
+            className="h-full bg-[var(--accent)] rounded-full transition-all duration-300"
             style={{ width: contextLength ? `${Math.max(tokensUsed > 0 ? 2 : 0, percentUsed)}%` : tokensUsed > 0 ? '100%' : '0%' }}
           />
         </div>

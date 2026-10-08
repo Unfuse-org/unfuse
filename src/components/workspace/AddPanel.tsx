@@ -1,3 +1,4 @@
+import { QuickLookPreview } from './QuickLookPreview';
 import { TerminalPanel } from './TerminalPanel';
 import React, { useState } from 'react';
 import Prism from 'prismjs';
@@ -13,6 +14,8 @@ import 'prismjs/components/prism-json';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-diff';
+import 'prismjs/components/prism-mermaid';
 import {
   Terminal,
   Folder,
@@ -34,6 +37,7 @@ import {
   WrapText,
 } from 'lucide-react';
 import {
+  siTauri,
   siTypescript,
   siJavascript,
   siReact,
@@ -111,6 +115,8 @@ interface LibraryItem {
   description: string;
   content: string;
   usageCount: number;
+  logo?: 'tauri' | 'tailwind' | 'integrations';
+  language?: string;
 }
 
 // OFFICIAL COLORED FILE ICONS FOR ALL LANGUAGES, FORMATS, AND DEV TOOLS
@@ -581,6 +587,8 @@ const getPrismLang = (filename: string) => {
   else if (ext === '.md' || ext === '.markdown') lang = 'markdown';
   else if (ext === '.sh' || ext === '.bash' || ext === '.zsh' || lower === 'dockerfile') lang = 'bash';
   else if (ext === '.go') lang = 'go';
+  else if (ext === '.diff' || ext === '.patch') lang = 'diff';
+  else if (ext === '.mermaid' || ext === '.mmd') lang = 'mermaid';
 
   const grammar = (Prism.languages as Record<string, Prism.Grammar>)[lang] || Prism.languages.typescript || Prism.languages.javascript;
   return { lang, grammar };
@@ -734,6 +742,8 @@ const INITIAL_LIBRARY_ITEMS: LibraryItem[] = [
   },
   {
     id: 'lib-2',
+    logo: 'tauri',
+    language: 'rust',
     title: 'Tauri v2 IPC Handler Boilerplate',
     category: 'snippet',
     description: 'Reusable Rust command pattern with State injection, Mutex handling, and typed serializable responses.',
@@ -760,6 +770,8 @@ pub async fn execute_agent_step(
   },
   {
     id: 'lib-4',
+    logo: 'tailwind',
+    language: 'css',
     title: 'Tailwind Design Tokens & Glassmorphism Theme',
     category: 'context',
     description: 'Reference styles for CSS variables, surface borders, background tints, and active accents.',
@@ -775,6 +787,8 @@ pub async fn execute_agent_step(
   },
   {
     id: 'lib-5',
+    logo: 'integrations',
+    language: 'typescript',
     title: 'Linear & Notion Integration Payload Spec',
     category: 'context',
     description: 'Data models for exporting agent research summaries and creating Linear issues directly from chat.',
@@ -807,7 +821,8 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
   // Library view state (stuff people send to AI)
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'prompt' | 'context' | 'snippet' | 'rule'>('all');
   const [librarySearch, setLibrarySearch] = useState('');
-  const [sentNotice, setSentNotice] = useState<string | null>(null);
+
+  const [quickLook, setQuickLook] = useState<{ source: 'recents' | 'saved'; id: string } | null>(null);
 
   // Downside Recents state
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -918,20 +933,16 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
             style={{ scrollbarWidth: 'thin' }}
           >
             {/* 4 BUTTONS IN THE CANVAS: TERMINAL, FILES, CHANGES, LIBRARY (ALL WHITE ICONS) */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))]">
               {/* BUTTON 1: TERMINAL */}
               <button
                 onClick={() => handleSelectOption('terminal')}
-                className="p-3.5 border rounded-2xl flex items-center justify-between gap-3 transition-all cursor-pointer group text-left shadow-sm hover:scale-[1.01]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-subtle)',
-                }}
+                className="min-h-[66px] px-3 py-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 transition-colors cursor-pointer group text-left hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] active:bg-[var(--bg-active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Terminal size={22} className="text-white shrink-0" />
+                  <Terminal size={20} strokeWidth={1.8} className="text-[var(--text-main)] shrink-0" />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold tracking-tight text-white">
+                    <span className="text-xs font-medium tracking-tight text-[var(--text-main)]">
                       Terminal
                     </span>
                     <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
@@ -939,22 +950,18 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                     </span>
                   </div>
                 </div>
-                <ChevronRight size={15} className="text-white opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                <ChevronRight size={15} className="text-[var(--text-main)] opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
 
               {/* BUTTON 2: FILES */}
               <button
                 onClick={() => handleSelectOption('files')}
-                className="p-3.5 border rounded-2xl flex items-center justify-between gap-3 transition-all cursor-pointer group text-left shadow-sm hover:scale-[1.01]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-subtle)',
-                }}
+                className="min-h-[66px] px-3 py-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 transition-colors cursor-pointer group text-left hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] active:bg-[var(--bg-active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Folder size={22} className="text-white fill-white shrink-0" />
+                  <Folder size={20} strokeWidth={1.8} className="text-[var(--text-main)] shrink-0" />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold tracking-tight text-white">
+                    <span className="text-xs font-medium tracking-tight text-[var(--text-main)]">
                       Files
                     </span>
                     <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
@@ -962,22 +969,18 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                     </span>
                   </div>
                 </div>
-                <ChevronRight size={15} className="text-white opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                <ChevronRight size={15} className="text-[var(--text-main)] opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
 
               {/* BUTTON 3: CHANGES */}
               <button
                 onClick={() => handleSelectOption('changes')}
-                className="p-3.5 border rounded-2xl flex items-center justify-between gap-3 transition-all cursor-pointer group text-left shadow-sm hover:scale-[1.01]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-subtle)',
-                }}
+                className="min-h-[66px] px-3 py-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 transition-colors cursor-pointer group text-left hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] active:bg-[var(--bg-active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <GitCompare size={22} className="text-white shrink-0" />
+                  <GitCompare size={20} strokeWidth={1.8} className="text-[var(--text-main)] shrink-0" />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold tracking-tight text-white">
+                    <span className="text-xs font-medium tracking-tight text-[var(--text-main)]">
                       Changes
                     </span>
                     <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
@@ -985,22 +988,18 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                     </span>
                   </div>
                 </div>
-                <ChevronRight size={15} className="text-white opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                <ChevronRight size={15} className="text-[var(--text-main)] opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
 
               {/* BUTTON 4: LIBRARY (STUFF PEOPLE SEND TO AI) */}
               <button
                 onClick={() => handleSelectOption('library')}
-                className="p-3.5 border rounded-2xl flex items-center justify-between gap-3 transition-all cursor-pointer group text-left shadow-sm hover:scale-[1.01]"
-                style={{
-                  backgroundColor: 'var(--bg-surface)',
-                  borderColor: 'var(--border-subtle)',
-                }}
+                className="min-h-[66px] px-3 py-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] flex items-center justify-between gap-3 transition-colors cursor-pointer group text-left hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] active:bg-[var(--bg-active)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Bookmark size={22} className="shrink-0" style={{ color: 'var(--text-main)' }} />
+                  <Bookmark size={20} strokeWidth={1.8} className="shrink-0" style={{ color: 'var(--text-main)' }} />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold tracking-tight text-white">
+                    <span className="text-xs font-medium tracking-tight text-[var(--text-main)]">
                       Saved
                     </span>
                     <span className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
@@ -1008,101 +1007,71 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                     </span>
                   </div>
                 </div>
-                <ChevronRight size={15} className="text-white opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                <ChevronRight size={15} className="text-[var(--text-main)] opacity-30 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
             </div>
 
-            {/* DOWNSIDE SECTION 1: RECENTS (BORDERLESS - JUST LOGO AND INFORMATION) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between pb-1">
-                <span className="text-xs font-bold text-white tracking-tight">Recents</span>
-                <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                  {INITIAL_ARTIFACTS.length} files
-                </span>
+            <section className="space-y-3 unfuse-artifact-previews" aria-label="Recent artifact previews">
+              <style>{`
+                .unfuse-artifact-previews .token { color: var(--text-main) !important; }
+                .unfuse-artifact-previews .token.comment { color: var(--text-muted) !important; }
+                .unfuse-artifact-previews .token.keyword,
+                .unfuse-artifact-previews .token.property,
+                .unfuse-artifact-previews .token.title { color: color-mix(in srgb, #58a6ff 65%, var(--text-main)) !important; }
+                .unfuse-artifact-previews .token.string,
+                .unfuse-artifact-previews .token.attr-value { color: color-mix(in srgb, #e89b63 65%, var(--text-main)) !important; }
+                .unfuse-artifact-previews .token.number,
+                .unfuse-artifact-previews .token.inserted { color: color-mix(in srgb, #56ad78 65%, var(--text-main)) !important; }
+                .unfuse-artifact-previews .token.deleted { color: color-mix(in srgb, #e06c75 65%, var(--text-main)) !important; }
+                .unfuse-artifact-previews .token.operator,
+                .unfuse-artifact-previews .token.boolean { color: color-mix(in srgb, #ba8fe3 65%, var(--text-main)) !important; }
+              `}</style>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold">Recents</h3>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sample preview · {INITIAL_ARTIFACTS.length} files</span>
               </div>
-
-              <div className="space-y-0.5">
+              <div>
                 {INITIAL_ARTIFACTS.map((artifact) => (
-                  <div
-                    key={artifact.id}
-                    className="py-2 px-1.5 rounded-lg flex items-start justify-between gap-3 group transition-colors hover:bg-[var(--bg-surface-hover)]"
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <div className="mt-0.5 shrink-0">
-                        <FileIcon filename={artifact.title} size={16} />
-                      </div>
-
-                      <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-xs truncate text-white">
-                            {artifact.title}
-                          </span>
-                          <span className="text-[10px] font-mono text-zinc-500 shrink-0">
-                            {artifact.size}
-                          </span>
+                  <article key={artifact.id} tabIndex={0} aria-label={`Preview ${artifact.title}`} onClick={() => setQuickLook({ source: 'recents', id: artifact.id })} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); setQuickLook({ source: 'recents', id: artifact.id }); } }} className="group min-w-0 px-3 py-4 cursor-pointer rounded-md hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]">
+                    <div className="flex items-start gap-3">
+                      <div className="pt-1 shrink-0"><FileIcon filename={artifact.title} size={19} /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2"><span className="text-xs font-medium truncate flex-1" title={artifact.title}>{artifact.title}</span><span className="text-[10px] shrink-0 text-[var(--text-muted)]">{artifact.timestamp}</span><button onClick={event => { event.stopPropagation(); copyToClipboard(artifact.content, artifact.id); }} aria-label={`Copy ${artifact.title}`} title="Copy artifact content" className="p-1 shrink-0 rounded hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)] text-[var(--text-muted)]">{copiedId === artifact.id ? <Check size={13} /> : <Copy size={13} />}</button></div>
+                        <p className="text-[11px] leading-5 mt-1 text-[var(--text-muted)] line-clamp-1" title={artifact.description}>{artifact.description}</p>
+                        <div className="relative max-h-[54px] overflow-hidden mt-2 select-text">
+                          <pre aria-label={`${artifact.title} content preview`} className="text-[10px] leading-[18px] font-mono whitespace-pre-wrap break-all text-[var(--text-muted)]"><code dangerouslySetInnerHTML={{ __html: Prism.highlight(artifact.content.replace(/\\n/g, '\n'), getPrismLang(artifact.title).grammar, getPrismLang(artifact.title).lang) }} /></pre>
                         </div>
-                        <span className="text-[11px] truncate leading-normal" style={{ color: 'var(--text-muted)' }}>
-                          {artifact.description}
-                        </span>
+                        <p className="mt-2 text-[10px] text-[var(--text-muted)]">{artifact.type} · {artifact.size}</p>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                        {artifact.timestamp}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(artifact.content, artifact.id)}
-                        className="p-1 rounded hover:bg-[var(--bg-active)] cursor-pointer text-zinc-400 hover:text-white transition-colors"
-                        title="Copy artifact content"
-                      >
-                        {copiedId === artifact.id ? <Check size={12} className="text-white" /> : <Copy size={12} />}
-                      </button>
-                    </div>
-                  </div>
+                  </article>
                 ))}
               </div>
-            </div>
+            </section>
 
-            {/* DOWNSIDE SECTION 2: LATEST (BORDERLESS - JUST LOGO AND INFORMATION) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between pb-1">
-                <span className="text-xs font-bold text-white tracking-tight">Latest</span>
+            <section className="space-y-3" aria-label="Latest integration previews">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold">Latest</h3>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sample activity</span>
               </div>
-
-              <div className="space-y-0.5">
+              <div className="divide-y divide-[var(--border-subtle)]">
                 {INITIAL_INTEGRATIONS.map((item) => (
-                  <div
-                    key={item.id}
-                    className="py-2 px-1.5 rounded-lg flex items-start justify-between gap-3 group transition-colors hover:bg-[var(--bg-surface-hover)]"
-                  >
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <div className="mt-0.5 shrink-0">
-                        {item.service === 'linear' ? (
-                          <LinearLogo size={16} />
-                        ) : (
-                          <NotionLogo size={16} style={{ color: '#ffffff' }} />
-                        )}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-medium truncate text-white">
-                          {item.title}
-                        </span>
-                        <span className="text-[11px] truncate leading-normal" style={{ color: 'var(--text-muted)' }}>
-                          {item.subtitle}
-                        </span>
-                      </div>
+                  <article key={item.id} className="py-4 flex gap-3 min-w-0 hover:bg-[var(--bg-surface-hover)] transition-colors">
+                    <div className="w-6 pt-1 flex items-center justify-center shrink-0" style={{ color: 'var(--text-main)' }}>
+                      {item.service === 'linear' ? <LinearLogo size={18} /> : <NotionLogo size={18} />}
                     </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                        {item.timestamp}
-                      </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2 text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>
+                        <span className="uppercase tracking-wider font-medium">{item.service === 'linear' ? 'Linear' : 'Notion'}</span>
+                        <span className="shrink-0">{item.timestamp}</span>
+                      </div>
+                      <p className="text-xs font-medium leading-5 line-clamp-2" title={item.title}>{item.title}</p>
+                      <p className="mt-1 text-[11px] leading-4 truncate" title={item.subtitle} style={{ color: 'var(--text-muted)' }}>{item.subtitle}</p>
                     </div>
-                  </div>
+                  </article>
                 ))}
               </div>
-            </div>
+            </section>
           </div>
         )}
 
@@ -1285,7 +1254,6 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                   </button>
                 ))}
               </div>
-              {sentNotice && <p role="status" className="text-xs" style={{ color: 'var(--text-muted)' }}>{sentNotice}</p>}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4" style={{ scrollbarWidth: 'thin' }}>
               {filteredLibraryItems.length === 0 && (
@@ -1293,31 +1261,26 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
               )}
               {filteredLibraryItems.map((item) => {
                 const Icon = { prompt: MessageSquare, context: FileText, snippet: Code2, rule: ShieldCheck }[item.category];
+                const iconColor = { prompt: '#a78bfa', context: '#38bdf8', snippet: '#fb923c', rule: '#34d399' }[item.category];
+                const logo = item.logo === 'tauri' ? siTauri : item.logo === 'tailwind' ? siTailwindcss : null;
                 return (
-                  <details key={item.id} className="group border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <summary className="list-none cursor-pointer flex items-start gap-3 py-3.5 [&::-webkit-details-marker]:hidden">
-                      <div className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--bg-surface)', color: 'var(--text-muted)' }}><Icon size={16} /></div>
-                      <div className="min-w-0 flex-1"><p className="text-xs font-medium truncate">{item.title}</p><p className="text-[11px] leading-5 mt-0.5" style={{ color: 'var(--text-muted)' }}>{item.description}</p></div>
-                      <ChevronRight size={14} className="mt-2 shrink-0 group-open:rotate-90 transition-transform" style={{ color: 'var(--text-muted)' }} />
-                    </summary>
-                    <div className="pb-4 pl-11">
-                      <pre className="text-[11px] leading-5 p-3 rounded-lg border whitespace-pre-wrap break-words select-text max-h-64 overflow-auto" style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-subtle)', color: 'var(--text-main)' }}>{item.content}</pre>
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <span className="text-[10px] capitalize" style={{ color: 'var(--text-muted)' }}>{item.category}</span>
-                        <button onClick={async () => {
-                          try { await navigator.clipboard.writeText(item.content); setCopiedId(item.id); setSentNotice('Copied. Paste into your message to use it.'); }
-                          catch { setSentNotice('Could not copy. Select the text above to copy manually.'); }
-                        }} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md hover:bg-[var(--bg-surface-hover)]" style={{ color: 'var(--text-main)' }}>
-                          {copiedId === item.id ? <Check size={13} /> : <Copy size={13} />} {copiedId === item.id ? 'Copied' : 'Copy content'}
-                        </button>
-                      </div>
+                  <button key={item.id} onClick={() => setQuickLook({ source: 'saved', id: item.id })} onKeyDown={event => { if (event.key === ' ') { event.preventDefault(); setQuickLook({ source: 'saved', id: item.id }); } }} className="w-full text-left flex items-start gap-3 px-3 py-3.5 rounded-md border-b border-[var(--border-subtle)] hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]">
+                    <div className="w-8 h-8 shrink-0 flex items-center justify-center" style={{ color: iconColor }}>
+                      {logo ? <svg width="24" height="24" viewBox="0 0 24 24" fill={`#${logo.hex}`} role="img" aria-label={logo.title}><path d={logo.path} /></svg>
+                        : item.logo === 'integrations' ? <div className="flex items-center -space-x-1"><span className="text-[#8b83ff]"><LinearLogo size={20} /></span><span className="text-[var(--text-main)]"><NotionLogo size={16} /></span></div>
+                        : <Icon size={23} strokeWidth={1.8} />}
                     </div>
-                  </details>
+                    <div className="min-w-0 flex-1"><p className="text-xs font-medium truncate">{item.title}</p><p className="text-[11px] leading-5 mt-0.5 text-[var(--text-muted)]">{item.description}</p><p className="text-[10px] capitalize mt-1 text-[var(--text-muted)]">{item.category}</p></div>
+                    <ChevronRight size={14} className="mt-2 shrink-0 text-[var(--text-muted)]" />
+                  </button>
                 );
               })}
             </div>
           </div>
         )}
+      {quickLook && <QuickLookPreview selectedId={quickLook.id} onSelect={id => setQuickLook({ ...quickLook, id })} onClose={() => setQuickLook(null)} items={quickLook.source === 'recents'
+        ? INITIAL_ARTIFACTS.map(item => ({ id: item.id, name: item.title, detail: `${item.type} · ${item.size} · Sample artifact`, text: item.content.replace(/\\n/g, '\n') }))
+        : filteredLibraryItems.map(item => ({ id: item.id, name: item.title, detail: `${item.category} · ${item.description}`, text: item.content, language: item.language }))} />}
       </div>
     </div>
   );

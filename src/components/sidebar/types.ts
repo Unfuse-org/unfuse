@@ -5,6 +5,8 @@ export interface ChatSession {
   messageCount: number;
   modelUsed?: string;
   pinned?: boolean;
+  archived?: boolean;
+  unread?: boolean;
 }
 
 export interface WorkspaceNode {

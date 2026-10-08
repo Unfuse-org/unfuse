@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Server, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Plus, Server, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Grid2X2, Plug, Folder, Logs, NotebookPen, Settings } from 'lucide-react';
 import unfuseLogo from './assets/logo.png';
 import { SidebarPanel } from './components/sidebar/SidebarPanel';
 import { ChatSession } from './components/sidebar/types';
@@ -16,18 +16,20 @@ import { MainChatPanel } from './components/chat/MainChatPanel';
 
 
 function NavigationIcon({ name }: { name: 'dashboard' | 'integrations' | 'library' | 'logs' | 'memory' | 'settings' }) {
-  const shapes = {
-    dashboard: <><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="5" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="10" width="8" height="11" rx="2" /></>,
-    integrations: <path d="M10 3a3 3 0 0 1 6 0v1h3a2 2 0 0 1 2 2v3h-1a3 3 0 1 0 0 6h1v4a2 2 0 0 1-2 2h-4v-1a3 3 0 1 0-6 0v1H5a2 2 0 0 1-2-2v-4h1a3 3 0 1 0 0-6H3V6a2 2 0 0 1 2-2h5V3Z" />,
-    library: <><rect x="3" y="4" width="4" height="17" rx="1" /><rect x="9" y="3" width="4" height="18" rx="1" /><path d="m15 5 3-1a1 1 0 0 1 1.3.7l3.4 14a1 1 0 0 1-.7 1.2l-3 1a1 1 0 0 1-1.3-.7l-3.4-14a1 1 0 0 1 .7-1.2Z" /></>,
-    logs: <path fillRule="evenodd" d="M5 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V6a3 3 0 0 0-3-3H5Zm1.3 4.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 1 1-1.4-1.4L8.6 11 6.3 8.7a1 1 0 0 1 0-1.4ZM12 15a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2h-4a1 1 0 0 1-1-1Z" />,
-    memory: <><path d="M10 2a3 3 0 0 0-3 3 4 4 0 0 0-4 4 4 4 0 0 0-1 7 4 4 0 0 0 5 4 3 3 0 0 0 4 1V3a2 2 0 0 0-1-1Z" /><path d="M14 2a3 3 0 0 1 3 3 4 4 0 0 1 4 4 4 4 0 0 1 1 7 4 4 0 0 1-5 4 3 3 0 0 1-4 1V3a2 2 0 0 1 1-1Z" /></>,
-    settings: <path fillRule="evenodd" d="m10 2-.5 2.2-1.7.7-1.9-1.2-2.2 2.2 1.2 1.9-.7 1.7L2 10v4l2.2.5.7 1.7-1.2 1.9 2.2 2.2 1.9-1.2 1.7.7L10 22h4l.5-2.2 1.7-.7 1.9 1.2 2.2-2.2-1.2-1.9.7-1.7L22 14v-4l-2.2-.5-.7-1.7 1.2-1.9-2.2-2.2-1.9 1.2-1.7-.7L14 2h-4Zm2 6a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z" />,
+  const icons = {
+    dashboard: Grid2X2,
+    integrations: Plug,
+    library: Folder,
+    logs: Logs,
+    memory: NotebookPen,
+    settings: Settings,
   };
-  return <svg width={19} height={19} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{shapes[name]}</svg>;
+  const Icon = icons[name];
+  return <Icon size={19} strokeWidth={1.65} aria-hidden="true" />;
 }
 
 export default function App() {
+  const [logModel, setLogModel] = useState<string | null>(null);
   const [activeNav, setActiveNav] = useState<'home' | 'dashboard' | 'integrations' | 'library' | 'settings' | 'logs' | 'memory'>('dashboard');
   const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'rack' | 'add'>('none');
   const [isAddPanelExpanded, setIsAddPanelExpanded] = useState(false);
@@ -184,9 +186,9 @@ export default function App() {
 
       {/* 2. LOWER SECTION: INDEPENDENT SIDE BAR + PROPER EDGED WORKSPACE */}
       <div className="flex-1 flex flex-row min-h-0">
-        {/* LEFT SIDE RAIL: INDEPENDENT, PROPER EDGED, SAME SIZE (40px) */}
+        {/* LEFT SIDE RAIL: INDEPENDENT, PROPER EDGED, 48px rail */}
         <aside
-          className="w-[40px] border-r flex flex-col items-center gap-3.5 shrink-0 pt-5 pb-3"
+          className="w-[48px] border-r flex flex-col items-center gap-2 shrink-0 pt-4 pb-3"
           style={{
             backgroundColor: 'var(--bg-rail)',
             borderColor: 'var(--border-subtle)',
@@ -195,23 +197,23 @@ export default function App() {
           {/* 1) HOME BUTTON */}
           <button
             onClick={() => setActiveNav('home')}
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
+            className="w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
             style={{
               backgroundColor: activeNav === 'home' ? 'var(--bg-active)' : 'transparent',
-              color: '#ffffff',
+              color: activeNav === 'home' ? 'var(--text-main)' : 'var(--text-muted)',
             }}
             title="Home"
           >
-            <img src={unfuseLogo} alt="" className="w-9 h-9 max-w-none shrink-0 mix-blend-screen" />
+            <img src={unfuseLogo} alt="" className="w-8 h-8 max-w-none shrink-0 mix-blend-screen" />
           </button>
 
           {/* 2) DASHBOARD BUTTON */}
           <button
             onClick={() => setActiveNav('dashboard')}
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
+            className="w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
             style={{
               backgroundColor: activeNav === 'dashboard' ? 'var(--bg-active)' : 'transparent',
-              color: '#ffffff',
+              color: activeNav === 'dashboard' ? 'var(--text-main)' : 'var(--text-muted)',
             }}
             title="Dashboard"
           >
@@ -221,10 +223,10 @@ export default function App() {
           {/* 3) INTEGRATIONS BUTTON */}
           <button
             onClick={() => setActiveNav('integrations')}
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
+            className="w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
             style={{
               backgroundColor: activeNav === 'integrations' ? 'var(--bg-active)' : 'transparent',
-              color: '#ffffff',
+              color: activeNav === 'integrations' ? 'var(--text-main)' : 'var(--text-muted)',
             }}
             title="Integrations"
           >
@@ -234,20 +236,20 @@ export default function App() {
           {/* 4) LIBRARY BUTTON */}
           <button
             onClick={() => setActiveNav('library')}
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
+            className="w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
             style={{
               backgroundColor: activeNav === 'library' ? 'var(--bg-active)' : 'transparent',
-              color: '#ffffff',
+              color: activeNav === 'library' ? 'var(--text-main)' : 'var(--text-muted)',
             }}
             title="Library"
           >
             <NavigationIcon name="library" />
           </button>
 
-          {([{ id: 'logs', label: 'Terminal logs'}, { id: 'memory', label: 'Memory'}] as const).map(({ id, label }) => (
+          {([{ id: 'logs', label: 'Logs'}, { id: 'memory', label: 'Memory'}] as const).map(({ id, label }) => (
             <button key={id} onClick={() => setActiveNav(id)} title={label} aria-label={label} aria-current={activeNav === id ? 'page' : undefined}
-              className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
-              style={{ backgroundColor: activeNav === id ? 'var(--bg-active)' : 'transparent', color: '#ffffff' }}>
+              className="w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
+              style={{ backgroundColor: activeNav === id ? 'var(--bg-active)' : 'transparent', color: activeNav === id ? 'var(--text-main)' : 'var(--text-muted)' }}>
               <NavigationIcon name={id} />
             </button>
           ))}
@@ -255,10 +257,10 @@ export default function App() {
           {/* 5) SETTINGS BUTTON */}
           <button
             onClick={() => setActiveNav('settings')}
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-md transition-colors cursor-pointer hover:bg-white/10"
+            className="mt-auto w-[34px] h-[34px] flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
             style={{
               backgroundColor: activeNav === 'settings' ? 'var(--bg-active)' : 'transparent',
-              color: '#ffffff',
+              color: activeNav === 'settings' ? 'var(--text-main)' : 'var(--text-muted)',
             }}
             title="Settings"
           >
@@ -295,18 +297,12 @@ export default function App() {
                 />
               </div>
             )}
-            {activeNav === 'dashboard' && <DashboardView />}
+            {activeNav === 'dashboard' && <DashboardView onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
             {activeNav === 'integrations' && <IntegrationsView />}
             {activeNav === 'library' && <LibraryView />}
-            {(activeNav === 'logs' || activeNav === 'memory') && (
-              <div className="flex-1 min-h-0 overflow-y-auto px-6 lg:px-10 py-7" style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)' }}>
-                <div className="max-w-4xl mx-auto">
-                  <h1 className="text-xl font-medium">{activeNav === 'logs' ? 'Terminal logs' : 'Memory'}</h1>
-                  {activeNav === 'logs' ? <ModelLogsView /> : <MemoryView />}
-                </div>
-              </div>
-            )}
-            {activeNav === 'settings' && <SettingsView models={rackModels} onOpenRack={() => setActiveRightPanel('rack')} onOpenIntegrations={() => setActiveNav('integrations')} />}
+            {activeNav === 'logs' && <ModelLogsView modelFilter={logModel} onClearModelFilter={() => setLogModel(null)} />}
+            {activeNav === 'memory' && <MemoryView />}
+            {activeNav === 'settings' && <SettingsView models={rackModels} onOpenRack={() => setActiveRightPanel('rack')} />}
           </div>
 
           {/* COLLAPSIBLE RIGHT PANEL: DIRECTLY BELOW THE 3 TOP BAR BUTTONS */}
@@ -315,13 +311,14 @@ export default function App() {
             ref={(element) => element?.toggleAttribute('inert', activeRightPanel === 'none')}
             className={`workspace-panel-motion h-full flex flex-col shrink-0 overflow-hidden ${activeRightPanel === 'none' ? 'workspace-panel-closed' : ''}`}
             style={{
-              width: activeRightPanel === 'none' ? 0 : activeRightPanel === 'rack' ? 288 : isAddPanelExpanded ? 880 : 500,
+              width: activeRightPanel === 'none' ? 0 : activeRightPanel === 'rack' ? 360 : isAddPanelExpanded ? 880 : 500,
+              maxWidth: '60%',
               backgroundColor: 'var(--bg-panel)',
             }}
           >
             {renderedRightPanel !== 'none' && <div
               className="h-full border-l flex flex-col shrink-0"
-              style={{ width: renderedRightPanel === 'rack' ? 288 : isAddPanelExpanded ? 880 : 500, borderColor: 'var(--border-subtle)' }}
+              style={{ width: renderedRightPanel === 'rack' ? 360 : isAddPanelExpanded ? 880 : 500, maxWidth: '100%', borderColor: 'var(--border-subtle)' }}
             >
               {renderedRightPanel === 'rack' ? <RackPanel models={rackModels} onModelsChange={setRackModels} /> : <AddPanel
                 onClose={() => {

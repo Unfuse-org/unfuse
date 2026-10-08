@@ -45,8 +45,8 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({ filename, originalCo
           <p className="text-[11px] text-[var(--text-muted)] mt-1">Sample diff · Git not connected</p>
         </div>
         <div className="text-xs font-mono flex gap-2 shrink-0">
-          <span className="text-emerald-500">+{additions}</span>
-          <span className="text-rose-500">−{deletions}</span>
+          <span className="text-[#4ade80]">+{additions}</span>
+          <span className="text-[#ff6369]">−{deletions}</span>
         </div>
       </header>
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -88,11 +88,11 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({ filename, originalCo
                 <tbody>
                   {rows.map((row, index) => (
                     <tr key={index} style={{
-                      backgroundColor: row.type === 'added' ? 'rgba(16,185,129,0.12)' : row.type === 'removed' ? 'rgba(244,63,94,0.12)' : undefined,
+                      backgroundColor: row.type === 'added' ? 'rgba(46,160,67,0.16)' : row.type === 'removed' ? 'rgba(248,81,73,0.16)' : undefined,
                     }}>
-                      <td className="w-9 min-w-[36px] px-2 text-right align-top select-none text-[var(--text-muted)]">{row.oldLine}</td>
-                      <td className="w-9 min-w-[36px] px-2 text-right align-top select-none text-[var(--text-muted)]">{row.newLine}</td>
-                      <td className="w-5 align-top select-none">{row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</td>
+                      <td style={{ backgroundColor: row.type === 'added' ? 'rgba(46,160,67,0.24)' : row.type === 'removed' ? 'rgba(248,81,73,0.24)' : undefined }} className="w-9 min-w-[36px] px-2 text-right align-top select-none text-[var(--text-muted)]">{row.oldLine}</td>
+                      <td style={{ backgroundColor: row.type === 'added' ? 'rgba(46,160,67,0.24)' : row.type === 'removed' ? 'rgba(248,81,73,0.24)' : undefined }} className="w-9 min-w-[36px] px-2 text-right align-top select-none text-[var(--text-muted)]">{row.newLine}</td>
+                      <td style={{ color: row.type === 'added' ? '#4ade80' : row.type === 'removed' ? '#ff6369' : undefined, backgroundColor: row.type === 'added' ? 'rgba(46,160,67,0.24)' : row.type === 'removed' ? 'rgba(248,81,73,0.24)' : undefined }} className="w-5 align-top select-none font-semibold">{row.type === 'added' ? '+' : row.type === 'removed' ? '−' : ' '}</td>
                       <td className={wrap ? 'whitespace-pre-wrap break-all pr-4' : 'whitespace-pre pr-4'}>{row.text || ' '}</td>
                     </tr>
                   ))}

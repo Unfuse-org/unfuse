@@ -84,7 +84,7 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-black overflow-hidden text-white select-none relative">
+    <div className="flex flex-col h-full w-full bg-[var(--bg-panel)] overflow-hidden text-[var(--text-main)] select-none relative">
       {/* 1. BLADE CONFIG VIEW IN-PANEL */}
       {editingModel ? (
         <BladeConfigView
@@ -102,34 +102,22 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
         />
       ) : (
         <>
-          {/* TOP DRAG REGION & CENTERED PIXEL HEADER */}
-          <div
-            className="h-10 w-full flex-shrink-0 flex items-center justify-center cursor-default pt-2"
-            data-tauri-drag-region
-          >
-            {models.length > 0 && (
-              <h2 className="font-['Press_Start_2P',monospace] text-[12.5px] text-[#f4f4f5] tracking-wide uppercase text-center select-none pt-1">
-                Active Models
-              </h2>
-            )}
-          </div>
-
           {models.length === 0 ? (
         /* 2. INITIAL EMPTY STATE: BIG + WITH SMALL 'LOAD MODELS' TEXT */
         <div className="flex-1 flex flex-col items-center justify-center p-6">
           <button
             type="button"
             onClick={() => setIsMountingOpen(true)}
-            className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl hover:bg-[#18181c] active:scale-95 transition-all duration-150 cursor-pointer"
+            className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl hover:bg-[var(--bg-surface-hover)] active:scale-95 transition-all duration-150 cursor-pointer"
           >
             {/* BIG + ICON */}
-            <div className="w-12 h-12 rounded-xl bg-[#18181c] group-hover:bg-[#1f1f24] border border-[#27272a] group-hover:border-[#3f3f46] flex items-center justify-center transition-all duration-150 shadow-sm">
-              <Plus className="w-6 h-6 text-[#71717a] group-hover:text-[#f4f4f5] transition-colors" strokeWidth={1.5} />
+            <div className="w-12 h-12 rounded-xl bg-[var(--bg-surface)] group-hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] group-hover:border-[var(--border-strong)] flex items-center justify-center transition-all duration-150 shadow-sm">
+              <Plus className="w-6 h-6 text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors" strokeWidth={1.5} />
             </div>
 
             {/* SMALL TEXT */}
-            <span className="text-[11px] font-medium text-[#71717a] group-hover:text-[#a1a1aa] transition-colors tracking-tight">
-              Load models
+            <span className="text-[11px] font-medium text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors tracking-tight">
+              Connect a model
             </span>
           </button>
         </div>
@@ -152,7 +140,7 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
           {/* ADD MODEL BUTTON (PIXEL FONT, NO ICON) */}
           <button
             onClick={() => setIsMountingOpen(true)}
-            className="w-full py-2.5 mt-1 rounded-xl border border-dashed border-[#27272a] hover:border-[#3f3f46] hover:bg-[#18181c] text-[#71717a] hover:text-[#f4f4f5] transition-all flex items-center justify-center font-['Press_Start_2P',monospace] text-[8.5px] tracking-wider uppercase cursor-pointer"
+            className="w-full py-2.5 mt-1 rounded-xl border border-dashed border-[var(--border-subtle)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all flex items-center justify-center text-xs font-medium cursor-pointer"
           >
             Add Model
           </button>

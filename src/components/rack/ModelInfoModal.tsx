@@ -40,11 +40,11 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-black border border-white/15 rounded-2xl shadow-2xl overflow-hidden flex flex-col font-sans select-none text-white animate-in zoom-in-95 duration-150"
+        className="w-full max-w-lg bg-[var(--bg-panel)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl overflow-hidden flex flex-col font-sans select-none text-[var(--text-main)] animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* MODAL HEADER */}
-        <div className="p-4 border-b border-white/10 flex items-start justify-between gap-3 bg-white/[0.02]">
+        <div className="p-4 border-b border-[var(--border-subtle)] flex items-start justify-between gap-3 bg-white/[0.02]">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {/* LOGO BADGE */}
             <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0 shadow-md border border-white/20">
@@ -52,7 +52,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
             </div>
 
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-bold text-white tracking-tight truncate">
+              <h3 className="text-sm font-bold text-[var(--text-main)] tracking-tight truncate">
                 {model.displayName}
               </h3>
 
@@ -73,7 +73,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
 
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer shrink-0"
+            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition-colors cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -82,47 +82,47 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
         {/* MODAL BODY */}
         <div className="p-4 space-y-3.5 max-h-[75vh] overflow-y-auto">
           {/* DESCRIPTION */}
-          <div className="text-xs text-white/70 leading-relaxed bg-white/[0.03] p-3 rounded-xl border border-white/[0.05]">
+          <div className="text-xs text-[var(--text-muted)] leading-relaxed bg-[var(--bg-surface)] p-3 rounded-xl border border-[var(--border-subtle)]">
             {resolved.description}
           </div>
 
           {/* SPECS TABLE */}
           <div>
-            <div className="text-[11px] font-bold text-white uppercase tracking-wider mb-2 px-0.5 font-mono">
+            <div className="text-[11px] font-bold text-[var(--text-main)] uppercase tracking-wider mb-2 px-0.5 font-mono">
               Model Specifications
             </div>
 
-            <div className="rounded-xl border border-white/10 overflow-hidden bg-black/40 text-[11px] font-mono">
+            <div className="rounded-xl border border-[var(--border-subtle)] overflow-hidden bg-[var(--bg-app)] text-[11px] font-mono">
               <table className="w-full text-left border-collapse">
                 <tbody>
-                  <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40 w-1/3">Architecture</td>
-                    <td className="py-2 px-3 text-white font-medium capitalize">{model.family}</td>
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)] w-1/3">Architecture</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium capitalize">{model.family}</td>
                   </tr>
-                  <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40">Parameters</td>
-                    <td className="py-2 px-3 text-white font-medium">{resolved.parameters}</td>
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Parameters</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium">{resolved.parameters}</td>
                   </tr>
-                  <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40">Context Limit</td>
-                    <td className="py-2 px-3 text-white font-medium">
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Context Limit</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium">
                       {model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Auto (Model Native)'}
                     </td>
                   </tr>
-                  <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40">Quantization</td>
-                    <td className="py-2 px-3 text-white font-medium">{model.quantization || 'Q4_K_M'}</td>
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Quantization</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium">{model.quantization || 'Q4_K_M'}</td>
                   </tr>
-                  <tr className="border-b border-white/[0.06]">
-                    <td className="py-2 px-3 text-white/40">Model Size</td>
-                    <td className="py-2 px-3 text-white font-medium">
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Model Size</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium">
                       {model.sizeBytes ? formatBytes(model.sizeBytes) : 'Runner Managed'}
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-2 px-3 text-white/40">Runtime Server</td>
-                    <td className="py-2 px-3 text-white font-medium uppercase">
-                      {model.provider} <span className="text-white/40 lowercase">(:{model.port})</span>
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Runtime Server</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium uppercase">
+                      {model.provider} <span className="text-[var(--text-muted)] lowercase">(:{model.port})</span>
                     </td>
                   </tr>
                 </tbody>

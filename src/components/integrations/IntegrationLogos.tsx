@@ -388,21 +388,10 @@ export const TavilyLogo: React.FC<LogoProps> = ({ size = 24, className = '', sty
   </svg>
 );
 
-// 21. EXA
+// Exa logomark from https://exa.ai/images/logo/exa-logo-blue.svg
 export const ExaLogo: React.FC<LogoProps> = ({ size = 24, className = '', style }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    style={{ width: size, height: size, ...style }}
-  >
-    <rect x="3" y="3" width="8" height="8" rx="2" fill="#5B61FD" />
-    <rect x="13" y="3" width="8" height="8" rx="2" fill="#5B61FD" opacity="0.75" />
-    <rect x="3" y="13" width="8" height="8" rx="2" fill="#5B61FD" opacity="0.5" />
-    <rect x="13" y="13" width="8" height="8" rx="2" fill="#5B61FD" />
+  <svg width={size * 106.417 / 129} height={size} viewBox="0 0 106.417 129" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className} style={style}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M106.417 9.30741C106.417 9.57392 106.324 9.83227 106.155 10.0388L61.5395 64.5L106.155 118.96C106.324 119.166 106.417 119.425 106.417 119.691V127.843C106.417 128.482 105.897 129 105.255 129H1.16175C0.520132 129 0 128.482 0 127.843V1.15695C0 0.517982 0.520131 0 1.16174 0H105.255C105.897 0 106.417 0.517984 106.417 1.15695V9.30741ZM19.0364 116.382H87.6921L53.363 74.4795L19.0364 116.382ZM12.6699 104.192L40.1426 70.6585H12.6699V104.192ZM12.6699 58.0409H39.8964L12.6699 24.8064V58.0409ZM53.363 54.5193L87.6921 12.6176H19.0364L53.363 54.5193Z" />
   </svg>
 );
 

@@ -1,490 +1,158 @@
 import React, { useState } from 'react';
-import {
-  ArrowLeft,
-  Check,
-  Copy,
-  ExternalLink,
-  Plus,
-  Key,
-  Shield,
-  Trash2,
-  AlertCircle,
-} from 'lucide-react';
-import {
-  ServiceId,
-  ServiceMetadata,
-  SERVICE_METADATA,
-} from './types';
-import {
-  getServiceState,
-  saveServiceConfig,
-  disconnectService,
-} from './integrationStore';
+import { ArrowLeft, Check, Copy, ExternalLink, Settings2, ShieldCheck, Trash2, Wrench } from 'lucide-react';
+import { ServiceId, SERVICE_METADATA } from './types';
+import { getServiceState, saveServiceConfig, disconnectService } from './integrationStore';
 import { renderIntegrationLogo } from './IntegrationLogos';
+
+// Provider requirements describe their APIs, not completed Unfuse connector features.
+const SETUP_GUIDES: Record<ServiceId, { auth: string; requirement: string; access: string; url: string }> = {
+  github: { auth: 'Personal access token', requirement: 'Choose the repositories and permissions on a fine-grained token. Organization approval may be required.', access: 'Repository access follows the token’s permissions and the account’s access.', url: 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens' },
+  notion: { auth: 'Integration token', requirement: 'Create an internal connection and share the pages it needs using Add connections in Notion.', access: 'Internal connections can access shared pages within their configured capabilities.', url: 'https://developers.notion.com/guides/get-started/authorization' },
+  linear: { auth: 'API key or OAuth', requirement: 'Create a personal API key in Linear settings, or authorize an OAuth application.', access: 'API access is limited by the key permissions and authorized workspace.', url: 'https://linear.app/developers/graphql' },
+  gmail: { auth: 'OAuth access token', requirement: 'Enable the Gmail API and authorize the scopes required for reading mail or creating drafts. An API key alone does not grant mailbox access.', access: 'OAuth scopes determine which mailbox operations are allowed.', url: 'https://developers.google.com/workspace/gmail/api/auth/scopes' },
+  googledrive: { auth: 'OAuth access token', requirement: 'Enable the Drive API and select the OAuth scopes needed for the files you want to use.', access: 'File access depends on OAuth scopes and the authorizing account’s permissions.', url: 'https://developers.google.com/workspace/drive/api/guides/api-specific-auth' },
+  slack: { auth: 'Slack app token', requirement: 'Install a Slack app with the required OAuth scopes. Bot access also depends on channel membership.', access: 'The token type, granted scopes, and conversation access determine available operations.', url: 'https://docs.slack.dev/authentication/tokens/' },
+  figma: { auth: 'Personal access token or OAuth', requirement: 'Create a scoped token or authorize an OAuth app with access to the relevant files.', access: 'File permissions and token scopes determine which design data can be read.', url: 'https://developers.figma.com/docs/rest-api/authentication/' },
+  sentry: { auth: 'Auth token', requirement: 'Create an internal integration or personal token with scopes for the organizations and projects you need.', access: 'Token scopes control access to issues, projects, and organization data.', url: 'https://docs.sentry.io/api/auth/' },
+  datadog: { auth: 'Scoped token or legacy API keys', requirement: 'Check your endpoint’s supported authentication. Datadog supports scoped access tokens; legacy access uses an API key paired with an application key.', access: 'Credential scopes and account permissions limit API access.', url: 'https://docs.datadoghq.com/account_management/api-app-keys/' },
+  posthog: { auth: 'Personal API key', requirement: 'Private query endpoints require a personal API key and the correct cloud region or self-hosted URL. A project token is for public ingestion endpoints.', access: 'Personal API key scopes determine which analytics resources can be queried.', url: 'https://posthog.com/docs/api' },
+  jira: { auth: 'API token or OAuth', requirement: 'For basic authentication, use an Atlassian account email and API token with your Jira site URL.', access: 'The authenticated account’s project permissions still apply.', url: 'https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/' },
+  postgresql: { auth: 'Database connection string', requirement: 'Provide host, database, and role credentials using the connection format required by your connector.', access: 'Database role privileges control queries and modifications.', url: 'https://www.postgresql.org/docs/current/libpq-connect.html' },
+  supabase: { auth: 'Project URL and API key', requirement: 'Choose the key type for your API use case. Secret and service-role keys are privileged server credentials.', access: 'Key type, database permissions, and row-level security determine access.', url: 'https://supabase.com/docs/guides/getting-started/api-keys' },
+  redis: { auth: 'Redis connection details', requirement: 'Use the server address, ACL credentials, and TLS settings required by your Redis deployment.', access: 'Redis ACLs govern the commands and key patterns available to the connection.', url: 'https://redis.io/docs/latest/develop/clients/' },
+  docker: { auth: 'Docker daemon access', requirement: 'The connector needs access to a running Docker daemon through its configured socket or secured endpoint.', access: 'Daemon access can control containers and affect the host machine.', url: 'https://docs.docker.com/engine/security/protect-access/' },
+  duckduckgo: { auth: 'No API key in this adapter', requirement: 'Unfuse’s current search adapter uses keyless web requests. It is not an authenticated DuckDuckGo account connection.', access: 'Search queries are sent to the search service; availability depends on its responses.', url: 'https://duckduckgo.com' },
+  brave: { auth: 'Search API key', requirement: 'Create a Brave Search API subscription and obtain a key from the API dashboard.', access: 'Requests use the subscription’s quota and available endpoints.', url: 'https://api-dashboard.search.brave.com/app/documentation/web-search/get-started' },
+  tavily: { auth: 'API key', requirement: 'Obtain an API key from your Tavily account. Requests consume your account’s credits.', access: 'Search and extraction requests follow the API plan and request parameters.', url: 'https://docs.tavily.com/documentation/quickstart' },
+  exa: { auth: 'API key', requirement: 'Obtain an Exa API key and check the search endpoints and usage limits for your account.', access: 'Search and content retrieval use the authenticated API account.', url: 'https://exa.ai/docs/search/quickstart' },
+  google: { auth: 'API key and search engine ID', requirement: 'Custom Search requests require both an API key and a Programmable Search Engine ID (cx). The API is closed to new customers; existing customers must migrate before its January 1, 2027 discontinuation.', access: 'Results depend on the configured search engine and API quota.', url: 'https://developers.google.com/custom-search/v1/overview' },
+  discord: { auth: 'Bot token', requirement: 'Create a Discord application, add its bot to the server, and grant the permissions and intents your connector needs.', access: 'Server permissions, channel permissions, and enabled intents limit bot access.', url: 'https://docs.discord.com/developers/topics/oauth2' },
+  mcp: { auth: 'Server-specific', requirement: 'Configure an MCP server with its supported transport and required credentials. MCP is a protocol, not an account provider.', access: 'Tools are discovered from the server. Access depends on the server and its authorization.', url: 'https://modelcontextprotocol.io/docs/learn/architecture' },
+};
+
+// These fields describe provider requirements; unsupported connector fields remain disabled.
+const ADDITIONAL_FIELDS: Partial<Record<ServiceId, Array<{ label: string; placeholder: string }>>> = {
+  slack: [{ label: 'Workspace ID', placeholder: 'T0123456789' }],
+  jira: [{ label: 'Jira site URL', placeholder: 'https://your-team.atlassian.net' }, { label: 'Account email', placeholder: 'you@company.com' }],
+  datadog: [{ label: 'Datadog site', placeholder: 'datadoghq.com' }, { label: 'Application key', placeholder: 'Scoped application key' }],
+  posthog: [{ label: 'Instance URL', placeholder: 'https://us.posthog.com' }, { label: 'Project ID', placeholder: 'Your project ID' }],
+  supabase: [{ label: 'Project URL', placeholder: 'https://your-project.supabase.co' }],
+  google: [{ label: 'Search engine ID', placeholder: 'Programmable Search Engine ID (cx)' }],
+  docker: [{ label: 'Docker endpoint', placeholder: 'Your Docker daemon socket or secured endpoint' }],
+  mcp: [{ label: 'Server command or URL', placeholder: 'Your MCP server configuration' }],
+};
 
 interface PluginDetailCanvasProps {
   serviceId: ServiceId;
   onBack: () => void;
 }
 
-export const PluginDetailCanvas: React.FC<PluginDetailCanvasProps> = ({
-  serviceId,
-  onBack,
-}) => {
-  const service: ServiceMetadata = SERVICE_METADATA[serviceId] || {
-    id: serviceId,
-    name: serviceId,
-    category: 'devtools',
-    description: '',
-  };
-
+export const PluginDetailCanvas: React.FC<PluginDetailCanvasProps> = ({ serviceId, onBack }) => {
+  const service = SERVICE_METADATA[serviceId];
+  const guide = SETUP_GUIDES[serviceId];
   const [state, setState] = useState(() => getServiceState(serviceId));
-  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
-  const [isAuthExpanded, setIsAuthExpanded] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(state?.apiKey || '');
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'tools' | 'settings'>('overview');
+  const isAuthExpanded = activeTab === 'settings';
+  const setIsAuthExpanded = (expanded: boolean) => setActiveTab(expanded ? 'settings' : 'overview');
+  const [apiKeyInput, setApiKeyInput] = useState(state.apiKey || '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
+  const hasConfig = state.isConnected;
+  const requiresOAuth = serviceId === 'gmail' || serviceId === 'googledrive';
+  const additionalFields = ADDITIONAL_FIELDS[serviceId] || [];
+  const incompleteSetup = requiresOAuth || additionalFields.length > 0;
+  const credentialLabel = serviceId === 'jira' ? 'Atlassian API token' : serviceId === 'figma' ? 'Personal access token' : serviceId === 'datadog' ? 'API key' : serviceId === 'slack' ? 'Bot token' : serviceId === 'discord' ? 'Bot token' : serviceId === 'linear' ? 'Personal API key' : guide.auth;
 
-  const isConnected = state?.isConnected || false;
+  const category = service.category === 'engineering' ? 'Developer tools' : service.category === 'devtools' ? 'Developer tools' : service.category;
 
-  const handleCopyPrompt = (prompt: string) => {
-    navigator.clipboard.writeText(prompt);
-    setCopiedPrompt(prompt);
-    setTimeout(() => {
-      setCopiedPrompt((curr) => (curr === prompt ? null : curr));
-    }, 2000);
-  };
-
-  const handleConnect = () => {
-    if (service.requiresKey === false) {
-      saveServiceConfig(serviceId, { isConnected: true });
-      setState(getServiceState(serviceId));
-      return;
-    }
-    if (!apiKeyInput.trim()) {
-      setIsAuthExpanded(true);
-      return;
-    }
+  const handleSave = () => {
+    if (service.requiresKey !== false && !apiKeyInput.trim()) return;
     try {
-      saveServiceConfig(serviceId, {
-        isConnected: true,
-        apiKey: apiKeyInput.trim(),
-      });
+      saveServiceConfig(serviceId, { isConnected: true, ...(service.requiresKey !== false ? { apiKey: apiKeyInput.trim() } : {}) });
       setState(getServiceState(serviceId));
-      setSaveSuccess(true);
-      setErrorMsg(null);
       setIsAuthExpanded(false);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to save configuration');
+      setErrorMsg(null);
+    } catch (error: unknown) {
+      setErrorMsg(error instanceof Error ? error.message : 'Could not save configuration');
     }
   };
 
   const handleDisconnect = () => {
     disconnectService(serviceId);
     setState(getServiceState(serviceId));
+    setApiKeyInput('');
     setIsAuthExpanded(false);
   };
 
-  // Derive Example Prompts
-  const examplePrompts = service.examplePrompts && service.examplePrompts.length > 0
-    ? service.examplePrompts
-    : [
-        `Explain how to use ${service.name} to accelerate workflow automation and debugging`,
-        `Inspect recent events and query active data from ${service.name}`,
-        `Summarize recent updates and produce an actionable status report from ${service.name}`,
-      ];
-
-  // Derive Apps
-  const apps = service.apps && service.apps.length > 0
-    ? service.apps
-    : [
-        {
-          name: service.name,
-          description: service.description || `Access and query ${service.name} from agent context.`,
-        },
-      ];
-
-  // Formatting helpers
-  const accountEmail = service.accountEmail || 'proffersor45@gmail.com';
-  const capabilities = service.capabilities || 'Interactive, Write';
-  const developer = service.developer || 'OpenAI';
-  const version = service.version || '0.1.12-5f7cd798dc99';
-  const categoryLabel = service.category === 'engineering'
-    ? 'Developer Tools'
-    : service.category.charAt(0).toUpperCase() + service.category.slice(1);
+  const handleCopy = async (prompt: string) => {
+    await navigator.clipboard.writeText(prompt);
+    setCopiedPrompt(prompt);
+    window.setTimeout(() => setCopiedPrompt((current) => current === prompt ? null : current), 2000);
+  };
 
   return (
-    <div
-      className="flex flex-col gap-8 pb-16 max-w-5xl mx-auto w-full font-sans select-none animate-in fade-in duration-200"
-      style={{ color: 'var(--text-main)' }}
-    >
-      {/* 1. TOP BREADCRUMB / BACK NAVIGATION */}
-      <div className="flex items-center justify-between pt-1">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer group"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
-          <span>Plugins</span>
-        </button>
-      </div>
+    <div className="w-full min-w-0 max-w-4xl mx-auto pb-8" style={{ color: 'var(--text-main)' }}>
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs mb-6 hover:text-[var(--text-main)]" style={{ color: 'var(--text-muted)' }}>
+        <ArrowLeft size={14} /> All integrations
+      </button>
 
-      {/* 2. HERO HEADER: LOGO, NAME, TAGLINE, SOLID CALM STATUS, ACTION BUTTON */}
-      <div
-        className="flex items-start justify-between gap-6 pb-6 border-b"
-        style={{ borderColor: 'var(--border-subtle)' }}
-      >
-        <div className="flex items-start gap-5 min-w-0">
-          <div
-            className="w-16 h-16 border flex items-center justify-center shrink-0 shadow-lg"
-            style={{
-              backgroundColor: 'var(--bg-surface)',
-              borderColor: 'var(--border-subtle)',
-            }}
-          >
-            {renderIntegrationLogo(service.id, 42)}
-          </div>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--text-main)' }}>
-                {service.name}
-              </h1>
-              {/* SOLID CALM STATUS BADGE (STRICTLY NO GREEN PULSE ANIMATION) */}
-              {isConnected ? (
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 border text-xs font-medium"
-                  style={{
-                    backgroundColor: 'var(--bg-active)',
-                    borderColor: 'var(--border-subtle)',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                  <span>Connected</span>
-                </div>
-              ) : (
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-0.5 border text-xs font-medium"
-                  style={{
-                    backgroundColor: 'var(--bg-surface)',
-                    borderColor: 'var(--border-subtle)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full opacity-40" style={{ backgroundColor: 'var(--text-muted)' }} />
-                  <span>Not connected</span>
-                </div>
-              )}
-            </div>
-
-            <p className="text-sm mt-1 leading-snug" style={{ color: 'var(--text-muted)' }}>
-              {service.tagline || service.description}
-            </p>
-          </div>
+      <header className="flex flex-wrap items-start gap-4 pb-6 border-b border-[var(--border-subtle)]">
+        <div className="w-14 h-14 flex items-center justify-center shrink-0">{renderIntegrationLogo(serviceId, 32)}</div>
+        <div className="min-w-0 flex-1 basis-48">
+          <p className="text-[10px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-muted)' }}>{category}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{service.name}</h1>
+          <p className="text-sm leading-6 mt-1 max-w-lg" style={{ color: 'var(--text-muted)' }}>{service.tagline || service.description}</p>
         </div>
+        <button onClick={() => setIsAuthExpanded(!isAuthExpanded)} aria-expanded={isAuthExpanded} className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium hover:opacity-85" style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}><Settings2 size={14} />{hasConfig ? 'Manage setup' : 'Configure'}</button>
+      </header>
 
-        {/* TOP RIGHT ACTION */}
-        <div className="shrink-0 flex items-center gap-2">
-          {isConnected ? (
-            <button
-              onClick={handleDisconnect}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 border text-xs font-medium transition-all cursor-pointer hover:opacity-80"
-              style={{
-                borderColor: 'var(--border-subtle)',
-                color: 'var(--text-muted)',
-              }}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Disconnect</span>
-            </button>
-          ) : (
-            <button
-              onClick={handleConnect}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer hover:opacity-90"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--accent-fg)',
-              }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Connect</span>
-            </button>
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs border-b border-[var(--border-subtle)]">
+        <span className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />{hasConfig ? 'Configuration saved' : 'Not configured'}</span>
+        <span style={{ color: 'var(--text-muted)' }}>Live connection not verified</span>
+      </div>
+
+      <nav aria-label="Integration sections" className="flex gap-5 border-b border-[var(--border-subtle)] mb-2">
+        {(['overview', 'tools', 'settings'] as const).map(tab => <button key={tab} onClick={() => setActiveTab(tab)} className={`py-3 text-xs capitalize border-b-2 ${activeTab === tab ? 'border-[var(--text-main)] text-[var(--text-main)]' : 'border-transparent text-[var(--text-muted)]'}`}>{tab}</button>)}
+      </nav>
+      {isAuthExpanded && (
+        <section className="py-5 space-y-5">
+          <div className="flex items-center gap-3">
+            <div className="shrink-0">{renderIntegrationLogo(serviceId, 24)}</div>
+            <div><h2 className="text-sm font-medium">{service.name} connection</h2><p className="text-[11px] text-[var(--text-muted)] mt-1">{guide.auth}</p></div>
+          </div>
+          {requiresOAuth ? <div className="space-y-3"><p className="text-xs leading-5 text-[var(--text-muted)]">Authorize your Google account and choose the access you want to grant.</p><button disabled className="flex items-center justify-center gap-2 w-full border border-[var(--border-subtle)] rounded-lg py-2.5 text-xs opacity-40 cursor-not-allowed">{renderIntegrationLogo(serviceId, 16)}Continue with Google</button><p className="text-[11px] text-[var(--text-muted)]">OAuth is not connected yet.</p></div> : <>
+            {service.requiresKey !== false && <label className="block text-xs space-y-2"><span>{credentialLabel}</span><input disabled={incompleteSetup} type="password" autoComplete="off" value={incompleteSetup ? '' : apiKeyInput} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={service.authPlaceholder || credentialLabel} className="block w-full min-w-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] p-2.5 text-xs outline-none focus:border-[var(--border-strong)] select-text disabled:opacity-40 disabled:cursor-not-allowed" /></label>}
+            {additionalFields.map(field => <label key={field.label} className="block text-xs space-y-2"><span>{field.label}</span><input disabled placeholder={field.placeholder} className="block w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] p-2.5 text-xs opacity-40 cursor-not-allowed" /></label>)}
+            {incompleteSetup ? <p className="text-[11px] leading-5 text-[var(--text-muted)]">These provider fields are not wired to the connector yet.</p> : service.requiresKey !== false ? <p className="text-[11px] leading-5 text-[var(--text-muted)]">Saved on this device in browser storage. Connection has not been verified.</p> : <p className="text-xs text-[var(--text-muted)]">No credentials required.</p>}
+            {errorMsg && <p role="alert" className="text-xs text-red-400">{errorMsg}</p>}
+            <button onClick={handleSave} disabled={incompleteSetup || (service.requiresKey !== false && !apiKeyInput.trim())} className="rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}>{service.requiresKey === false ? 'Enable' : 'Save credential'}</button>
+          </>}
+          <div className="text-xs leading-5 text-[var(--text-muted)] space-y-2"><p>{guide.requirement}</p><p>{guide.access}</p><a href={guide.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[var(--text-main)] hover:underline">{service.name} setup guide<ExternalLink size={12} /></a></div>
+          {hasConfig && <button onClick={handleDisconnect} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs border border-[var(--border-subtle)]"><Trash2 size={13} />Disconnect {service.name}</button>}
+        </section>
+      )}
+
+      {activeTab === 'overview' && <section className="py-6 border-b border-[var(--border-subtle)]">
+        <h2 className="text-sm font-semibold mb-2">About this integration</h2>
+        <p className="text-sm leading-6 max-w-2xl" style={{ color: 'var(--text-muted)' }}>{service.description}</p>
+      </section>}
+
+      <div className="grid gap-x-7 [grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))]">
+        {activeTab === 'tools' && <section className="py-6">
+          <h2 className="flex items-center gap-2 text-sm font-semibold mb-2"><Wrench size={15} style={{ color: 'var(--text-muted)' }} />Tool catalog</h2>
+          <p className="text-[11px] leading-5 mb-4" style={{ color: 'var(--text-muted)' }}>Listed in Unfuse’s catalog. Availability has not been verified with a live connector.</p>
+          {service.tools?.length ? <div className="rounded-xl border border-[var(--border-subtle)] divide-y divide-[var(--border-subtle)] overflow-hidden">{service.tools.map((tool) => <div key={tool.name} className="p-3 bg-[var(--bg-surface)]"><h3 className="text-[11px] font-mono break-words">{tool.name}</h3><p className="text-xs leading-5 mt-1" style={{ color: 'var(--text-muted)' }}>{tool.description}</p></div>)}</div> : <p className="text-xs leading-5 rounded-xl border border-dashed border-[var(--border-subtle)] p-4" style={{ color: 'var(--text-muted)' }}>This server’s tools need to be discovered after connection.</p>}
+        </section>}
+      </div>
+
+      {activeTab === 'overview' && service.examplePrompts?.length && <section className="py-5 border-t border-[var(--border-subtle)]"><h2 className="text-sm font-semibold mb-3">Example requests</h2><div className="space-y-2">{service.examplePrompts.map((prompt) => <button key={prompt} onClick={() => void handleCopy(prompt)} className="w-full flex items-start gap-3 p-3 text-left rounded-lg hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)]"><span className="flex-1 text-xs leading-5">{prompt}</span>{copiedPrompt === prompt ? <Check size={14} className="mt-1 shrink-0" /> : <Copy size={14} className="mt-1 shrink-0" />}</button>)}</div></section>}
+
+      <footer className="pt-5 border-t border-[var(--border-subtle)] space-y-4">
+        <div className="flex gap-2 text-xs leading-5" style={{ color: 'var(--text-muted)' }}><ShieldCheck size={15} className="shrink-0 mt-0.5" /><p>Provider permissions determine accessible data. This page does not grant model access or enable automatic sharing of chats and memory.</p></div>
+        <div className="flex flex-wrap gap-5 text-xs" style={{ color: 'var(--text-muted)' }}>
+          {[{ label: 'Documentation', url: service.docsUrl }, { label: 'Website', url: service.websiteUrl }, { label: 'Privacy', url: service.privacyUrl }, { label: 'Terms', url: service.termsUrl }].filter((link) => link.url).map((link) => <a key={link.label} href={link.url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-[var(--text-main)]">{link.label}<ExternalLink size={11} /></a>)}
         </div>
-      </div>
-
-      {/* 3. PROMPT CARDS (3 PROMINENT AGENT USE-CASE CARDS) */}
-      <div className="flex flex-col gap-2.5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {examplePrompts.map((prompt, i) => (
-            <div
-              key={i}
-              onClick={() => handleCopyPrompt(prompt)}
-              className="border p-4 cursor-pointer transition-all flex flex-col justify-between group min-h-[128px]"
-              style={{
-                backgroundColor: 'var(--bg-surface)',
-                borderColor: 'var(--border-subtle)',
-              }}
-              title="Click to copy prompt"
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <div
-                  className="w-5 h-5 flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: 'var(--bg-app)' }}
-                >
-                  {renderIntegrationLogo(service.id, 14)}
-                </div>
-                <span
-                  className="text-[11px] font-semibold transition-colors"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {service.name}
-                </span>
-              </div>
-
-              <p className="text-xs leading-relaxed font-normal transition-colors" style={{ color: 'var(--text-main)' }}>
-                {prompt}
-              </p>
-
-              <div className="mt-3 flex items-center justify-end text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                {copiedPrompt === prompt ? (
-                  <span className="flex items-center gap-1 font-medium" style={{ color: 'var(--accent)' }}>
-                    <Check className="w-3 h-3" /> Copied
-                  </span>
-                ) : (
-                  <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                    <Copy className="w-3 h-3" /> Click to copy
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 4. OVERVIEW PARAGRAPH */}
-      <div className="text-xs text-white/70 leading-relaxed max-w-4xl">
-        <p>
-          {service.overview || service.description}
-        </p>
-      </div>
-
-      {/* 5. APPS SECTION */}
-      <div className="flex flex-col gap-3 pt-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-white tracking-tight">Apps</h2>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/70 font-mono font-medium">
-            {apps.length}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-2.5">
-          {apps.map((app, i) => (
-            <div
-              key={i}
-              className="bg-[#101114] border border-white/[0.06] rounded-xl p-3.5 flex items-start gap-3.5"
-            >
-              <div className="w-8 h-8 rounded-lg bg-white/[0.04] flex items-center justify-center shrink-0 mt-0.5">
-                {renderIntegrationLogo(service.id, 18)}
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-white">{app.name}</span>
-                <span className="text-xs text-white/50 mt-0.5 leading-snug">
-                  {app.description}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 6. CONNECTED ACCOUNTS SECTION */}
-      <div className="flex flex-col gap-3 pt-2">
-        <h2 className="text-sm font-semibold text-white tracking-tight">
-          Connected accounts
-        </h2>
-
-        {isConnected ? (
-          <div className="flex flex-col gap-2">
-            <div className="bg-[#101114] border border-white/[0.06] rounded-xl p-3.5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-xs font-semibold text-white">
-                  {(accountEmail || 'u')[0].toUpperCase()}
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white">
-                      {accountEmail}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-mono text-white/70">
-                      Primary
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={handleDisconnect}
-                className="text-xs text-white/40 hover:text-rose-400 transition-colors cursor-pointer px-2 py-1 rounded"
-              >
-                Disconnect
-              </button>
-            </div>
-
-            <button
-              onClick={() => setIsAuthExpanded(!isAuthExpanded)}
-              className="self-start text-xs text-white/50 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer pt-1"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Connect another account</span>
-            </button>
-          </div>
-        ) : (
-          <div className="bg-[#101114] border border-white/[0.06] rounded-xl p-4 flex items-center justify-between">
-            <span className="text-xs text-white/40">No accounts connected yet</span>
-            <button
-              onClick={() => setIsAuthExpanded(!isAuthExpanded)}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Connect account</span>
-            </button>
-          </div>
-        )}
-
-        {/* INLINE AUTH FORM DRAWER */}
-        {isAuthExpanded && (
-          <div className="bg-[#101114] border border-white/[0.1] rounded-xl p-4 flex flex-col gap-3 mt-1 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-3.5 h-3.5 text-white/60" />
-                <span className="text-xs font-semibold text-white">
-                  Authentication & Credentials
-                </span>
-              </div>
-              <button
-                onClick={() => setIsAuthExpanded(false)}
-                className="text-xs text-white/40 hover:text-white"
-              >
-                Cancel
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-medium text-white/60">
-                {service.authPlaceholder || 'API Key or Access Token'}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  placeholder={service.authPlaceholder || 'Enter token or key'}
-                  className="flex-1 h-8 px-3 rounded-lg bg-black border border-white/[0.1] focus:border-white/30 text-xs text-white outline-none font-mono"
-                />
-                <button
-                  onClick={handleConnect}
-                  disabled={service.requiresKey !== false && !apiKeyInput.trim()}
-                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-black hover:bg-white/90 disabled:opacity-40 transition-all cursor-pointer"
-                >
-                  Save & Connect
-                </button>
-              </div>
-            </div>
-
-            {errorMsg && (
-              <div className="flex items-center gap-1.5 text-xs text-rose-400">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-            {saveSuccess && (
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <Check className="w-3.5 h-3.5 shrink-0" />
-                <span>Account successfully connected!</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 7. INFORMATION SECTION */}
-      <div className="flex flex-col gap-4 pt-2">
-        <h2 className="text-sm font-semibold text-white tracking-tight">Information</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-          <div>
-            <span className="text-white/40 block text-[11px]">Capabilities</span>
-            <span className="text-white/90 font-medium mt-0.5 block">{capabilities}</span>
-          </div>
-
-          <div>
-            <span className="text-white/40 block text-[11px]">Developer</span>
-            <span className="text-white/90 font-medium mt-0.5 block">{developer}</span>
-          </div>
-
-          <div>
-            <span className="text-white/40 block text-[11px]">Category</span>
-            <span className="text-white/90 font-medium mt-0.5 block">{categoryLabel}</span>
-          </div>
-
-          <div>
-            <span className="text-white/40 block text-[11px]">Version</span>
-            <span className="text-white/90 font-mono text-[11px] mt-0.5 block">{version}</span>
-          </div>
-        </div>
-
-        {/* EXTERNAL LINKS */}
-        <div className="flex flex-wrap items-center gap-5 pt-1 text-xs text-white/60">
-          <a
-            href={service.websiteUrl || service.docsUrl || 'https://github.com'}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-          >
-            <span>Website</span>
-            <ExternalLink className="w-3 h-3 text-white/40" />
-          </a>
-
-          <a
-            href={service.privacyUrl || 'https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement'}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-          >
-            <span>Privacy Policy</span>
-            <ExternalLink className="w-3 h-3 text-white/40" />
-          </a>
-
-          <a
-            href={service.termsUrl || 'https://docs.github.com/en/site-policy/github-terms/github-terms-of-service'}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-          >
-            <span>Terms of Service</span>
-            <ExternalLink className="w-3 h-3 text-white/40" />
-          </a>
-        </div>
-      </div>
-
-      {/* 8. SECURITY & DATA DISCLOSURE CALLOUT */}
-      <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-start gap-3 mt-2">
-        <Shield className="w-4 h-4 text-white/30 shrink-0 mt-0.5" />
-        <p className="text-[11px] text-white/40 leading-relaxed">
-          This plugin may contain one or more apps, as listed above. When connected to an app, Unfuse may share relevant chats and memories with the app to help provide context for your requests. An app’s use of this data is subject to their terms and privacy policy, which can be found on the app’s page. If you have Memory enabled, data from the app may be used to proactively provide helpful information or suggestions. Unfuse always respects your training data preferences, including for data from connected apps. Use of apps may come with elevated risk. You can manage your preferences or disconnect from apps anytime in your settings.{' '}
-          <a
-            href={service.docsUrl || '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="text-white/60 hover:text-white underline underline-offset-2 transition-colors inline-block"
-          >
-            Learn more
-          </a>
-        </p>
-      </div>
+      </footer>
     </div>
   );
 };

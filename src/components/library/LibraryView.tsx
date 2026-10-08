@@ -1,3 +1,4 @@
+import { QuickLookPreview, type PreviewItem } from '../workspace/QuickLookPreview';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search,
@@ -175,6 +176,18 @@ const SAMPLE_LIBRARY_ATTACHMENTS: AttachmentItem[] = [
   },
 ];
 
+// Preview examples are separate from the user's saved attachments.
+const PREVIEW_EXAMPLES: PreviewItem[] = [
+  { id: 'example-image', name: 'architecture.svg', detail: 'Sample · Image', imageUrl: SAMPLE_LIBRARY_ATTACHMENTS[0].thumbnailUrl },
+  { id: 'example-pdf', name: 'welcome.pdf', detail: 'Sample · PDF', pdfUrl: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA0IDAgUiA+PiA+PiAvQ29udGVudHMgNSAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggMTg1ID4+CnN0cmVhbQpCVCAvRjEgMjQgVGYgNzIgNzIwIFRkIChVbmZ1c2UgLSBTYW1wbGUgUERGKSBUaiAvRjEgMTIgVGYgMCAtNDIgVGQgKFRoaXMgaXMgYSByZWFsIFBERiBwcmV2aWV3LCBub3QgYSB0ZXh0IHNpbXVsYXRpb24uKSBUaiAwIC0yNCBUZCAoVXBsb2FkIHlvdXIgb3duIFBERiB1c2luZyBVcGxvYWQgQXR0YWNobWVudHMuKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAwMzExIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNTQ3CiUlRU9G' },
+  { id: 'example-markdown', name: 'workspace.md', detail: 'Sample · Markdown', text: '# Your local workspace\n\nOne project. Your models.\n\n## A simple pipeline\n\n- Investigate the problem\n- Review the findings\n- Verify the fix\n\n**Each step builds on the previous result.**' },
+  { id: 'example-code', name: 'pipeline.ts', detail: 'Sample · TypeScript', text: 'interface Step {\n  model: string;\n  instruction: string;\n}\n\nconst steps: Step[] = [\n  { model: "Model A", instruction: "Investigate" },\n  { model: "Model B", instruction: "Review" },\n];' },
+  { id: 'example-json', name: 'settings.json', detail: 'Sample · JSON', text: '{\n  "workspace": "Unfuse",\n  "sequential": true,\n  "models": ["Model A", "Model B"]\n}' },
+  { id: 'example-csv', name: 'runs.csv', detail: 'Sample · CSV table', text: 'Run,Model,Status,Duration\nInvestigate,Model A,Completed,12s\nReview,Model B,Completed,8s\nVerify,Model A,Completed,10s' },
+  { id: 'example-text', name: 'notes.txt', detail: 'Sample · Plain text', text: 'Workspace notes\n\nKeep the change small.\nReview the result before continuing.\nRun the relevant checks.' },
+  { id: 'example-unsupported', name: 'design.fig', detail: 'Sample · Unsupported binary format' },
+];
+
 const STORAGE_KEY = 'unfuse_user_attachments_library_v2';
 
 export const LibraryView: React.FC = () => {
@@ -196,6 +209,7 @@ export const LibraryView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
   const [sortAsc, setSortAsc] = useState(false);
+  const [exampleId, setExampleId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<AttachmentItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -291,6 +305,7 @@ export const LibraryView: React.FC = () => {
           ? `${(file.size / 1_000_000).toFixed(1)} MB`
           : `${Math.round(file.size / 1000)} KB`;
 
+      const isText = file.type.startsWith('text/') || ['ts', 'tsx', 'js', 'jsx', 'json', 'py', 'rs', 'go', 'sh', 'yaml', 'yml', 'md', 'txt', 'csv', 'tsv', 'html', 'css', 'toml', 'xml', 'diff', 'mmd'].includes(ext);
       const reader = new FileReader();
       reader.onload = (e) => {
         const resultUrl = e.target?.result as string;
@@ -307,8 +322,8 @@ export const LibraryView: React.FC = () => {
           modelName: 'Active Model',
           thumbnailUrl: category === 'image' ? resultUrl : undefined,
           previewText:
-            category !== 'image' && file.size < 200_000 && typeof resultUrl === 'string'
-              ? resultUrl.slice(0, 500)
+            isText && file.size < 200_000 && typeof resultUrl === 'string'
+              ? resultUrl
               : undefined,
           fileUrl: URL.createObjectURL(file),
         };
@@ -318,8 +333,10 @@ export const LibraryView: React.FC = () => {
 
       if (category === 'image') {
         reader.readAsDataURL(file);
-      } else {
+      } else if (isText) {
         reader.readAsText(file);
+      } else {
+        reader.readAsArrayBuffer(file);
       }
     });
   };
@@ -417,6 +434,10 @@ export const LibraryView: React.FC = () => {
             />
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-[var(--text-muted)] mr-1">Try a preview</span>
+          {PREVIEW_EXAMPLES.map(item => <button key={item.id} onClick={() => setExampleId(item.id)} className="px-2.5 py-1.5 text-[11px] rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]">{item.detail.replace('Sample · ', '')}</button>)}
+        </div>
       </div>
 
       {/* DRAG AND DROP TARGET OVERLAY */}
@@ -464,7 +485,7 @@ export const LibraryView: React.FC = () => {
             {filteredAttachments.map((item) => (
               <div
                 key={item.id}
-                onClick={() => setPreviewItem(item)}
+                onClick={() => setPreviewItem(item)} tabIndex={0} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); setPreviewItem(item); } }}
                 className={`group relative overflow-hidden cursor-pointer break-inside-avoid mb-[2px] ${item.category !== 'image' ? 'aspect-square' : ''}`}
                 style={{ backgroundColor: item.category === 'image' ? 'transparent' : 'var(--bg-panel)' }}
               >
@@ -568,7 +589,7 @@ export const LibraryView: React.FC = () => {
                   {filteredAttachments.map((item) => (
                     <tr
                       key={item.id}
-                      onClick={() => setPreviewItem(item)}
+                      onClick={() => setPreviewItem(item)} tabIndex={0} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); setPreviewItem(item); } }}
                       className="hover:bg-white/[0.02] transition-colors cursor-pointer group"
                     >
                       <td className="py-3 px-4">
@@ -625,88 +646,15 @@ export const LibraryView: React.FC = () => {
         )}
       </div>
 
-      {/* 4. ATTACHMENT PREVIEW / INSPECTION LIGHTBOX MODAL */}
-      {previewItem && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 bg-black/60 backdrop-blur-sm transition-opacity"
-          onClick={() => setPreviewItem(null)}
-        >
-          {previewItem.category === 'image' && previewItem.thumbnailUrl ? (
-            /* PURE IMAGE VIEWER (NO UI) */
-            <div className="relative w-full h-full flex items-center justify-center animate-in fade-in zoom-in-95 duration-200">
-              <img
-                src={previewItem.thumbnailUrl}
-                alt={previewItem.name}
-                className="max-w-full max-h-full object-contain drop-shadow-2xl"
-                onClick={(e) => e.stopPropagation()} /* prevent closing when clicking the image itself */
-              />
-              <button
-                onClick={() => setPreviewItem(null)}
-                className="absolute top-0 right-0 p-3 text-white/50 hover:text-white transition-colors cursor-pointer"
-                title="Close (ESC)"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          ) : previewItem.mimeType === 'application/pdf' && previewItem.fileUrl ? (
-            /* NATIVE PDF VIEWER */
-            <div className="relative w-full h-full flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-200 p-4 sm:p-12">
-              <div 
-                className="h-[90vh] max-w-full aspect-[1/1.414] overflow-hidden shadow-2xl bg-white rounded-2xl"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <iframe src={previewItem.fileUrl} className="w-full h-full border-none rounded-2xl" title={previewItem.name} />
-              </div>
-              <button
-                onClick={() => setPreviewItem(null)}
-                className="absolute top-0 right-0 p-3 text-white/50 hover:text-white transition-colors cursor-pointer z-10"
-                title="Close (ESC)"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          ) : previewItem.previewText ? (
-            /* BORDERLESS DOCUMENT / CODE VIEWER (NO UI) */
-            <div className="relative w-full h-full flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-200 p-4 sm:p-12">
-              <div 
-                className={`h-[90vh] max-w-full aspect-[1/1.414] overflow-y-auto shadow-2xl ${
-                  previewItem.category === 'document' 
-                    ? 'bg-white text-black p-8 sm:p-12 rounded-2xl' 
-                    : 'bg-[#16161a] text-[#d946ef] font-mono p-6 sm:p-8 rounded-2xl border border-white/10'
-                }`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <pre className={`text-sm whitespace-pre-wrap ${previewItem.category === 'document' ? 'font-sans leading-relaxed text-black/90' : 'font-mono leading-snug'}`}>
-                  {previewItem.previewText}
-                </pre>
-              </div>
-              <button
-                onClick={() => setPreviewItem(null)}
-                className="absolute top-0 right-0 p-3 text-white/50 hover:text-white transition-colors cursor-pointer z-10"
-                title="Close (ESC)"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          ) : (
-            /* FALLBACK NO-PREVIEW */
-            <div className="relative w-full h-full flex items-center justify-center animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex flex-col items-center justify-center gap-4 text-center p-12 bg-black/40 rounded-3xl backdrop-blur-md border border-white/10 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                {renderCategoryIcon(previewItem.category, 64)}
-                <span className="text-lg font-semibold text-white/80">Preview unavailable</span>
-                <span className="text-sm text-white/40">This file type cannot be previewed natively.</span>
-              </div>
-              <button
-                onClick={() => setPreviewItem(null)}
-                className="absolute top-0 right-0 p-3 text-white/50 hover:text-white transition-colors cursor-pointer"
-                title="Close (ESC)"
-              >
-                <X size={24} />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {exampleId && <QuickLookPreview items={PREVIEW_EXAMPLES} selectedId={exampleId} onSelect={setExampleId} onClose={() => setExampleId(null)} />}
+      {previewItem && <QuickLookPreview selectedId={previewItem.id} onSelect={id => setPreviewItem(filteredAttachments.find(item => item.id === id) || null)} onClose={() => setPreviewItem(null)} items={filteredAttachments.map(item => ({
+        id: item.id, name: item.name, detail: `${item.sizeFormatted} · ${item.mimeType} · ${item.sessionTitle}${item.category === 'document' && item.previewText && !item.fileUrl ? ' · Text excerpt' : ''}`,
+        imageUrl: item.category === 'image' ? item.thumbnailUrl : undefined,
+        pdfUrl: item.mimeType === 'application/pdf' ? item.fileUrl : undefined,
+        mediaUrl: item.mimeType.startsWith('audio/') || item.mimeType.startsWith('video/') ? item.fileUrl : undefined,
+        mediaType: item.mimeType.startsWith('video/') ? 'video' : 'audio',
+        text: item.previewText,
+      }))} />}
     </div>
   );
 };
