@@ -897,6 +897,116 @@ mod tests {
     use std::fs;
     use std::sync::Mutex;
 
+
+    struct TestSession {
+        id: String,
+        workspace: PathBuf,
+    }
+
+    impl TestSession {
+        fn new(name: &str, workspace: &Path) -> Self {
+            let id = format!("{}_{}", name, crate::storage::event::generate_event_id());
+            Self { id, workspace: workspace.to_path_buf() }
+        }
+    }
+
+    impl Drop for TestSession {
+        fn drop(&mut self) {
+            cleanup_test_session(&self.workspace, &self.id);
+            remove_session(&self.id);
+        }
+    }
+
+    fn resolve_when_pending(
+        session_id: &str,
+        call_id: &str,
+        decision: &str,
+        tool_class: Option<&str>,
+        modified_args: Option<&str>,
+        reject_reason: Option<&str>,
+    ) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match resolve_tool_permission(
+                Some(session_id.to_string()), call_id.to_string(), decision.to_string(),
+                tool_class.map(str::to_string), modified_args.map(str::to_string),
+                reject_reason.map(str::to_string),
+            ) {
+                Ok(true) => return,
+                Ok(false) => {},
+                Err(error) => panic!("approval delivery failed for call {call_id}: {error}"),
+            }
+            assert!(std::time::Instant::now() < deadline,
+                "approval gate never registered for call {call_id}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn run_loop_with_deadline(
+        workspace: &Path,
+        session_id: &str,
+        prompt: &str,
+        config: &ProviderConfig,
+        stream: StreamFn,
+        sink: EventSink,
+        approval: impl FnOnce() + Send + 'static,
+    ) -> Result<Vec<ChatMessage>, String> {
+        // Report approval panics on the same channel, so they cannot leave the loop
+        // waiting until its deadline or disappear in a detached helper thread.
+        enum Finished {
+            Approval(std::thread::Result<()>),
+            Loop(std::thread::Result<Result<Vec<ChatMessage>, String>>),
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        let cancelled = get_or_create_session(session_id).lock().unwrap().cancelled.clone();
+        let (tx, rx) = mpsc::channel();
+        let approval_tx = tx.clone();
+        let approval_thread = std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(approval));
+            approval_tx.send(Finished::Approval(result)).expect("test receiver closed");
+        });
+        let workspace = workspace.to_path_buf();
+        let loop_session = session_id.to_string();
+        let prompt = prompt.to_string();
+        let config = config.clone();
+        let loop_thread = std::thread::spawn(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_agent_loop(&workspace, &loop_session, &prompt, &config, stream, sink)
+            }));
+            tx.send(Finished::Loop(result)).expect("test receiver closed");
+        });
+        let mut approval_done = false;
+        let mut loop_result = None;
+        let mut failure = None;
+        while !approval_done || loop_result.is_none() {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            match rx.recv_timeout(remaining) {
+                Ok(Finished::Approval(result)) => {
+                    approval_done = true;
+                    if let Err(panic) = result {
+                        failure = Some(panic);
+                        cancelled.store(true, Ordering::SeqCst);
+                    }
+                },
+                Ok(Finished::Loop(result)) => {
+                    loop_result = Some(result);
+                },
+                Err(error) => {
+                    cancelled.store(true, Ordering::SeqCst);
+                    // Never join a potentially wedged worker on the timeout path.
+                    panic!("agent approval test exceeded 30 s for session {session_id}: {error}");
+                },
+            }
+        }
+        approval_thread.join().expect("approval helper thread panicked");
+        loop_thread.join().expect("agent helper thread panicked");
+        if let Some(panic) = failure { std::panic::resume_unwind(panic); }
+        match loop_result.unwrap() {
+            Ok(result) => result,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+
     fn make_test_config() -> ProviderConfig {
         ProviderConfig {
             base_url: "http://localhost:11434".to_string(),
@@ -931,7 +1041,8 @@ mod tests {
     fn test_normal_text_only_turn() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_text");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_text";
+        let session_guard = TestSession::new("test_sess_text", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
@@ -970,7 +1081,8 @@ mod tests {
     fn test_single_tool_call() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_single_tool");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_single_tool";
+        let session_guard = TestSession::new("test_sess_single_tool", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("sample.txt"), "File content hello");
 
@@ -1028,7 +1140,8 @@ mod tests {
     fn test_multi_step_tool_calls() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multistep");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_multistep";
+        let session_guard = TestSession::new("test_sess_multistep", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, _) = make_capturing_sink();
@@ -1087,7 +1200,8 @@ mod tests {
     fn test_tool_failure_returned_to_model() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_fail");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_fail";
+        let session_guard = TestSession::new("test_sess_fail", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
@@ -1134,7 +1248,8 @@ mod tests {
     fn test_permission_rejection() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_perm_reject");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_reject";
+        let session_guard = TestSession::new("test_sess_reject", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
@@ -1159,26 +1274,11 @@ mod tests {
             }
         });
 
-        // Spawn rejection handler in background thread
-        std::thread::spawn(|| {
-            std::thread::sleep(Duration::from_millis(50));
-            let _ = resolve_tool_permission(
-                Some("test_sess_reject".to_string()),
-                "c_bash".to_string(),
-                "reject".to_string(),
-                Some("bash".to_string()),
-                None,
-                Some("Forbidden command".to_string()),
-            );
-        });
-
-        let res = run_agent_loop(
-            &temp_dir,
-            session_id,
-            "Run bad command",
-            &make_test_config(),
-            stream_mock,
-            sink,
+        let approval_session = session_id.to_string();
+        let res = run_loop_with_deadline(
+            &temp_dir, session_id, "Run bad command", &make_test_config(), stream_mock, sink,
+            move || resolve_when_pending(&approval_session, "c_bash", "reject",
+                Some("bash"), None, Some("Forbidden command")),
         );
 
         assert!(res.is_ok());
@@ -1194,13 +1294,15 @@ mod tests {
     fn test_cancellation() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_cancel");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_cancel";
+        let session_guard = TestSession::new("test_sess_cancel", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
-        let stream_mock: StreamFn = Box::new(|_, _, _, _| {
+        let cancel_session = session_id.to_string();
+        let stream_mock: StreamFn = Box::new(move |_, _, _, _| {
             // Cancel session right during streaming
-            let _ = cancel_agent_turn("test_sess_cancel".to_string());
+            let _ = cancel_agent_turn(cancel_session.clone());
             Ok(vec![AssembledToolCall {
                 id: "c_canc".to_string(),
                 name: "read_file".to_string(),
@@ -1229,7 +1331,8 @@ mod tests {
     fn test_maximum_iteration_limit() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_max_iter");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_max_iter";
+        let session_guard = TestSession::new("test_sess_max_iter", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
@@ -1275,7 +1378,8 @@ mod tests {
     fn test_multiple_tool_calls_in_one_response() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multi_tools");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_multi_tools";
+        let session_guard = TestSession::new("test_sess_multi_tools", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("f1.txt"), "content_1");
         let _ = fs::write(temp_dir.join("f2.txt"), "content_2");
@@ -1338,7 +1442,8 @@ mod tests {
     fn test_conversation_history_ordering() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_history");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_history";
+        let session_guard = TestSession::new("test_sess_history", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
         let _ = fs::write(temp_dir.join("test.txt"), "hello history");
 
@@ -1395,7 +1500,8 @@ mod tests {
     fn test_cancellation_terminates_in_flight_bash() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_cancel_bash");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_cancel_bash";
+        let session_guard = TestSession::new("test_sess_cancel_bash", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink, events) = make_capturing_sink();
@@ -1414,6 +1520,7 @@ mod tests {
 
         // Spawn a background thread that cancels the session once the bash PID is registered
         let sess_clone = sess.clone();
+        let cancel_session = session_id.to_string();
         let cancel_thread = std::thread::spawn(move || {
             for _ in 0..100 {
                 std::thread::sleep(Duration::from_millis(20));
@@ -1422,7 +1529,7 @@ mod tests {
                     guard.active_pid
                 };
                 if pid_opt.is_some() {
-                    let _ = cancel_agent_turn(session_id.to_string());
+                    let _ = cancel_agent_turn(cancel_session.clone());
                     return;
                 }
             }
@@ -1463,7 +1570,8 @@ mod tests {
     fn test_multi_turn_history_reconstruction() {
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_multiturn");
         let _ = fs::create_dir_all(&temp_dir);
-        let session_id = "test_sess_multiturn";
+        let session_guard = TestSession::new("test_sess_multiturn", &temp_dir);
+        let session_id = session_guard.id.as_str();
         cleanup_test_session(&temp_dir, session_id);
 
         let (sink1, _) = make_capturing_sink();
@@ -1544,7 +1652,8 @@ mod tests {
     fn test_storage_error_stops_before_inference_and_reaches_ui() {
         let workspace = std::env::temp_dir().join("unfuse_agent_storage_error");
         fs::create_dir_all(&workspace).unwrap();
-        let session_id = "test_sess_storage_error";
+        let session_guard = TestSession::new("test_sess_storage_error", &workspace);
+        let session_id = session_guard.id.as_str();
         crate::storage::get_storage().unwrap()
             .create_session(&workspace,session_id,None).unwrap();
         let (sink,events) = make_capturing_sink();
