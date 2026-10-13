@@ -252,11 +252,14 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    pub(crate) static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn test_echo_command() {
+        let _process_guard = PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = std::env::temp_dir();
         let res = execute_bash(&temp_dir, "echo 'hello from unfuse'", Some(5));
 
@@ -269,6 +272,7 @@ mod tests {
 
     #[test]
     fn test_exit_code_failure() {
+        let _process_guard = PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = std::env::temp_dir();
         let res = execute_bash(&temp_dir, "exit 42", Some(5));
 
@@ -279,6 +283,7 @@ mod tests {
 
     #[test]
     fn test_timeout_kills_process() {
+        let _process_guard = PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = std::env::temp_dir().join("unfuse_test_timeout_kill");
         let _ = std::fs::create_dir_all(&temp_dir);
         let marker = temp_dir.join("marker.txt");
@@ -290,13 +295,33 @@ mod tests {
         #[cfg(not(target_os = "windows"))]
         let cmd = format!("sleep 2 && touch '{}'", marker.display());
         #[cfg(target_os = "windows")]
-        let cmd = format!("timeout /t 2 /nobreak && type nul > \"{}\"", marker.display());
+        let cmd = {
+            // Windows timeout.exe requires a console. Encode the PowerShell
+            // script as UTF-16LE to avoid cmd.exe's nested-quote interpretation.
+            let script = format!(
+                "Start-Sleep -Seconds 2; [System.IO.File]::WriteAllText('{}', 'completed')",
+                marker.to_string_lossy().replace('\'', "''")
+            );
+            let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            format!("powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
+                crate::provider::base64_encode(&bytes))
+        };
+
+        // Prove the command really runs long enough and can create the marker.
+        // Otherwise an early shell error could hide a broken process-tree kill.
+        let control_start = Instant::now();
+        let control = execute_bash(&temp_dir, &cmd, Some(10)).unwrap();
+        assert_eq!(control.exit_code, Some(0), "Control failed: {:?}", control);
+        assert!(!control.timed_out);
+        assert!(control_start.elapsed() >= Duration::from_secs(2));
+        assert!(marker.exists(), "Control command did not create the marker");
+        std::fs::remove_file(&marker).unwrap();
 
         let res = execute_bash(&temp_dir, &cmd, Some(1));
 
         assert!(res.is_ok());
         let out = res.unwrap();
-        assert!(out.timed_out);
+        assert!(out.timed_out, "Expected timeout, got: {:?}", out);
         assert!(out.output.contains("timed out"));
 
         // Wait past the 2-second sleep duration to ensure orphaned process didn't survive and touch marker
@@ -311,21 +336,47 @@ mod tests {
 
     #[test]
     fn test_output_flood_early_kill() {
+        let _process_guard = PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = std::env::temp_dir();
-        // Run a flood command that would produce massive output if not killed early
+        // Without the output-cap kill, this workload keeps running for about 30 s.
         #[cfg(not(target_os = "windows"))]
-        let cmd = "yes 'flooding output'";
+        let cmd = "end=$(($(date +%s) + 30)); while [ $(date +%s) -lt $end ]; do i=0; while [ $i -lt 8192 ]; do printf 'flooding output\\n'; i=$((i + 1)); done; done".to_string();
         #[cfg(target_os = "windows")]
-        let cmd = "for /L %G in (1,0,2) do @echo flooding output";
+        let cmd = {
+            let script = "$watch = [System.Diagnostics.Stopwatch]::StartNew(); while ($watch.Elapsed.TotalSeconds -lt 30) { [Console]::Out.WriteLine(('flooding output ' * 512)) }";
+            let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            format!("powershell.exe -NoProfile -NonInteractive -EncodedCommand {}",
+                crate::provider::base64_encode(&bytes))
+        };
 
         let start = Instant::now();
-        let res = execute_bash(&temp_dir, cmd, Some(10));
+        let mut launched_pid = None;
+        let res = execute_bash_with_pid_callback(&temp_dir, &cmd, Some(40),
+            Some(|pid| launched_pid = Some(pid)));
 
         assert!(res.is_ok());
         let out = res.unwrap();
-        // Must complete almost immediately (< 500ms), far before the 10s timeout
-        assert!(start.elapsed() < Duration::from_millis(1000));
+        let elapsed = start.elapsed();
+        eprintln!("output flood elapsed: {:?}", elapsed);
+        assert!(elapsed < Duration::from_secs(10), "output flood elapsed: {:?}", elapsed);
+        assert!(!out.timed_out, "Output cap must stop the workload before timeout: {:?}", out);
         assert!(out.output.contains("output exceeded 65536 bytes limit"));
+        let (body, notice) = out.output.split_once("\n\n[Command terminated:").expect("Missing output-cap notice");
+        assert!(body.contains("flooding output"));
+        assert!(body.len() <= MAX_OUTPUT_BYTES);
+        assert!(out.output.len() <= MAX_OUTPUT_BYTES + notice.len() + "\n\n[Command terminated:".len());
+
+        // Returning capped output is insufficient: a missing kill would leave
+        // the launched shell alive for the rest of the 30-second workload.
+        let pid = sysinfo::Pid::from_u32(launched_pid.expect("Shell PID was not reported"));
+        let exit_deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]));
+            if system.process(pid).is_none() { break; }
+            assert!(Instant::now() < exit_deadline, "Output cap returned but shell {pid} is still running");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

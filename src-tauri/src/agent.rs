@@ -1498,6 +1498,7 @@ mod tests {
 
     #[test]
     fn test_cancellation_terminates_in_flight_bash() {
+        let _process_guard = tools::bash::tests::PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let temp_dir = std::env::temp_dir().join("unfuse_agent_test_cancel_bash");
         let _ = fs::create_dir_all(&temp_dir);
         let session_guard = TestSession::new("test_sess_cancel_bash", &temp_dir);
