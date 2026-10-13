@@ -10,6 +10,7 @@ pub mod tools;
 pub mod integrations;
 mod terminal;
 
+#[cfg(target_os = "macos")]
 use tauri::Manager;
 use std::env;
 use std::collections::HashMap;
