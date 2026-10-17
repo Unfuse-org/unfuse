@@ -7,6 +7,7 @@ import { OllamaLogo, LMStudioLogo, VLLMLogo, UnslothLogo, LlamaCppLogo, MLXLogo 
 import { ModelFamilyLogo } from '../chat/ModelIdentity';
 
 interface MountModelViewProps {
+  embedded?: boolean;
   onClose: () => void;
   onMountModel: (model: LocalModelBlade) => void;
   mountedModels?: LocalModelBlade[];
@@ -71,6 +72,7 @@ const PROVIDER_DATA: Record<
 export const getModelLogo = (family: string, providerOrSize?: string | number, maybeSize?: number, modelId?: string): React.ReactElement => <ModelFamilyLogo family={family} modelId={modelId} size={typeof providerOrSize === 'number' ? providerOrSize : maybeSize ?? 16} />;
 
 export const MountModelView: React.FC<MountModelViewProps> = ({
+  embedded = false,
   onClose,
   onMountModel,
   mountedModels = [],
@@ -285,7 +287,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-[var(--bg-panel)] px-3.5 pt-2 pb-3 text-[var(--text-main)] overflow-y-auto select-none animate-in fade-in duration-150 font-sans">
       {/* TOP HEADER CONTROLS */}
-      <div className="h-8 flex items-center justify-between mb-2 shrink-0" data-tauri-drag-region>
+      {!embedded && <div className="h-8 flex items-center justify-between mb-2 shrink-0" data-tauri-drag-region>
         <button
           onClick={onClose}
           className="p-1 -ml-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface)] transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
@@ -300,7 +302,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
         >
           <X className="w-4 h-4" />
         </button>
-      </div>
+      </div>}
 
       {/* 1. PROVIDER RUNTIMES GRID */}
       <div className="grid grid-cols-3 gap-1.5 mb-3 font-mono text-[10.5px]">
@@ -483,11 +485,11 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
         {isOccupied ? (
           <span>{provider.name} Already Active in Rack</span>
         ) : !selectedModel ? (
-          <span>Select a Model to Mount</span>
+          <span>{embedded ? 'Choose a model above' : 'Select a Model to Mount'}</span>
         ) : (
           <>
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Mount {selectedModel.displayName} to Rack</span>
+            <span>{embedded ? `Use ${selectedModel.displayName}` : `Mount ${selectedModel.displayName} to Rack`}</span>
           </>
         )}
       </button>

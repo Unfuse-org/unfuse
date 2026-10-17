@@ -1,0 +1,20 @@
+{
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Unfuse",
+      "width": 1280,
+      "height": 840,
+      "minWidth": 960,
+      "minHeight": 640,
+      "resizable": true,
+      "decorations": true,
+      "fullscreen": false,
+      "transparent": true,
+      "titleBarStyle": "Overlay",
+      "trafficLightPosition": { "x": 12, "y": 20 },
+      "hiddenTitle": true,
+      "shadow": true
+    }]
+  }
+}

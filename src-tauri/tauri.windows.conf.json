@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Unfuse",
+      "width": 1280,
+      "height": 840,
+      "minWidth": 960,
+      "minHeight": 640,
+      "resizable": true,
+      "decorations": false,
+      "fullscreen": false,
+      "transparent": false,
+      "shadow": true
+    }]
+  }
+}

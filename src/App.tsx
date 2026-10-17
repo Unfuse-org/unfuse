@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { PanelsTopLeft, Layers3, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Grid2X2, Plug, Folder, Logs, NotebookPen, Settings } from 'lucide-react';
+import { ArrowLeft, ArrowRight, PanelsTopLeft, Layers3, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Grid2X2, Plug, Folder, Logs, NotebookPen, Settings } from 'lucide-react';
 import homeMascot from './assets/home-mascot.png';
 import { SidebarPanel } from './components/sidebar/SidebarPanel';
 import { ChatSession } from './components/sidebar/types';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { IntegrationsView } from './components/integrations/IntegrationsView';
+import { McpView } from './components/integrations/McpView';
+import { McpLogo } from './components/integrations/IntegrationLogos';
 import { LibraryView } from './components/library/LibraryView';
 import { SettingsView } from './components/settings/SettingsView';
 import { ModelLogsView } from './components/settings/ModelLogsView';
@@ -13,6 +15,11 @@ import { RackPanel } from './components/rack/RackPanel';
 import { AddPanel } from './components/workspace/AddPanel';
 import { LocalModelBlade } from './components/rack/types';
 import { MainChatPanel } from './components/chat/MainChatPanel';
+import { OnboardingView, readSetup } from './components/onboarding/OnboardingView';
+import { WindowControls } from './components/WindowControls';
+import { invoke } from '@tauri-apps/api/core';
+import { platformHint, useDesktopMenuBar } from './components/DesktopMenus';
+import type { DesktopPlatform } from './components/DesktopMenus';
 
 
 function NavigationIcon({ name }: { name: 'dashboard' | 'integrations' | 'library' | 'logs' | 'memory' | 'settings' }) {
@@ -28,9 +35,28 @@ function NavigationIcon({ name }: { name: 'dashboard' | 'integrations' | 'librar
   return <Icon size={20} strokeWidth={1.65} aria-hidden="true" />;
 }
 
+type AppView = 'home' | 'dashboard' | 'integrations' | 'mcp' | 'library' | 'settings' | 'logs' | 'memory';
+
 export default function App() {
+  const [platform, setPlatform] = useState<DesktopPlatform>(platformHint);
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    let disposed = false;
+    void invoke<{ os: string }>('get_system_info').then(info => {
+      if (!disposed && ['windows', 'macos', 'linux'].includes(info.os)) setPlatform(info.os as DesktopPlatform);
+    }).catch(console.error);
+    return () => { disposed = true; };
+  }, []);
+  const [setup, setSetup] = useState(readSetup);
+  const [setupStep, setSetupStep] = useState(0);
+  // Temporary: show onboarding on every launch while testing the setup flow.
+  const [showSetup, setShowSetup] = useState(true);
   const [logModel, setLogModel] = useState<string | null>(null);
-  const [activeNav, setActiveNav] = useState<'home' | 'dashboard' | 'integrations' | 'library' | 'settings' | 'logs' | 'memory'>('dashboard');
+  const [navigation, setNavigation] = useState<{ entries: AppView[]; index: number }>({ entries: ['dashboard'], index: 0 });
+  const activeNav = navigation.entries[navigation.index];
+  const setActiveNav = (view: AppView) => setNavigation(current => current.entries[current.index] === view ? current : {
+    entries: [...current.entries.slice(0, current.index + 1), view], index: current.index + 1,
+  });
   const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'rack' | 'add'>('none');
   const [isAddPanelExpanded, setIsAddPanelExpanded] = useState(false);
   const [renderedRightPanel, setRenderedRightPanel] = useState<'none' | 'rack' | 'add'>('none');
@@ -62,7 +88,31 @@ export default function App() {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState('');
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
-  const [rackModels, setRackModels] = useState<LocalModelBlade[]>([]);
+  const [rackModels, setRackModels] = useState<LocalModelBlade[]>(() => setup.model ? [setup.model] : []);
+  const sidebarVisible = activeNav === 'home' && isChatSidebarOpen && !focusLayout;
+
+  const toggleSidebar = () => {
+    if (focusLayout) { toggleFocus(); return; }
+    if (activeNav !== 'home') { setActiveNav('home'); setIsChatSidebarOpen(true); }
+    else setIsChatSidebarOpen(open => !open);
+  };
+  const menuBar = useDesktopMenuBar(platform, !showSetup, action => {
+    if (action === 'new-chat') {
+      const session: ChatSession = { id: crypto.randomUUID(), title: 'New Conversation', updatedAt: new Date(), messageCount: 0 };
+      setChatSessions(current => [session, ...current]); setActiveChatId(session.id); setActiveNav('home');
+    } else if (action === 'settings') setActiveNav('settings');
+    else if (action === 'sidebar') toggleSidebar();
+    else if (action === 'rack') setActiveRightPanel(current => current === 'rack' ? 'none' : 'rack');
+    else if (action === 'focus') toggleFocus();
+    else if (action === 'setup') { setSetupStep(0); setShowSetup(true); }
+  });
+
+  if (showSetup) return <OnboardingView platform={platform} initial={setup} initialStep={setupStep} onComplete={preferences => {
+    setSetup(preferences);
+    if (preferences.model) setRackModels(current => [preferences.model!, ...current.filter(model => model.id !== preferences.model!.id)]);
+    setShowSetup(false);
+    setNavigation({ entries: ['home'], index: 0 });
+  }} />;
 
 
   return (
@@ -75,24 +125,35 @@ export default function App() {
     >
       {/* 1. TOP BAR: INDEPENDENT, PROPER EDGED, SAME SIZE (40px) */}
       <header
-        className="h-[40px] w-full flex items-center justify-between px-3 shrink-0"
+        className={`h-[40px] w-full flex items-center justify-between shrink-0 ${platform === 'macos' ? 'pl-[88px]' : 'pl-1'}`}
         style={{
           backgroundColor: 'var(--bg-header)',
           borderColor: 'var(--border-subtle)',
         }}
         data-tauri-drag-region
       >
-        {activeNav === 'home' && !focusLayout && (
-          <button
-            onClick={() => setIsChatSidebarOpen((open) => !open)}
-            aria-label={isChatSidebarOpen ? 'Collapse chat sidebar' : 'Expand chat sidebar'}
-            title={isChatSidebarOpen ? 'Collapse chat sidebar' : 'Expand chat sidebar'}
-            aria-expanded={isChatSidebarOpen}
-            className="ml-[72px] -translate-y-[2px] w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"
-          >
-            {isChatSidebarOpen ? <PanelLeftClose size={18} strokeWidth={1.65} /> : <PanelLeftOpen size={18} strokeWidth={1.65} />}
+        <div className="flex h-full shrink-0 items-center gap-0.5">
+          <button aria-label="Go back" title="Go back" disabled={navigation.index === 0}
+            onClick={() => setNavigation(current => ({ ...current, index: Math.max(0, current.index - 1) }))}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent">
+            <ArrowLeft size={16} strokeWidth={1.65} />
           </button>
-        )}
+          <button aria-label="Go forward" title="Go forward" disabled={navigation.index === navigation.entries.length - 1}
+            onClick={() => setNavigation(current => ({ ...current, index: Math.min(current.entries.length - 1, current.index + 1) }))}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-surface-hover)] disabled:opacity-30 disabled:hover:bg-transparent">
+            <ArrowRight size={16} strokeWidth={1.65} />
+          </button>
+          <button
+            onClick={toggleSidebar}
+            aria-label={sidebarVisible ? 'Collapse chat sidebar' : 'Expand chat sidebar'}
+            title={sidebarVisible ? 'Collapse chat sidebar' : 'Expand chat sidebar'}
+            aria-expanded={sidebarVisible}
+            className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]"
+          >
+            {sidebarVisible ? <PanelLeftClose size={18} strokeWidth={1.65} /> : <PanelLeftOpen size={18} strokeWidth={1.65} />}
+          </button>
+          {menuBar}
+        </div>
         <div data-tauri-drag-region className="flex-1 h-full" />
         <div className="flex items-center gap-1.5 relative">
           {/* 1) ADD SYMBOL */}
@@ -136,6 +197,7 @@ export default function App() {
             {focusLayout ? <Minimize2 size={18} strokeWidth={1.65} /> : <Maximize2 size={18} strokeWidth={1.65} />}
           </button>
         </div>
+        {platform === 'windows' && <div className="ml-3 border-l border-[var(--border-subtle)]"><WindowControls platform={platform} /></div>}
       </header>
 
       {/* 2. LOWER SECTION: INDEPENDENT SIDE BAR + PROPER EDGED WORKSPACE */}
@@ -192,6 +254,12 @@ export default function App() {
             </button>
           ))}
 
+          <button onClick={() => setActiveNav('mcp')} title="MCP servers" aria-label="MCP servers" aria-current={activeNav === 'mcp' ? 'page' : undefined}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer hover:bg-[var(--bg-surface-hover)]"
+            style={{ backgroundColor: activeNav === 'mcp' ? 'var(--bg-active)' : 'transparent', color: activeNav === 'mcp' ? 'var(--text-main)' : 'var(--text-muted)' }}>
+            <McpLogo size={20} />
+          </button>
+
           {/* 5) SETTINGS BUTTON */}
           <button
             onClick={() => setActiveNav('settings')}
@@ -228,15 +296,18 @@ export default function App() {
                 </aside>
 
                 {/* MAIN PANEL */}
+                <div className="flex min-w-0 flex-1 flex-col">
                 <MainChatPanel
                   sessionId={activeChatId}
                   models={rackModels}
                   onOpenRack={() => setActiveRightPanel('rack')}
                 />
+                </div>
               </div>
             )}
             {activeNav === 'dashboard' && <DashboardView models={rackModels} onOpenRack={() => setActiveRightPanel('rack')} onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
             {activeNav === 'integrations' && <IntegrationsView />}
+            {activeNav === 'mcp' && <McpView />}
             {activeNav === 'library' && <LibraryView />}
             {activeNav === 'logs' && <ModelLogsView modelFilter={logModel} onClearModelFilter={() => setLogModel(null)} />}
             {activeNav === 'memory' && <MemoryView />}

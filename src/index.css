@@ -43,6 +43,19 @@
   }
 }
 
+.onboarding-page-enter {
+  animation: onboarding-page-enter 240ms ease-out both;
+}
+
+@keyframes onboarding-page-enter {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-page-enter { animation: none; }
+}
+
 @keyframes marquee {
   0% {
     transform: translateX(0%);

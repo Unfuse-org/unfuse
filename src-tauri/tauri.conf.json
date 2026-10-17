@@ -19,15 +19,36 @@
         "minWidth": 960,
         "minHeight": 640,
         "resizable": true,
+        "label": "main",
+        "decorations": true,
         "fullscreen": false,
-        "transparent": true,
-        "titleBarStyle": "Overlay",
-        "trafficLightPosition": { "x": 12, "y": 20 },
-        "hiddenTitle": true,
-        "shadow": false
+        "transparent": false,
+        "shadow": true
       }
     ],
     "security": {
+      "capabilities": [{
+        "identifier": "main-window-controls",
+        "windows": ["main"],
+        "permissions": [
+          "core:window:allow-minimize",
+          "core:window:allow-toggle-maximize",
+          "core:window:allow-internal-toggle-maximize",
+          "core:window:allow-is-maximized",
+          "core:window:allow-close",
+          "core:window:allow-start-dragging",
+          "core:event:allow-listen",
+          "core:event:allow-unlisten",
+          "core:menu:allow-new",
+          "core:menu:allow-popup",
+          "core:menu:allow-set-as-app-menu",
+          "core:menu:allow-set-as-windows-menu-for-nsapp",
+          "core:menu:allow-set-as-help-menu-for-nsapp",
+          "core:resources:allow-close",
+          "core:window:allow-is-fullscreen",
+          "core:window:allow-set-fullscreen"
+        ]
+      }],
       "csp": null
     }
   },
