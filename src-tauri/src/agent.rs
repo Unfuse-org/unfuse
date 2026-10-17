@@ -63,6 +63,8 @@ pub enum PermissionDecision {
 
 /// State maintained for an active agent session.
 pub(crate) struct SessionState {
+    running: bool,
+    pub(crate) stream_cancellation: provider::StreamCancellation,
     pub(crate) cancelled: Arc<AtomicBool>,
     pub(crate) policy: SessionPolicy,
     pub(crate) pending_permissions: HashMap<String, mpsc::Sender<PermissionDecision>>,
@@ -73,19 +75,55 @@ pub(crate) struct SessionState {
 
 static REGISTRY: Mutex<Option<HashMap<String, Arc<Mutex<SessionState>>>>> = Mutex::new(None);
 
+impl Default for SessionState {
+    fn default() -> Self {
+        let stream_cancellation = provider::StreamCancellation::default();
+        Self { running: false, cancelled: stream_cancellation.cancelled.clone(), stream_cancellation,
+            policy: SessionPolicy::default(), pending_permissions: HashMap::new(), active_pid: None,
+            integrations: HashMap::new(), blackboard: HashMap::new() }
+    }
+}
+
+struct ActiveTurnGuard {
+    session_id: String,
+    session: Arc<Mutex<SessionState>>,
+    remove_on_drop: bool,
+}
+
+fn begin_turn(session_id: &str, remove_on_drop: bool) -> Result<ActiveTurnGuard, String> {
+    if session_id.trim().is_empty() { return Err("session_id is required".into()); }
+    let mut registry = REGISTRY.lock().unwrap();
+    let session = registry.get_or_insert_with(HashMap::new).entry(session_id.into())
+        .or_insert_with(|| Arc::new(Mutex::new(SessionState::default()))).clone();
+    {
+        let mut state = session.lock().unwrap();
+        if state.running { return Err("This session already has an active turn".into()); }
+        state.stream_cancellation.reset();
+        state.running = true;
+    }
+    Ok(ActiveTurnGuard { session_id: session_id.into(), session, remove_on_drop })
+}
+
+impl Drop for ActiveTurnGuard {
+    fn drop(&mut self) {
+        let mut registry = REGISTRY.lock().unwrap();
+        let mut state = self.session.lock().unwrap();
+        state.running = false;
+        state.pending_permissions.clear();
+        if self.remove_on_drop {
+            if let Some(map) = registry.as_mut() {
+                if map.get(&self.session_id).is_some_and(|session| Arc::ptr_eq(session, &self.session)) { map.remove(&self.session_id); }
+            }
+        }
+    }
+}
+
 pub(crate) fn get_or_create_session(session_id: &str) -> Arc<Mutex<SessionState>> {
     let mut guard = REGISTRY.lock().unwrap();
     let map = guard.get_or_insert_with(HashMap::new);
     map.entry(session_id.to_string())
         .or_insert_with(|| {
-            Arc::new(Mutex::new(SessionState {
-                cancelled: Arc::new(AtomicBool::new(false)),
-                policy: SessionPolicy::default(),
-                pending_permissions: HashMap::new(),
-                active_pid: None,
-                integrations: HashMap::new(),
-                blackboard: HashMap::new(),
-            }))
+            Arc::new(Mutex::new(SessionState::default()))
         })
         .clone()
 }
@@ -108,12 +146,26 @@ pub(crate) fn is_session_cancelled(session_id: &str) -> bool {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LlmConfigPayload {
     pub provider: Option<String>,
+    pub tool_call_compatibility: Option<provider::ToolCallCompatibility>,
     pub base_url: String,
     pub api_key: Option<String>,
     pub model: String,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
+    pub top_p: Option<f32>,
+    pub repetition_penalty: Option<f32>,
+    pub max_request_bytes: Option<u64>,
+}
+
+fn requested_tool_call_compatibility(config: &LlmConfigPayload) -> Result<provider::ToolCallCompatibility, String> {
+    let mode = config.tool_call_compatibility.unwrap_or(provider::ToolCallCompatibility::Native);
+    if mode == provider::ToolCallCompatibility::QwenJson
+        && (config.provider.as_deref() != Some("ollama") || config.model.split(':').next() != Some("qwen2.5-coder"))
+    {
+        return Err("qwen_json compatibility requires Ollama and qwen2.5-coder".into());
+    }
+    Ok(mode)
 }
 
 impl From<LlmConfigPayload> for ProviderConfig {
@@ -125,6 +177,9 @@ impl From<LlmConfigPayload> for ProviderConfig {
             temperature: p.temperature,
             max_tokens: p.max_tokens,
             timeout_secs: p.timeout_secs,
+            top_p: p.top_p,
+            repetition_penalty: p.repetition_penalty,
+            max_request_bytes: p.max_request_bytes,
         }
     }
 }
@@ -204,6 +259,12 @@ pub fn run_agent_loop_multimodal(
     stream_fn: StreamFn,
     emit_event: EventSink,
 ) -> Result<Vec<ChatMessage>, String> {
+    let downstream = emit_event;
+    let event_session_id = session_id.to_string();
+    let emit_event: EventSink = Arc::new(move |name, mut payload| {
+        payload["session_id"] = json!(event_session_id);
+        downstream(name, payload);
+    });
     let session = get_or_create_session(session_id);
     let cancelled = {
         let guard = session.lock().unwrap();
@@ -449,44 +510,46 @@ pub fn run_agent_loop_multimodal(
                 return Ok(messages);
             }
 
-            // Physical enforcement of allowed_tools at execution boundary:
-            if let Some(allowed) = allowed_tools {
-                if !tools::is_tool_allowed(&tc.name, allowed) {
-                    let err_output = format!("Tool '{}' is not permitted for this stage", tc.name);
-                    let res_evt = crate::storage::PersistedEvent::new(
-                        session_id,
-                        active_leaf.clone(),
-                        crate::storage::EventPayload::ToolResult {
-                            call_id: tc.id.clone(),
-                            tool: tc.name.clone(),
-                            is_error: true,
-                            output: err_output.clone(),
-                            stage_index: None,
-                        },
-                    );
-                    active_leaf = Some(res_evt.id.clone());
-                    storage.append_event(workspace_root, &res_evt).map_err(&storage_error)?;
+            // Validate before offering approval, and enforce the scoped tool allowlist.
+            let tool_error = if allowed_tools.is_some_and(|allowed| !tools::is_tool_allowed(&tc.name, allowed)) {
+                Some(format!("Tool '{}' is not permitted for this stage", tc.name))
+            } else {
+                tools::validate_tool_arguments(&tc.name, &tc.arguments).err()
+            };
+            if let Some(err_output) = tool_error {
+                let res_evt = crate::storage::PersistedEvent::new(
+                    session_id,
+                    active_leaf.clone(),
+                    crate::storage::EventPayload::ToolResult {
+                        call_id: tc.id.clone(),
+                        tool: tc.name.clone(),
+                        is_error: true,
+                        output: err_output.clone(),
+                        stage_index: None,
+                    },
+                );
+                active_leaf = Some(res_evt.id.clone());
+                storage.append_event(workspace_root, &res_evt).map_err(&storage_error)?;
 
-                    emit_event(
-                        "agent_event",
-                        json!({
-                            "type": "tool_call_completed",
-                            "payload": {
-                                "id": tc.id,
-                                "tool": tc.name,
-                                "is_error": true,
-                                "output": err_output.clone(),
-                            }
-                        }),
-                    );
-                    messages.push(ChatMessage {
-                        role: "tool".to_string(),
-                        content: err_output.into(),
-                        tool_calls: None,
-                        tool_call_id: Some(tc.id),
-                    });
-                    continue;
-                }
+                emit_event(
+                    "agent_event",
+                    json!({
+                        "type": "tool_call_completed",
+                        "payload": {
+                            "id": tc.id,
+                            "tool": tc.name,
+                            "is_error": true,
+                            "output": err_output.clone(),
+                        }
+                    }),
+                );
+                messages.push(ChatMessage {
+                    role: "tool".to_string(),
+                    content: err_output.into(),
+                    tool_calls: None,
+                    tool_call_id: Some(tc.id),
+                });
+                continue;
             }
 
             let (action_type, tool_class) = tools::get_tool_action_type(&tc.name, &tc.arguments);
@@ -771,6 +834,7 @@ pub async fn run_agent_turn(
     use tauri::Emitter;
 
     let path = PathBuf::from(workspace_root);
+    let compatibility = requested_tool_call_compatibility(&llm_config)?;
     let config = ProviderConfig::from(llm_config);
 
     let app_clone = app.clone();
@@ -779,8 +843,8 @@ pub async fn run_agent_turn(
     });
 
     let stream_fn: StreamFn = Box::new(
-        |cfg: &ProviderConfig, msgs: &[ChatMessage], tools: Option<&[Value]>, on_chunk| {
-            provider::stream_chat_completion(cfg, msgs, tools, on_chunk)
+        move |cfg: &ProviderConfig, msgs: &[ChatMessage], tools: Option<&[Value]>, on_chunk| {
+            provider::stream_chat_completion_with_compatibility(cfg, msgs, tools, compatibility, on_chunk)
         },
     );
 
@@ -833,15 +897,17 @@ pub fn cancel_agent_turn(session_id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn resolve_tool_permission(
-    session_id: Option<String>,
+    session_id: String,
     call_id: String,
     decision: String,
     tool_class: Option<String>,
     modified_args: Option<String>,
     reject_reason: Option<String>,
 ) -> Result<bool, String> {
-    let sess_id = session_id.unwrap_or_else(|| "default".to_string());
-    let session = get_or_create_session(&sess_id);
+    if session_id.trim().is_empty() {
+        return Err("session_id is required".to_string());
+    }
+    let session = get_or_create_session(&session_id);
     let mut guard = session.lock().unwrap();
 
     if let Some(sender) = guard.pending_permissions.remove(&call_id) {
@@ -928,7 +994,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         loop {
             match resolve_tool_permission(
-                Some(session_id.to_string()), call_id.to_string(), decision.to_string(),
+                session_id.to_string(), call_id.to_string(), decision.to_string(),
                 tool_class.map(str::to_string), modified_args.map(str::to_string),
                 reject_reason.map(str::to_string),
             ) {
@@ -1288,6 +1354,188 @@ mod tests {
 
         cleanup_test_session(&temp_dir, session_id);
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_permission_requires_nonempty_session_id() {
+        for session_id in ["", " ", "\t\n"] {
+            let result = resolve_tool_permission(
+                session_id.to_string(), "call-required".to_string(), "allow".to_string(),
+                None, None, None,
+            );
+            assert_eq!(result, Err("session_id is required".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_qwen_compatibility_requires_explicit_matching_provider_and_model() {
+        let mut config: LlmConfigPayload = serde_json::from_value(json!({
+            "base_url":"http://127.0.0.1:11434", "model":"qwen2.5-coder:3b", "provider":"ollama"
+        })).unwrap();
+        assert_eq!(requested_tool_call_compatibility(&config).unwrap(), provider::ToolCallCompatibility::Native);
+        config.tool_call_compatibility = Some(provider::ToolCallCompatibility::QwenJson);
+        assert_eq!(requested_tool_call_compatibility(&config).unwrap(), provider::ToolCallCompatibility::QwenJson);
+        config.provider = Some("lmstudio".into());
+        assert!(requested_tool_call_compatibility(&config).is_err());
+        config.provider = Some("ollama".into());
+        config.model = "other-model".into();
+        assert!(requested_tool_call_compatibility(&config).is_err());
+    }
+
+    fn prove_workspace_workflow(real_model: bool) {
+        let _process_lock = crate::tools::bash::tests::PROCESS_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let workspace = std::env::temp_dir().join(format!("unfuse_workflow_{}", crate::storage::event::generate_event_id()));
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(workspace.join("sample.txt"), "original").unwrap();
+        let session_guard = TestSession::new("native_workspace_workflow", &workspace);
+        let session_id = session_guard.id.as_str();
+        let (capture, events) = make_capturing_sink();
+        let check_command = if cfg!(windows) { "findstr /x approved sample.txt" } else { "test \"$(cat sample.txt)\" = approved" };
+        let mut config = make_test_config();
+        config.model = "qwen2.5-coder:3b".into();
+        if real_model { config.timeout_secs = Some(25); config.max_tokens = Some(1024); }
+        let prompts = if real_model {
+            vec![
+                "Use read_file to read sample.txt and report its contents. Do not modify files or run commands.".into(),
+                "Use edit_file on sample.txt with old_text original and new_text approved. Make exactly this edit, then report its result.".into(),
+                format!("Use bash to run exactly `{check_command}` and report whether the check passed."),
+            ]
+        } else {
+            vec![format!("Read sample.txt, replace original with approved using edit_file, then run `{check_command}`.")]
+        };
+        for (stage, prompt) in prompts.iter().enumerate() {
+            let approval_count = if real_model { usize::from(stage > 0) } else { 2 };
+            let (gate_tx, gate_rx) = mpsc::channel();
+            let stage_capture = capture.clone();
+            let sink: EventSink = Arc::new(move |name, event| {
+                if event["type"] == "turn_error" {
+                    eprintln!("Native workflow error: {}", event["payload"]["error"]);
+                }
+                if event["type"] == "tool_call_pending" {
+                    gate_tx.send((event["payload"]["id"].as_str().unwrap().to_string(),
+                        event["payload"]["tool_class"].as_str().unwrap().to_string(),
+                        event["payload"]["arguments"].as_str().unwrap().to_string())).expect("Unexpected approval gate after helper completed");
+                }
+                stage_capture(name, event);
+            });
+            let stream: StreamFn = if real_model {
+                Box::new(|cfg, messages, tools, on_chunk| {
+                    let mut response_text = String::new();
+                    let calls = provider::stream_chat_completion_with_compatibility(cfg, messages, tools, provider::ToolCallCompatibility::QwenJson, |chunk| {
+                        if let StreamChunk::Text(text) = &chunk { response_text.push_str(text); }
+                        on_chunk(chunk);
+                    })?;
+                    println!("Native model tool calls: {:?}; response preview: {}", calls.iter().map(|call| &call.name).collect::<Vec<_>>(), response_text.chars().take(200).collect::<String>());
+                    Ok(calls)
+                })
+            } else {
+                let step = Mutex::new(0);
+                Box::new(move |_, _, _, on_chunk| {
+                    let mut step = step.lock().unwrap();
+                    *step += 1;
+                    let (name, args) = match *step {
+                        1 => ("read_file", json!({"path":"sample.txt"})),
+                        2 => ("edit_file", json!({"path":"sample.txt", "old_text":"original", "new_text":"approved"})),
+                        3 => ("bash", json!({"command":check_command})),
+                        _ => { on_chunk(StreamChunk::Text("Read, edited and checked.".into())); return Ok(vec![]); }
+                    };
+                    Ok(vec![AssembledToolCall { id: format!("workflow-{step}"), name: name.into(), arguments: args.to_string() }])
+                })
+            };
+            let approval_session = session_id.to_string();
+            let approval_workspace = workspace.clone();
+            run_loop_with_deadline(&workspace, session_id, prompt, &config, stream, sink, move || {
+                for index in 0..approval_count {
+                    let (call_id, class, arguments) = gate_rx.recv_timeout(Duration::from_secs(25)).unwrap_or_else(|error| {
+                        panic!("Native workflow turn {} did not reach approval gate {}: {error}. Inspect the model tool-call diagnostic; a completed text response does not prove tool execution.", stage + 1, index + 1)
+                    });
+                    let args: Value = serde_json::from_str(&arguments).unwrap();
+                    let edit_gate = if real_model { stage == 1 } else { index == 0 };
+                    if edit_gate {
+                        assert_eq!(class, "edit");
+                        assert_eq!(args["path"], "sample.txt");
+                        assert_eq!(args["old_text"], "original");
+                        assert_eq!(args["new_text"], "approved");
+                        assert_eq!(fs::read_to_string(approval_workspace.join("sample.txt")).unwrap(), "original", "Edit must wait for approval");
+                    } else {
+                        assert_eq!(class, "bash");
+                        assert_eq!(args["command"], check_command);
+                    }
+                    resolve_when_pending(&approval_session, &call_id, "allow", Some(&class), None, None);
+                }
+            }).unwrap();
+            if real_model && stage == 0 { assert_eq!(fs::read_to_string(workspace.join("sample.txt")).unwrap(), "original"); }
+        }
+        assert_eq!(fs::read_to_string(workspace.join("sample.txt")).unwrap(), "approved");
+        let captured = events.lock().unwrap();
+        assert!(captured.iter().all(|(_, event)| event["session_id"] == session_id));
+        for tool in ["read_file", "edit_file", "bash"] {
+            assert!(captured.iter().any(|(_, event)| event["type"] == "tool_call_completed" && event["payload"]["tool"] == tool && event["payload"]["is_error"] == false), "Missing successful {tool}");
+        }
+        drop(captured);
+        remove_session(session_id);
+        let storage = crate::storage::get_storage().unwrap();
+        let original_context = storage.reconstruct_active_context(&workspace, session_id, None).unwrap();
+        let backup = workspace.join("history.db");
+        storage.backup(&backup).unwrap();
+        let restored = crate::storage::StorageManager::restore_backup(&backup, workspace.join("reopened_storage")).unwrap();
+        let context = restored.reconstruct_active_context(&workspace, session_id, None).unwrap();
+        assert_eq!(context.events, original_context.events, "Reopening must preserve every event and payload, including empty completion records");
+        assert!(context.events.iter().any(|event| matches!(&event.payload, crate::storage::EventPayload::AssistantTurn { content, .. } if !content.is_empty())));
+        assert_eq!(context.events.iter().filter(|event| matches!(&event.payload, crate::storage::EventPayload::PermissionDecision { decision, .. } if decision == "allow")).count(), 2);
+        if real_model {
+            assert_eq!(context.events.iter().filter(|event| matches!(&event.payload, crate::storage::EventPayload::UserTurn { .. })).count(), 3);
+            assert_eq!(context.events.iter().filter(|event| matches!(&event.payload, crate::storage::EventPayload::AssistantTurn { .. })).count(), 3);
+        }
+        println!("Native workflow verified: read_file, approved edit_file, approved bash check, session-attributed events, restored SQLite history; real_model={real_model}");
+        drop(restored);
+        fs::remove_dir_all(&workspace).unwrap();
+    }
+
+    #[test]
+    fn test_read_approved_edit_check_and_reopened_history() {
+        prove_workspace_workflow(false);
+    }
+
+    #[test]
+    #[ignore = "requires local Ollama with qwen2.5-coder:3b"]
+    fn test_real_model_read_approved_edit_check_and_reopened_history() {
+        prove_workspace_workflow(true);
+    }
+
+    #[test]
+    fn test_permission_does_not_cross_sessions() {
+        let workspace = std::env::temp_dir();
+        let session_a = TestSession::new("permission_session_a", &workspace);
+        let session_b = TestSession::new("permission_session_b", &workspace);
+        let (sender, receiver) = mpsc::channel();
+        let session = get_or_create_session(&session_b.id);
+        session.lock().unwrap().pending_permissions.insert("shared-call".to_string(), sender);
+
+        assert_eq!(resolve_tool_permission(
+            session_a.id.clone(), "shared-call".to_string(), "allow".to_string(),
+            None, None, None,
+        ), Ok(false));
+        assert!(matches!(receiver.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        assert!(session.lock().unwrap().pending_permissions.contains_key("shared-call"));
+
+        resolve_when_pending(&session_b.id, "shared-call", "allow", None, None, None);
+        assert!(matches!(receiver.recv_timeout(Duration::from_secs(1)).unwrap(), PermissionDecision::Allow));
+    }
+
+    #[test]
+    fn test_permission_resolves_correct_session() {
+        let session_guard = TestSession::new("permission_correct_session", &std::env::temp_dir());
+        let (sender, receiver) = mpsc::channel();
+        let session = get_or_create_session(&session_guard.id);
+        session.lock().unwrap().pending_permissions.insert("correct-call".to_string(), sender);
+
+        resolve_when_pending(&session_guard.id, "correct-call", "reject", None, None, Some("test rejection"));
+        match receiver.recv_timeout(Duration::from_secs(1)).unwrap() {
+            PermissionDecision::Reject(reason) => assert_eq!(reason, "test rejection"),
+            other => panic!("Wrong decision delivered: {:?}", other),
+        }
+        assert!(!session.lock().unwrap().pending_permissions.contains_key("correct-call"));
     }
 
     #[test]

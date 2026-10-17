@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::task::{Poll, Waker};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -226,6 +228,82 @@ pub struct ProviderConfig {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub top_p: Option<f32>,
+    #[serde(default)]
+    pub repetition_penalty: Option<f32>,
+    #[serde(default)]
+    pub max_request_bytes: Option<u64>,
+}
+
+/// Application input budget, independent of the provider's allocated token window.
+pub const DEFAULT_MAX_REQUEST_BYTES: u64 = 120_000;
+
+#[derive(Clone)]
+pub struct StreamCancellation {
+    pub(crate) cancelled: Arc<AtomicBool>,
+    waker: Arc<Mutex<Option<Waker>>>,
+}
+
+impl Default for StreamCancellation {
+    fn default() -> Self { Self { cancelled: Arc::new(AtomicBool::new(false)), waker: Arc::new(Mutex::new(None)) } }
+}
+
+impl StreamCancellation {
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+        if let Some(waker) = self.waker.lock().unwrap().take() { waker.wake(); }
+    }
+    pub(crate) fn reset(&self) {
+        self.cancelled.store(false, Ordering::SeqCst);
+        self.waker.lock().unwrap().take();
+    }
+    fn is_cancelled(&self) -> bool { self.cancelled.load(Ordering::SeqCst) }
+    async fn wait<T>(&self, future: impl std::future::Future<Output = Result<T, reqwest::Error>>) -> Result<T, String> {
+        let mut future = Box::pin(future);
+        let result = std::future::poll_fn(|context| {
+            *self.waker.lock().unwrap() = Some(context.waker().clone());
+            if self.is_cancelled() { return Poll::Ready(Err("Turn cancelled by user".into())); }
+            match future.as_mut().poll(context) {
+                Poll::Ready(result) => Poll::Ready(result.map_err(|error| format!("Model request failed: {}", error.without_url()))),
+                Poll::Pending => Poll::Pending,
+            }
+        }).await;
+        self.waker.lock().unwrap().take();
+        result
+    }
+}
+
+pub fn chat_endpoint(base_url: &str) -> Result<String, String> {
+    let mut url = reqwest::Url::parse(base_url).map_err(|_| "Provider endpoint must be a valid HTTP(S) URL")?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none()
+        || !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some()
+    { return Err("Provider endpoint must be HTTP(S), without embedded credentials, query, or fragment".into()); }
+    let path = url.path().trim_end_matches('/');
+    let path = if path.ends_with("/v1/chat/completions") { path.to_string() }
+        else if path.ends_with("/v1") { format!("{path}/chat/completions") }
+        else { format!("{path}/v1/chat/completions") };
+    url.set_path(&path);
+    Ok(url.to_string())
+}
+
+pub fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
+    chat_endpoint(&config.base_url)?;
+    if config.model.trim().is_empty() { return Err("A model must be selected".into()); }
+    if config.temperature.is_some_and(|value| !value.is_finite() || !(0.0..=2.0).contains(&value)) { return Err("Temperature must be from 0 to 2".into()); }
+    if config.top_p.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value)) { return Err("Top-P must be from 0 to 1".into()); }
+    if config.max_tokens == Some(0) { return Err("Output token limit must be positive".into()); }
+    if config.timeout_secs.is_some_and(|value| !(1..=600).contains(&value)) { return Err("Request timeout must be from 1 to 600 seconds".into()); }
+    if config.max_request_bytes == Some(0) { return Err("Input budget must be positive".into()); }
+    if config.repetition_penalty.is_some() { return Err("Repetition penalty is not supported by this OpenAI-compatible protocol; configure it in the provider".into()); }
+    Ok(())
+}
+
+pub fn check_context_limit(config: &ProviderConfig, messages: &[ChatMessage], tools: Option<&[Value]>) -> Result<(), String> {
+    let bytes = serde_json::to_vec(&json!({"messages":messages,"tools":tools})).map_err(|error| error.to_string())?.len() as u64;
+    let budget = config.max_request_bytes.unwrap_or(DEFAULT_MAX_REQUEST_BYTES);
+    if bytes > budget { return Err(format!("Context requires {bytes} UTF-8 bytes, exceeding the {budget}-byte input budget. History was preserved; increase the budget or start a new session.")); }
+    Ok(())
 }
 
 /// A fully assembled tool call ready for execution by the agent engine.
@@ -402,6 +480,50 @@ impl ToolCallAccumulator {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolCallCompatibility {
+    Native,
+    QwenJson,
+}
+
+// Only a complete tool response is eligible; prose containing JSON stays prose.
+fn decode_qwen_tool_response(text: &str, tools: &[Value]) -> Result<Option<Vec<AssembledToolCall>>, String> {
+    let text = text.trim();
+    let text = if let Some(fenced) = text.strip_prefix("```json\n") {
+        match fenced.strip_suffix("\n```") { Some(inner) => inner.trim(), None => return Ok(None) }
+    } else { text };
+    if !text.starts_with('{') && !text.starts_with('[') { return Ok(None); }
+    let values: Vec<Value> = match serde_json::Deserializer::from_str(text).into_iter::<Value>().collect() {
+        Ok(values) => values,
+        Err(_) => return Ok(None),
+    };
+    let values: Vec<Value> = values.into_iter().flat_map(|value| match value {
+        Value::Array(values) => values,
+        value => vec![value],
+    }).collect();
+    if values.is_empty() || !values.iter().all(|value| value.get("name").is_some() && value.get("arguments").is_some()) {
+        return Ok(None);
+    }
+    let mut calls = Vec::new();
+    for value in values {
+        let envelope = value.as_object().ok_or("Qwen tool response must be an object")?;
+        if envelope.len() != 2 { return Err("Qwen tool response contains unexpected fields".into()); }
+        let name = value["name"].as_str().ok_or("Qwen tool name must be a string")?;
+        let definition = tools.iter().find(|tool| tool["function"]["name"] == name)
+            .ok_or_else(|| format!("Qwen requested a tool that was not offered: {name}"))?;
+        crate::tools::validate_arguments_against_schema(&value["arguments"], &definition["function"]["parameters"])
+            .map_err(|error| format!("Qwen tool {name}: {error}"))?;
+        let arguments = value["arguments"].to_string();
+        crate::tools::validate_tool_arguments(name, &arguments)?;
+        calls.push(AssembledToolCall {
+            id: format!("call_{}", crate::storage::event::generate_event_id()),
+            name: name.into(), arguments,
+        });
+    }
+    Ok(Some(calls))
+}
+
 /// Streams a chat completion request to an OpenAI-compatible endpoint over SSE.
 ///
 /// Compatible with:
@@ -418,6 +540,18 @@ pub fn stream_chat_completion<F>(
     config: &ProviderConfig,
     messages: &[ChatMessage],
     tools: Option<&[Value]>,
+    on_chunk: F,
+) -> Result<Vec<AssembledToolCall>, String>
+where F: FnMut(StreamChunk),
+{
+    stream_chat_completion_with_compatibility(config, messages, tools, ToolCallCompatibility::Native, on_chunk)
+}
+
+pub fn stream_chat_completion_with_compatibility<F>(
+    config: &ProviderConfig,
+    messages: &[ChatMessage],
+    tools: Option<&[Value]>,
+    compatibility: ToolCallCompatibility,
     mut on_chunk: F,
 ) -> Result<Vec<AssembledToolCall>, String>
 where
@@ -428,9 +562,19 @@ where
         config.base_url.trim_end_matches('/')
     );
 
+    let mut request_messages = messages.to_vec();
+    if compatibility == ToolCallCompatibility::QwenJson {
+        let instruction = "Qwen tool response format: When a tool is needed, respond with one complete JSON object with exactly name and arguments. The name must be one of the offered functions, and arguments must match its schema. Call one function at a time and wait for its result before continuing the requested task. Do not invent functions for completion or narration. When all requested work is complete, answer in plain text without a tool call.";
+        if let Some(system) = request_messages.iter_mut().find(|message| message.role == "system") {
+            system.content = MessageContent::Text(format!("{}\n\n{instruction}", system.content.as_text()));
+        } else {
+            request_messages.insert(0, ChatMessage::system(instruction));
+        }
+    }
+
     let mut payload = json!({
         "model": config.model,
-        "messages": messages,
+        "messages": request_messages,
         "stream": true,
         "temperature": config.temperature.unwrap_or(0.0),
     });
@@ -471,6 +615,9 @@ where
     let reader = BufReader::new(response.into_reader());
     let mut think_parser = ThinkTagParser::new();
     let mut tool_accumulator = ToolCallAccumulator::default();
+    let mut saw_native_tool_calls = false;
+    let mut buffered_content = String::new();
+    let mut finish_reason = None;
 
     for line_res in reader.lines() {
         let line = line_res.map_err(|e| format!("SSE stream read error: {}", e))?;
@@ -500,6 +647,7 @@ where
             };
 
             let delta = &choices[0]["delta"];
+            if let Some(reason) = choices[0]["finish_reason"].as_str() { finish_reason = Some(reason.to_string()); }
 
             // 1. Check for dedicated reasoning fields (LM Studio, vLLM, DeepSeek models)
             let reasoning = delta["reasoning_content"]
@@ -514,7 +662,9 @@ where
 
             // 2. Check for standard content (and parse embedded <think> tags for llama.cpp/MLX)
             if let Some(content) = delta["content"].as_str() {
-                if !content.is_empty() {
+                if compatibility == ToolCallCompatibility::QwenJson {
+                    buffered_content.push_str(content);
+                } else if !content.is_empty() {
                     for chunk in think_parser.parse(content) {
                         on_chunk(chunk);
                     }
@@ -523,6 +673,7 @@ where
 
             // 3. Accumulate incremental tool calls
             if let Some(tc_array) = delta["tool_calls"].as_array() {
+                saw_native_tool_calls |= !tc_array.is_empty();
                 for tc_chunk in tc_array {
                     tool_accumulator.update(tc_chunk);
                 }
@@ -530,11 +681,23 @@ where
         }
     }
 
-    if let Some(flushed) = think_parser.flush() {
-        on_chunk(flushed);
+    let mut final_tools = tool_accumulator.finish();
+    let mut converted = false;
+    if compatibility == ToolCallCompatibility::QwenJson {
+        if !saw_native_tool_calls {
+            if let Some(calls) = decode_qwen_tool_response(&buffered_content, tools.unwrap_or(&[]))? {
+                if finish_reason.as_deref() != Some("stop") {
+                    return Err("Qwen tool response did not finish normally; no tools were dispatched".into());
+                }
+                final_tools = calls;
+                converted = true;
+            }
+        }
+        if !converted {
+            for chunk in think_parser.parse(&buffered_content) { on_chunk(chunk); }
+        }
     }
-
-    let final_tools = tool_accumulator.finish();
+    if let Some(flushed) = think_parser.flush() { on_chunk(flushed); }
     for tool_call in &final_tools {
         on_chunk(StreamChunk::ToolCall(tool_call.clone()));
     }
@@ -546,6 +709,139 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sse_fixture(compatibility: ToolCallCompatibility, frames: Vec<Value>) -> Result<(Vec<AssembledToolCall>, Vec<StreamChunk>), String> {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline, "SSE fixture client never connected");
+                        std::thread::sleep(Duration::from_millis(5));
+                    },
+                    Err(error) => panic!("SSE fixture accept failed: {error}"),
+                }
+            };
+            socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line.trim().is_empty() { break; }
+                if let Some((key, value)) = line.split_once(':') {
+                    if key.eq_ignore_ascii_case("content-length") { length = value.trim().parse().unwrap(); }
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            let request: Value = serde_json::from_slice(&body).unwrap();
+            assert!(request["tools"].is_array());
+            let has_instruction = request["messages"].as_array().unwrap().iter()
+                .any(|message| message["content"].as_str().unwrap_or("").contains("Qwen tool response format:"));
+            assert_eq!(has_instruction, compatibility == ToolCallCompatibility::QwenJson);
+            let mut response = frames.iter().map(|frame| format!("data: {frame}\n\n")).collect::<String>();
+            response.push_str("data: [DONE]\n\n");
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
+        });
+        let config = ProviderConfig { base_url: format!("http://{address}"), api_key: None,
+            model: "qwen2.5-coder:3b".into(), temperature: None, max_tokens: None, timeout_secs: Some(5) };
+        let tools = crate::tools::get_tool_definitions();
+        let mut chunks = Vec::new();
+        let result = stream_chat_completion_with_compatibility(&config, &[ChatMessage::user_text("Read sample.txt")], Some(&tools), compatibility, |chunk| chunks.push(chunk));
+        server.join().expect("SSE fixture thread failed");
+        result.map(|calls| (calls, chunks))
+    }
+
+    #[test]
+    fn qwen_compat_sse_fragmentation_requires_explicit_mode() {
+        let frames = vec![
+            json!({"choices":[{"delta":{"content":"{\"name\":\"read_file\","}}]}),
+            json!({"choices":[{"delta":{"content":"\"arguments\":{\"path\":\"sample.txt\"}}"}}]}),
+            json!({"choices":[{"delta":{},"finish_reason":"stop"}]}),
+        ];
+        let (calls, chunks) = sse_fixture(ToolCallCompatibility::Native, frames.clone()).unwrap();
+        assert!(calls.is_empty());
+        assert!(chunks.iter().any(|chunk| matches!(chunk, StreamChunk::Text(_))));
+        let (calls, chunks) = sse_fixture(ToolCallCompatibility::QwenJson, frames).unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "read_file");
+        assert!(!chunks.iter().any(|chunk| matches!(chunk, StreamChunk::Text(_))));
+    }
+
+    #[test]
+    fn qwen_compat_sse_preserves_native_calls_and_rejects_truncation() {
+        let (calls, _) = sse_fixture(ToolCallCompatibility::QwenJson, vec![
+            json!({"choices":[{"delta":{"content":"{\"name\":\"bash\",\"arguments\":{\"command\":\"echo example\"}}", "tool_calls":[{"index":0,"id":"native-id","function":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}]}}]}),
+            json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+        ]).unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "native-id");
+        assert_eq!(calls[0].name, "read_file");
+        let result = sse_fixture(ToolCallCompatibility::QwenJson, vec![
+            json!({"choices":[{"delta":{"content":"{\"name\":\"read_file\",\"arguments\":{\"path\":\"a\"}}"},"finish_reason":"length"}]}),
+        ]);
+        assert!(result.unwrap_err().contains("did not finish normally"));
+    }
+
+    #[test]
+    fn qwen_compat_accepts_complete_responses_with_unique_ids() {
+        let tools = crate::tools::get_tool_definitions();
+        for text in [
+            r#"{"name":"read_file","arguments":{"path":"sample.txt"}}"#,
+            "```json\n{\"name\":\"read_file\",\"arguments\":{\"path\":\"sample.txt\"}}\n```",
+            r#"[{"name":"read_file","arguments":{"path":"sample.txt"}}]"#,
+        ] {
+            let first = decode_qwen_tool_response(text, &tools).unwrap().unwrap();
+            let second = decode_qwen_tool_response(text, &tools).unwrap().unwrap();
+            assert_eq!(first[0].name, "read_file");
+            assert_eq!(serde_json::from_str::<Value>(&first[0].arguments).unwrap()["path"], "sample.txt");
+            assert_ne!(first[0].id, second[0].id);
+        }
+        let calls = decode_qwen_tool_response(r#"{"name":"read_file","arguments":{"path":"a"}}
+            {"name":"bash","arguments":{"command":"echo check"}}"#, &tools).unwrap().unwrap();
+        assert_eq!(calls.len(), 2);
+    }
+
+    #[test]
+    fn qwen_compat_does_not_extract_calls_from_prose_or_partial_json() {
+        let tools = crate::tools::get_tool_definitions();
+        for text in [
+            "Here is an example: {\"name\":\"bash\",\"arguments\":{\"command\":\"echo example\"}}",
+            "{\"name\":\"bash\",\"arguments\":{\"command\":\"echo example\"}}\nThis is only an example.",
+            "```json\n{\"name\":\"bash\",\"arguments\":{\"command\":\"echo example\"}}\n```\nExplanation",
+            "{\"name\":\"bash\",\"arguments\":",
+            "The task is complete.",
+            r#"{"example":"some data"}"#,
+            "[]",
+        ] {
+            assert!(decode_qwen_tool_response(text, &tools).unwrap().is_none(), "Unexpected tool conversion: {text}");
+        }
+    }
+
+    #[test]
+    fn qwen_compat_validates_offered_tools_and_arguments_before_returning_any_calls() {
+        let tools = crate::tools::get_tool_definitions();
+        for text in [
+            r#"{"name":"not_offered","arguments":{}}"#,
+            r#"{"name":"read_file","arguments":{}}"#,
+            r#"{"name":"read_file","arguments":{"path":false}}"#,
+            r#"{"name":"read_file","arguments":{"path":"a","offset":"one"}}"#,
+            r#"{"name":"read_file","arguments":{"path":"a","unknown":1}}"#,
+            r#"{"name":"read_file","arguments":"a"}"#,
+            r#"{"name":"read_file","arguments":{"path":"a"},"extra":true}"#,
+            r#"[{"name":"read_file","arguments":{"path":"a"}},{"name":"bash","arguments":{"command":null}}]"#,
+        ] {
+            assert!(decode_qwen_tool_response(text, &tools).is_err(), "Invalid call accepted: {text}");
+        }
+        assert!(decode_qwen_tool_response(r#"{"name":"read_file","arguments":{"path":"a"}}"#, &[]).is_err());
+    }
 
     #[test]
     fn test_think_tag_parser_clean_text() {

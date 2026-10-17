@@ -348,6 +348,19 @@ pub fn load_session(
 }
 
 #[tauri::command]
+pub fn select_workspace(workspace_root: String) -> Result<String, String> {
+    let path = Path::new(&workspace_root);
+    if workspace_root.trim().is_empty() || !path.is_absolute() {
+        return Err("Select an absolute workspace folder path".into());
+    }
+    let canonical = path.canonicalize().map_err(|e| format!("Cannot open workspace: {e}"))?;
+    if !canonical.is_dir() {
+        return Err("Workspace must be a folder".into());
+    }
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 pub fn list_sessions(workspace_root: Option<String>) -> Result<Vec<SessionSummary>, String> {
     let storage = get_storage()?;
     let path = workspace_root.as_ref().map(Path::new);
@@ -385,6 +398,51 @@ pub struct ActiveContextPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_workspace_selection_requires_existing_absolute_folder() {
+        for path in ["", " ", ".", "relative-folder"] {
+            assert!(select_workspace(path.into()).is_err());
+        }
+        let dir = TestDir::new("workspace_selection");
+        let selected = select_workspace(dir.path.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(PathBuf::from(selected), dir.path.canonicalize().unwrap());
+        let file = dir.path.join("file.txt");
+        std::fs::write(&file, "file").unwrap();
+        assert!(select_workspace(file.to_string_lossy().into_owned()).is_err());
+        assert!(select_workspace(dir.path.join("missing").to_string_lossy().into_owned()).is_err());
+    }
+
+    #[test]
+    fn test_workspace_sessions_and_history_survive_reopen() {
+        let dir = TestDir::new("workspace_history_reopen");
+        let workspace_a = dir.path.join("workspace_a");
+        let workspace_b = dir.path.join("workspace_b");
+        std::fs::create_dir_all(&workspace_a).unwrap();
+        std::fs::create_dir_all(&workspace_b).unwrap();
+        let base = dir.path.join("storage");
+        let storage = StorageManager::with_base_dir(base.clone()).unwrap();
+        let summary = storage.create_session(&workspace_a, "session-a", Some("Saved chat")).unwrap();
+        storage.create_session(&workspace_b, "session-b", None).unwrap();
+        let user = PersistedEvent::new("session-a", summary.active_leaf_id, EventPayload::UserTurn {
+            prompt: "Remember this".into(), attached_files: vec![],
+        });
+        storage.append_event(&workspace_a, &user).unwrap();
+        let assistant = PersistedEvent::new("session-a", Some(user.id.clone()), EventPayload::AssistantTurn {
+            content: "Saved response".into(), model: "test-model".into(),
+        });
+        storage.append_event_durable(&workspace_a, &assistant).unwrap();
+        drop(storage);
+        let reopened = StorageManager::with_base_dir(base).unwrap();
+        let summaries = reopened.list_sessions(Some(&workspace_a)).unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].session_id, "session-a");
+        assert_eq!(summaries[0].title, "Saved chat");
+        let context = reopened.reconstruct_active_context(&workspace_a, "session-a", None).unwrap();
+        assert!(context.events.contains(&user));
+        assert!(context.events.contains(&assistant));
+        assert!(reopened.load_session_events(&workspace_b, "session-a").is_err());
+    }
 
     struct TestDir {
         path: PathBuf,

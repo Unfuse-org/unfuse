@@ -273,6 +273,62 @@ pub fn get_tool_action_type(tool_name: &str, arguments_json: &str) -> (ToolActio
 }
 
 /// Dispatches and executes a tool call using the parsed JSON arguments.
+pub fn validate_arguments_against_schema(args: &Value, schema: &Value) -> Result<(), String> {
+    let valid = match schema["type"].as_str() {
+        Some("string") => args.is_string(),
+        Some("integer") => args.is_i64() || args.is_u64(),
+        Some("number") => args.is_number(),
+        Some("boolean") => args.is_boolean(),
+        Some("object") => args.is_object(),
+        Some("array") => args.is_array(),
+        _ => false,
+    };
+    if !valid { return Err("Argument has an invalid type".into()); }
+    if let Some(allowed) = schema["enum"].as_array() {
+        if !allowed.contains(args) { return Err("Argument is not an allowed value".into()); }
+    }
+    if let Some(properties) = schema["properties"].as_object() {
+        let args = args.as_object().ok_or("Tool arguments must be an object")?;
+        if let Some(required) = schema["required"].as_array() {
+            for name in required {
+                let name = name.as_str().ok_or("Invalid tool schema")?;
+                if !args.contains_key(name) { return Err(format!("Missing required argument '{name}'")); }
+            }
+        }
+        for (name, value) in args {
+            let property = properties.get(name).ok_or_else(|| format!("Unknown argument '{name}'"))?;
+            validate_arguments_against_schema(value, property).map_err(|error| format!("Argument '{name}': {error}"))?;
+        }
+    }
+    if let (Some(items), Some(values)) = (schema.get("items"), args.as_array()) {
+        for value in values { validate_arguments_against_schema(value, items)?; }
+    }
+    Ok(())
+}
+
+pub fn validate_tool_arguments(tool_name: &str, arguments_json: &str) -> Result<Value, String> {
+    let args: Value = serde_json::from_str(arguments_json).map_err(|_| "Tool arguments must be valid JSON".to_string())?;
+    let canonical = canonical_tool_name(tool_name);
+    let definitions = get_tool_definitions();
+    let definition = definitions.iter().find(|definition| definition["function"]["name"] == canonical)
+        .ok_or_else(|| format!("Unrecognized tool: '{tool_name}'"))?;
+    validate_arguments_against_schema(&args, &definition["function"]["parameters"])?;
+    for field in match canonical { "read_file" => &["offset", "limit"][..], "bash" => &["timeout_secs"][..], _ => &[] } {
+        if let Some(value) = args.get(*field) {
+            let number = value.as_u64().filter(|number| *number > 0).ok_or_else(|| format!("'{field}' must be a positive whole number"))?;
+            if canonical == "bash" && number > 300 { return Err("'timeout_secs' must not exceed 300".into()); }
+            if canonical == "read_file" && usize::try_from(number).is_err() { return Err(format!("'{field}' is too large")); }
+        }
+    }
+    if matches!(canonical, "read_file" | "write_file" | "edit_file") && args["path"].as_str().is_none_or(|path| path.trim().is_empty()) {
+        return Err("'path' must not be empty".into());
+    }
+    if canonical == "edit_file" && args["old_text"].as_str().is_none_or(|text| text.is_empty()) { return Err("'old_text' must not be empty".into()); }
+    if canonical == "bash" && args["command"].as_str().is_none_or(|command| command.trim().is_empty()) { return Err("'command' must not be empty".into()); }
+    if canonical == "knowledge_search" && args["action"] == "write" && !args["content"].is_string() { return Err("Notion writes require 'content'".into()); }
+    Ok(args)
+}
+
 pub fn execute_tool(
     workspace_root: &Path,
     tool_name: &str,
@@ -305,8 +361,7 @@ pub fn execute_tool_with_context<F>(
 where
     F: FnOnce(u32),
 {
-    let args: Value = serde_json::from_str(arguments_json)
-        .map_err(|e| format!("Invalid JSON arguments for tool '{}': {}", tool_name, e))?;
+    let args = validate_tool_arguments(tool_name, arguments_json)?;
 
     let canon = canonical_tool_name(tool_name);
     match canon {
@@ -351,6 +406,8 @@ where
             let res = bash::execute_bash_with_pid_callback(workspace_root, command, timeout, on_pid)?;
             if res.timed_out {
                 Err(res.output)
+            } else if res.exit_code != Some(0) {
+                Err(format!("Command exited with {:?}:\n{}", res.exit_code, res.output))
             } else {
                 Ok(res.output)
             }

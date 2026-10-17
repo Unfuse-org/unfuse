@@ -188,6 +188,7 @@ fn main() {
             agent::update_session_policy,
             run_collaborative_turn,
             storage::create_session,
+            storage::select_workspace,
             storage::load_session,
             storage::list_sessions,
             storage::search_sessions,
