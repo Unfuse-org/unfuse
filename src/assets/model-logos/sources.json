@@ -1,0 +1,252 @@
+[
+  {
+    "key": "qwen",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/qwen-color.svg"
+  },
+  {
+    "key": "deepseek",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/deepseek-color.svg"
+  },
+  {
+    "key": "meta",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/meta-color.svg"
+  },
+  {
+    "key": "gemma",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/gemma-color.svg"
+  },
+  {
+    "key": "microsoft",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/microsoft-color.svg"
+  },
+  {
+    "key": "mistral",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/mistral-color.svg"
+  },
+  {
+    "key": "chatglm",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/chatglm-color.svg"
+  },
+  {
+    "key": "moonshot",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/moonshot.svg"
+  },
+  {
+    "key": "minimax",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/minimax-color.svg"
+  },
+  {
+    "key": "yi",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/yi-color.svg"
+  },
+  {
+    "key": "baichuan",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/baichuan-color.svg"
+  },
+  {
+    "key": "internlm",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/internlm-color.svg"
+  },
+  {
+    "key": "nousresearch",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/nousresearch.svg"
+  },
+  {
+    "key": "dolphin",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/dolphin.svg"
+  },
+  {
+    "key": "tii",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/tii-color.svg"
+  },
+  {
+    "key": "rwkv",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/rwkv-color.svg"
+  },
+  {
+    "key": "ai2",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/ai2-color.svg"
+  },
+  {
+    "key": "ibm",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/ibm.svg"
+  },
+  {
+    "key": "nvidia",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/nvidia-color.svg"
+  },
+  {
+    "key": "cohere",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/cohere-color.svg"
+  },
+  {
+    "key": "aya",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/aya-color.svg"
+  },
+  {
+    "key": "dbrx",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/dbrx-color.svg"
+  },
+  {
+    "key": "ai21",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/ai21.svg"
+  },
+  {
+    "key": "arcee",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/arcee-color.svg"
+  },
+  {
+    "key": "liquid",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/liquid.svg"
+  },
+  {
+    "key": "huggingface",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/huggingface-color.svg"
+  },
+  {
+    "key": "baai",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/baai.svg"
+  },
+  {
+    "key": "jina",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/jina.svg"
+  },
+  {
+    "key": "snowflake",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/snowflake-color.svg"
+  },
+  {
+    "key": "openchat",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/openchat-color.svg"
+  },
+  {
+    "key": "hunyuan",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/hunyuan-color.svg"
+  },
+  {
+    "key": "wenxin",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/wenxin-color.svg"
+  },
+  {
+    "key": "xiaomimimo",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/xiaomimimo.svg"
+  },
+  {
+    "key": "longcat",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/longcat-color.svg"
+  },
+  {
+    "key": "stepfun",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/stepfun-color.svg"
+  },
+  {
+    "key": "skywork",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/skywork-color.svg"
+  },
+  {
+    "key": "deepcogito",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/deepcogito-color.svg"
+  },
+  {
+    "key": "lg",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/lg-color.svg"
+  },
+  {
+    "key": "openai",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/openai.svg"
+  },
+  {
+    "key": "stability",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/stability-color.svg"
+  },
+  {
+    "key": "flux",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/flux.svg"
+  },
+  {
+    "key": "cogview",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/cogview-color.svg"
+  },
+  {
+    "key": "kolors",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/kolors-color.svg"
+  },
+  {
+    "key": "codegeex",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/codegeex-color.svg"
+  },
+  {
+    "key": "bilibiliindex",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/bilibiliindex.svg"
+  },
+  {
+    "key": "essentialai",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/essentialai-color.svg"
+  },
+  {
+    "key": "sensenova",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/sensenova-color.svg"
+  },
+  {
+    "key": "upstage",
+    "color": true,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/upstage-color.svg"
+  },
+  {
+    "key": "apple",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/apple.svg"
+  },
+  {
+    "key": "alephalpha",
+    "color": false,
+    "source": "https://github.com/lobehub/lobe-icons/blob/master/packages/static-svg/icons/alephalpha.svg"
+  }
+]

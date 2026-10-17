@@ -163,7 +163,7 @@ export const IntegrationsView: React.FC = () => {
 
           {/* RIGHT ACTIONS: SETTINGS + ADD MENU */}
           {activeTab === 'skills' ? (
-            <button disabled title="Skill import requires the skill-loading backend" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] text-xs font-medium opacity-40 cursor-not-allowed"><Plus size={14} /> Import skill</button>
+            <button aria-disabled="true" data-ui-only="true" title="Skill import requires the skill-loading backend" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] text-xs font-medium opacity-40 cursor-not-allowed"><Plus size={14} /> Import skill</button>
           ) : <div className="flex items-center gap-2 relative" ref={addMenuRef}>
             {/* ADD MENU BUTTON */}
             <button
@@ -287,8 +287,8 @@ export const IntegrationsView: React.FC = () => {
           </div>
         ) : (
           <div className="pb-6">
-            {catalogFilter === 'saved' ? <div className="py-16 text-center"><FolderOpen size={28} strokeWidth={1.3} className="mx-auto mb-4 text-[var(--text-muted)]" /><h2 className="text-sm font-medium">Your installed skills</h2><p className="text-xs text-[var(--text-muted)] mt-2">Local discovery is not connected yet.</p></div> : <>
-              <p className="text-xs text-[var(--text-muted)] mb-5">Source references from Anthropic · Import is not connected yet.</p>
+            {catalogFilter === 'saved' ? <div className="py-16 text-center"><FolderOpen size={28} strokeWidth={1.3} className="mx-auto mb-4 text-[var(--text-muted)]" /><h2 className="text-sm font-medium">Your installed skills</h2><p className="text-xs text-[var(--text-muted)] mt-2">No installed skills.</p></div> : <>
+              <p className="text-xs text-[var(--text-muted)] mb-5">Source references from Anthropic</p>
               <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
                 {[
                   {icon: FileText, id: 'docx', name: 'Word documents', description: 'Create and edit Word documents.'},
@@ -296,7 +296,7 @@ export const IntegrationsView: React.FC = () => {
                   {icon: Presentation, id: 'pptx', name: 'Presentations', description: 'Create and edit slide decks.'},
                   {icon: FileSpreadsheet, id: 'xlsx', name: 'Spreadsheets', description: 'Work with spreadsheets, formulas, and data.'},
                 ].filter(skill => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map(skill => <div key={skill.id} className="rounded-2xl border border-[var(--border-subtle)] p-4 hover:bg-[var(--bg-surface)] transition-colors">
-                  <div className="flex items-center justify-between mb-4"><skill.icon size={22} strokeWidth={1.5} /><button disabled title="Requires the skill-loading backend" className="text-xs text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 opacity-40 cursor-not-allowed">Import</button></div>
+                  <div className="flex items-center justify-between mb-4"><skill.icon size={22} strokeWidth={1.5} /><button aria-disabled="true" data-ui-only="true" title="Requires the skill-loading backend" className="text-xs text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 opacity-40 cursor-not-allowed">Import</button></div>
                   <h2 className="text-sm font-medium">{skill.name}</h2><p className="text-xs text-[var(--text-muted)] leading-5 mt-1 mb-4">{skill.description}</p>
                   <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]"><span>Anthropic</span><a className="inline-flex items-center gap-1 hover:text-[var(--text-main)]" href={`https://github.com/anthropics/skills/blob/main/skills/${skill.id}/SKILL.md`} target="_blank" rel="noreferrer">View instructions<ExternalLink size={12} /></a></div>
                 </div>)}
@@ -310,7 +310,7 @@ export const IntegrationsView: React.FC = () => {
 
       {/* 2. RIGHT SIDE PANEL: INTEGRATIONS, PLUGINS/SKILLS (WITH LOGOS), AND INSTALLED LIST (NO SURROUNDING BOXES, NO DIVIDER LINE) */}
       <div
-        className="integrations-navigation w-52 border-l p-4 flex flex-col gap-4 shrink-0 overflow-y-auto min-h-0"
+        className="integrations-navigation w-52 p-4 flex flex-col gap-4 shrink-0 overflow-y-auto min-h-0"
         style={{
           backgroundColor: 'var(--bg-panel)',
           borderColor: 'var(--border-subtle)',
@@ -423,7 +423,7 @@ export const IntegrationsView: React.FC = () => {
 
       </div>
 
-      {selectedServiceId && <div className="absolute inset-0 z-40 bg-black/30 flex justify-end" onClick={() => setSelectedServiceId(null)}><div role="dialog" aria-modal="true" aria-label="Integration details" className="w-full max-w-lg h-full overflow-y-auto bg-[var(--bg-panel)] border-l border-[var(--border-subtle)] p-6 shadow-2xl" onClick={event => event.stopPropagation()}><PluginDetailCanvas key={selectedServiceId} serviceId={selectedServiceId} onBack={() => setSelectedServiceId(null)} /></div></div>}
+      {selectedServiceId && <div className="absolute inset-0 z-40 bg-black/30 flex justify-end" onClick={() => setSelectedServiceId(null)}><div role="dialog" aria-modal="true" aria-label="Integration details" className="w-full max-w-lg h-full overflow-y-auto bg-[var(--bg-panel)] p-6 shadow-2xl" onClick={event => event.stopPropagation()}><PluginDetailCanvas key={selectedServiceId} serviceId={selectedServiceId} onBack={() => setSelectedServiceId(null)} /></div></div>}
 
       {/* CREATE PLUGIN / CREATE MCP MODAL */}
       {creationModalType && (

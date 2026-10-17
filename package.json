@@ -26,6 +26,9 @@
     "simple-icons": "^16.30.0"
   },
   "devDependencies": {
+    "@reticlehq/react": "^3.7.0",
+    "@reticlehq/server": "^3.7.0",
+    "@reticlehq/vite-plugin": "^3.7.0",
     "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^26.6.1",
     "@types/react": "^18.3.31",

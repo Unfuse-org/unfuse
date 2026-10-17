@@ -9,16 +9,7 @@ import {
 } from './SidebarSVGs';
 
 
-export const INITIAL_SESSIONS: ChatSession[] = [
-  {
-    id: 's-main',
-    title: 'General Workspace Chat',
-    updatedAt: new Date(),
-    messageCount: 0,
-    modelUsed: 'Local Model',
-    pinned: false,
-  },
-];
+export const INITIAL_SESSIONS: ChatSession[] = [];
 
 interface SidebarPanelProps {
   activeSessionId?: string;
@@ -119,9 +110,9 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
   return (
     <div className="flex flex-col h-full w-full select-none text-[var(--text-main)] overflow-hidden font-sans">
-      <div className="px-2 pt-3 pb-5">
-        <div className="px-3 py-2 mb-3 flex items-center justify-between">
-          <span className="text-sm font-semibold tracking-tight">Unfuse</span>
+      <div className="px-2 pt-3 pb-3 flex flex-col gap-1">
+        <div className="px-3 h-10 mb-1 flex items-center justify-between">
+          <span className="text-xl font-semibold tracking-tight">Unfuse</span>
         </div>
         <button type="button" onClick={handleCreateNew}
           className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-[var(--bg-active)] transition-colors">
@@ -132,6 +123,10 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-[var(--bg-active)] transition-colors">
           <SearchIcon size={18} /> Search chats
         </button>
+        <button type="button" onClick={() => setShowArchived(value => !value)} className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--bg-active)] transition-colors">
+          {showArchived ? <ArrowLeft size={18} /> : <Archive size={18} />}
+          {showArchived ? 'Back to chats' : `Archived chats${sessions.some(session => session.archived) ? ` (${sessions.filter(session => session.archived).length})` : ''}`}
+        </button>
         {showSearch && (
           <input autoFocus type="search" aria-label="Search chats by title or model" placeholder="Search by title or model"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
@@ -141,10 +136,6 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
         )}
       </div>
 
-      <button type="button" onClick={() => setShowArchived(value => !value)} className="mx-2 mb-3 flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-[var(--text-muted)] hover:bg-[var(--bg-active)]">
-        {showArchived ? <ArrowLeft size={16} /> : <Archive size={16} />}
-        {showArchived ? 'Back to chats' : `Archived chats${sessions.some(session => session.archived) ? ` (${sessions.filter(session => session.archived).length})` : ''}`}
-      </button>
       {/* 3. CHAT SESSIONS LIST */}
       <div className="flex-1 overflow-y-auto px-2 space-y-5 pb-4">
         {filteredSessions.length === 0 && (
@@ -340,16 +331,16 @@ const SessionItem: React.FC<SessionItemProps> = ({
             <button type="button" onClick={() => { onToggleUnread(session.id); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)]">
               {session.unread ? <Eye size={14} /> : <EyeOff size={14} />} Mark as {session.unread ? 'read' : 'unread'}
             </button>
-            <button type="button" disabled title="Unavailable until workspace projects are connected" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><FolderInput size={14} /> Move to project</button>
+            <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until workspace projects are connected" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><FolderInput size={14} /> Move to project</button>
             <div className="my-1 border-t border-[var(--border-subtle)]" />
-            <button type="button" disabled title="Unavailable until conversation history is connected; forks must preserve the actual context" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><GitFork size={14} /> Fork conversation</button>
-            <button type="button" disabled title="Unavailable until conversation messages can be loaded" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><Download size={14} /> Export conversation</button>
+            <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until conversation history is connected; forks must preserve the actual context" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><GitFork size={14} /> Fork conversation</button>
+            <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until conversation messages can be loaded" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><Download size={14} /> Export conversation</button>
             <div className="my-1 border-t border-[var(--border-subtle)]" />
             <button type="button" aria-expanded={copyOpen} onClick={() => setCopyOpen(open => !open)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)]"><Copy size={14} /> Copy<ChevronRight size={13} className={`ml-auto transition-transform ${copyOpen ? 'rotate-90' : ''}`} /></button>
             {copyOpen && <div className="pl-3">
               <button type="button" onClick={() => copyValue(session.title, 'Name')} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)]"><Pencil size={14} /> Chat name</button>
               <button type="button" onClick={() => copyValue(session.id, 'Chat ID')} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)]"><Hash size={14} /> Chat ID</button>
-              <button type="button" disabled title="Unavailable until conversation messages can be loaded" className="w-full px-3 py-2 text-left text-xs opacity-40 cursor-not-allowed">Conversation</button>
+              <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until conversation messages can be loaded" className="w-full px-3 py-2 text-left text-xs opacity-40 cursor-not-allowed">Conversation</button>
             </div>}
             {copyNotice && <p role="status" className="flex items-center gap-2 px-3 py-1 text-[10px] text-[var(--text-muted)]"><Check size={12} />{copyNotice}</p>}
             <div className="my-1 border-t border-[var(--border-subtle)]" />

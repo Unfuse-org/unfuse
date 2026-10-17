@@ -1,41 +1,34 @@
 import { useState } from 'react';
-import { BookOpen, Plus, Search, Save, FileText, Brain, Globe, Folder } from 'lucide-react';
+import { BookOpen, Plus, Search, Save, Globe, Folder, ChevronRight } from 'lucide-react';
 
-const sections = [
-  { id: 'global', label: 'Global instructions', icon: Globe, description: 'Your preferences across all projects.' },
-  { id: 'project', label: 'Project instructions', icon: Folder, description: 'Conventions and constraints for this project.' },
-  { id: 'facts', label: 'Remembered facts', icon: Brain, description: 'Durable knowledge you can review and correct.' },
+const instructionScopes = [
+  { id: 'global', title: 'Personal instructions', scope: 'All projects', description: 'How your models should respond and work with you.', icon: Globe, placeholder: 'Describe your response preferences and working habits.' },
+  { id: 'project', title: 'Project instructions', scope: 'Current workspace', description: 'Project conventions, constraints, and required checks.', icon: Folder, placeholder: 'Describe the conventions and constraints for this workspace.' },
 ] as const;
 
 export function MemoryView() {
-  const [section, setSection] = useState<typeof sections[number]['id']>('global');
-  const current = sections.find((item) => item.id === section)!;
-  return (
-    <div className="flex-1 min-h-0 flex flex-col" style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)' }}>
-      <header className="px-6 py-5 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
-        <h1 className="text-lg font-semibold">Memory</h1>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>What your models should follow and remember.</p>
-      </header>
-      <div className="flex-1 min-h-0 flex flex-col sm:flex-row">
-        <nav aria-label="Memory sections" className="sm:w-56 shrink-0 p-3 border-b sm:border-b-0 sm:border-r flex sm:flex-col gap-1 overflow-x-auto" style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'var(--bg-panel)' }}>
-          {sections.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => setSection(id)} aria-pressed={section === id} className="flex items-center gap-2.5 text-xs text-left px-3 py-3 rounded-lg whitespace-nowrap hover:bg-[var(--bg-surface-hover)]" style={{ backgroundColor: section === id ? 'var(--bg-active)' : undefined, color: section === id ? 'var(--text-main)' : 'var(--text-muted)' }}><Icon size={15} />{label}</button>)}
-          <p className="hidden sm:block mt-auto px-3 py-3 text-[11px] leading-5" style={{ color: 'var(--text-muted)' }}>Instructions are rules you write. Facts are knowledge retained between conversations.</p>
-        </nav>
-        <section className="flex-1 min-w-0 min-h-0 flex flex-col" aria-label={current.label}>
-          <div className="px-6 py-5 flex items-center justify-between gap-4 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
-            <div><h2 className="text-sm font-medium">{current.label}</h2><p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{current.description}</p></div>
-            <button disabled className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg opacity-40 cursor-not-allowed" style={{ backgroundColor: 'var(--bg-active)' }}>{section === 'facts' ? <Plus size={14} /> : <Save size={14} />}{section === 'facts' ? 'Add memory' : 'Save'}</button>
-          </div>
-          {section === 'facts' ? <>
-            <div className="flex items-center gap-2 px-6 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}><Search size={14} className="opacity-40" /><input disabled aria-label="Search remembered facts" placeholder="Search memories…" className="flex-1 min-w-0 text-xs bg-transparent outline-none cursor-not-allowed opacity-40" /><select disabled aria-label="Filter memory scope" className="text-xs bg-transparent cursor-not-allowed opacity-40"><option>All scopes</option></select></div>
-            <div className="flex-1 overflow-y-auto flex items-center justify-center p-6 text-center"><div className="max-w-sm"><BookOpen size={28} strokeWidth={1.3} className="mx-auto mb-4" style={{ color: 'var(--text-muted)' }} /><p className="text-sm font-medium">No memories connected</p><p className="text-xs leading-6 mt-2" style={{ color: 'var(--text-muted)' }}>Project decisions and useful facts will appear here. Memory storage and recall are not connected yet.</p></div></div>
-          </> : <>
-            <div className="px-6 pt-5 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}><FileText size={13} />{section === 'global' ? 'Applies to all projects' : 'Applies to this project'}</div>
-            <textarea key={section} aria-label={current.label} disabled placeholder={section === 'global' ? 'For example: explain your plan briefly and keep changes focused on my request.' : 'For example: use the existing project patterns and run the relevant checks.'} className="flex-1 min-h-40 w-full bg-transparent px-6 py-5 text-sm leading-7 resize-none outline-none cursor-not-allowed placeholder:text-[var(--text-faint)]" />
-          </>}
-          <footer className="px-6 py-3 border-t text-[11px] shrink-0" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>{section === 'facts' ? 'Memory storage and recall are not connected yet.' : 'Instruction storage and model use are not connected yet.'}</footer>
-        </section>
-      </div>
+  const [view, setView] = useState<'instructions' | 'memories'>('instructions');
+  const [expanded, setExpanded] = useState<string | null>(null);
+  return <main className="flex-1 min-h-0 overflow-y-auto bg-[var(--bg-app)] text-[var(--text-main)]">
+    <div className="max-w-3xl mx-auto px-6 sm:px-8 py-8 sm:py-10">
+      <header className="flex items-start justify-between gap-4 mb-7"><div><h1 className="text-xl font-medium">Memory</h1><p className="text-xs text-[var(--text-muted)] mt-2 leading-6">Instructions you set. Context you keep.</p></div><button disabled title="Memory storage is not connected" className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg bg-[var(--bg-surface)] disabled:opacity-40 disabled:cursor-not-allowed"><Plus size={14} />{view === 'instructions' ? 'Add instruction' : 'Add memory'}</button></header>
+      <nav aria-label="Memory views" className="inline-flex gap-1 p-1 rounded-lg bg-[var(--bg-surface)] mb-7">{(['instructions', 'memories'] as const).map(id => <button key={id} onClick={() => setView(id)} aria-pressed={view === id} className="text-xs px-4 py-2 rounded-md focus-visible:outline focus-visible:outline-[var(--accent)]" style={{ backgroundColor: view === id ? 'var(--bg-active)' : undefined, color: view === id ? 'var(--text-main)' : 'var(--text-muted)' }}>{id === 'instructions' ? 'Instructions' : 'Saved memories'}</button>)}</nav>
+      {view === 'instructions' ? <section aria-label="Instruction scopes" className="space-y-2">
+        {instructionScopes.map(({ id, title, scope, description, icon: Icon, placeholder }) => <div key={id}>
+          <button aria-expanded={expanded === id} aria-controls={`instruction-${id}`} onClick={() => setExpanded(expanded === id ? null : id)} className="flex items-center w-full gap-4 px-3 py-4 text-left rounded-lg hover:bg-[var(--bg-surface)] focus-visible:outline focus-visible:outline-[var(--accent)]">
+            <Icon size={19} strokeWidth={1.5} className="shrink-0 text-[var(--text-muted)]" /><span className="flex-1 min-w-0"><span className="block text-sm font-medium">{title}</span><span className="block text-xs text-[var(--text-muted)] mt-1.5 leading-5">{description}</span><span className="block text-[11px] text-[var(--text-faint)] mt-2">{scope}</span></span><ChevronRight size={15} className={`shrink-0 text-[var(--text-muted)] transition-transform motion-reduce:transition-none ${expanded === id ? 'rotate-90' : ''}`} />
+          </button>
+          {expanded === id && <div id={`instruction-${id}`} className="ml-3 sm:ml-12 mr-3 pb-4 pt-2">
+            <label htmlFor={`editor-${id}`} className="block text-[11px] text-[var(--text-muted)] mb-2">{title} · {scope}</label>
+            <textarea id={`editor-${id}`} disabled placeholder={placeholder} className="w-full min-h-36 rounded-lg bg-[var(--bg-surface)] px-4 py-3 text-sm leading-6 resize-y outline-none disabled:cursor-not-allowed placeholder:text-[var(--text-faint)]" />
+            <div className="flex items-center justify-between gap-3 mt-3"><span className="text-[11px] text-[var(--text-faint)]">Not connected to model requests yet</span><button disabled className="flex gap-2 items-center rounded-md bg-[var(--bg-surface)] px-3 py-2 text-xs disabled:opacity-40 disabled:cursor-not-allowed"><Save size={13} />Save</button></div>
+          </div>}
+        </div>)}
+      </section> : <section aria-label="Saved memories">
+        <div className="flex items-center gap-3 text-[var(--text-muted)] mb-7"><Search size={15} /><input disabled aria-label="Search saved memories" placeholder="Search saved memories…" className="flex-1 min-w-0 bg-transparent text-xs py-2 outline-none disabled:cursor-not-allowed" /><select disabled aria-label="Filter memory scope" className="bg-[var(--bg-app)] text-xs disabled:opacity-50"><option>All scopes</option></select></div>
+        <div className="rounded-xl bg-[var(--bg-surface)] px-6 py-10 text-center"><BookOpen size={25} strokeWidth={1.3} className="mx-auto text-[var(--text-faint)] mb-4" /><h2 className="text-sm font-medium">No saved memories</h2><p className="text-xs leading-6 text-[var(--text-muted)] max-w-sm mx-auto mt-2">Saved project decisions and useful context will appear here.</p></div>
+      </section>}
+      <p className="mt-8 text-[11px] leading-5 text-[var(--text-faint)]">Memory storage is not connected. Adding, editing, and saving are unavailable.</p>
     </div>
-  );
+  </main>;
 }
