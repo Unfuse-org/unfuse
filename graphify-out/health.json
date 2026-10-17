@@ -1,0 +1,232 @@
+{
+  "node_count": 1039,
+  "unverified_node_count": 0,
+  "raw_edge_count": 2519,
+  "non_object_edges": 0,
+  "missing_endpoint_edges": 0,
+  "dangling_endpoint_edges": 151,
+  "external_reference_edges": 6,
+  "self_loop_edges": 0,
+  "valid_candidate_edges": 2362,
+  "exact_duplicate_edges": 2,
+  "directed_unique_endpoint_pairs": 2303,
+  "directed_same_endpoint_collapsed_edges": 59,
+  "undirected_unique_endpoint_pairs": 2303,
+  "undirected_same_endpoint_collapsed_edges": 59,
+  "same_endpoint_group_count": 22,
+  "relation_variant_groups": 7,
+  "source_file_variant_groups": 0,
+  "source_location_variant_groups": 12,
+  "context_variant_groups": 1,
+  "post_build_graph_type": "Graph",
+  "post_build_node_count": 1102,
+  "post_build_edge_count": 2445,
+  "post_build_error": "",
+  "producer_suppression": {
+    "path": "C:\\Users\\rautk\\AppData\\Roaming\\uv\\tools\\graphifyy\\Lib\\site-packages\\graphify\\extract.py",
+    "total_sites": 12,
+    "sites": [
+      {
+        "line": 1789,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2353,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2355,
+        "name": "seen_doc_refs",
+        "tuple_arity": 0,
+        "sample": "seen_doc_refs: set[str] = set()"
+      },
+      {
+        "line": 3022,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 3169,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n.get(\"id\") for n in nodes}"
+      },
+      {
+        "line": 4179,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 4365,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 7608,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 7716,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 7795,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 8310,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 8311,
+        "name": "seen_edges",
+        "tuple_arity": 4,
+        "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+      }
+    ],
+    "error": ""
+  },
+  "examples": [
+    {
+      "source": "src_components_workspace_addpanel",
+      "target": "ref_prismjs",
+      "edge_count": 15,
+      "relations": [
+        "imports_from"
+      ],
+      "source_files": [
+        "src/components/workspace/AddPanel.tsx"
+      ],
+      "source_locations": [
+        "L10",
+        "L11",
+        "L12",
+        "L13",
+        "L14",
+        "L15",
+        "L16",
+        "L17",
+        "L18",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "L8",
+        "L9"
+      ],
+      "contexts": [
+        "import"
+      ]
+    },
+    {
+      "source": "src_components_chat_codeblock",
+      "target": "ref_prismjs",
+      "edge_count": 13,
+      "relations": [
+        "imports_from"
+      ],
+      "source_files": [
+        "src/components/chat/CodeBlock.tsx"
+      ],
+      "source_locations": [
+        "L10",
+        "L11",
+        "L12",
+        "L13",
+        "L14",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "L8",
+        "L9"
+      ],
+      "contexts": [
+        "import"
+      ]
+    },
+    {
+      "source": "src_components_chat_diffviewer",
+      "target": "ref_prismjs",
+      "edge_count": 12,
+      "relations": [
+        "imports_from"
+      ],
+      "source_files": [
+        "src/components/chat/DiffViewer.tsx"
+      ],
+      "source_locations": [
+        "L10",
+        "L11",
+        "L12",
+        "L13",
+        "L14",
+        "L3",
+        "L4",
+        "L5",
+        "L6",
+        "L7",
+        "L8",
+        "L9"
+      ],
+      "contexts": [
+        "import"
+      ]
+    },
+    {
+      "source": "src_tauri_src_provider_messagecontent",
+      "target": "src_tauri_src_provider_messagecontent_eq",
+      "edge_count": 3,
+      "relations": [
+        "method"
+      ],
+      "source_files": [
+        "src-tauri/src/provider.rs"
+      ],
+      "source_locations": [
+        "L55",
+        "L64",
+        "L70"
+      ],
+      "contexts": [
+        ""
+      ]
+    },
+    {
+      "source": "src_tauri_src_provider_contentpart",
+      "target": "src_tauri_src_provider_mediaurlpayload",
+      "edge_count": 3,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src-tauri/src/provider.rs"
+      ],
+      "source_locations": [
+        "L93",
+        "L95",
+        "L97"
+      ],
+      "contexts": [
+        "field"
+      ]
+    }
+  ]
+}
