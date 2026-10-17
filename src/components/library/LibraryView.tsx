@@ -42,152 +42,6 @@ export interface AttachmentItem {
   fileUrl?: string;
 }
 
-// Built-in sample attachments typical of user queries to ChatGPT and Codex
-const SAMPLE_LIBRARY_ATTACHMENTS: AttachmentItem[] = [
-  {
-    id: 'att-1',
-    name: 'system-architecture-diagram.png',
-    category: 'image',
-    mimeType: 'image/png',
-    sizeBytes: 2450000,
-    sizeFormatted: '2.4 MB',
-    uploadedAt: 'Today, 2:40 PM',
-    dimensions: '1920 × 1080',
-    sessionTitle: 'Local Inference Architecture',
-    modelName: 'Claude 3.5 Sonnet',
-    thumbnailUrl:
-      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="340" viewBox="0 0 600 340"><rect width="600" height="340" fill="%230f141c"/><rect x="40" y="40" width="140" height="80" rx="8" fill="%231e293b" stroke="%2338bdf8" stroke-width="2"/><text x="110" y="85" fill="%23ffffff" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">Tauri Core (Rust)</text><rect x="40" y="180" width="140" height="80" rx="8" fill="%231e293b" stroke="%23a855f7" stroke-width="2"/><text x="110" y="225" fill="%23ffffff" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">React 18 Engine</text><rect x="360" y="110" width="180" height="100" rx="8" fill="%231e293b" stroke="%2310b981" stroke-width="2"/><text x="450" y="155" fill="%23ffffff" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">Local Model Blade</text><text x="450" y="175" fill="%2394a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">Ollama / vLLM / MLX</text><line x1="180" y1="80" x2="360" y2="140" stroke="%2338bdf8" stroke-width="2" stroke-dasharray="4"/><line x1="180" y1="220" x2="360" y2="180" stroke="%23a855f7" stroke-width="2"/><text x="300" y="30" fill="%23e2e8f0" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">System Architecture Topology</text></svg>',
-  },
-  {
-    id: 'att-2',
-    name: 'oauth2-auth-flow.png',
-    category: 'image',
-    mimeType: 'image/png',
-    sizeBytes: 1680000,
-    sizeFormatted: '1.6 MB',
-    uploadedAt: 'Today, 11:15 AM',
-    dimensions: '1440 × 900',
-    sessionTitle: 'Linear & Notion MCP Sync',
-    modelName: 'Qwen 2.5 Coder',
-    thumbnailUrl:
-      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="340" viewBox="0 0 600 340"><rect width="600" height="340" fill="%230f141c"/><rect x="50" y="60" width="120" height="60" rx="6" fill="%231e293b" stroke="%23f59e0b" stroke-width="2"/><text x="110" y="95" fill="%23ffffff" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">Client App</text><rect x="430" y="60" width="120" height="60" rx="6" fill="%231e293b" stroke="%2310b981" stroke-width="2"/><text x="490" y="95" fill="%23ffffff" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">Auth Provider</text><rect x="240" y="190" width="120" height="60" rx="6" fill="%231e293b" stroke="%23ec4899" stroke-width="2"/><text x="300" y="225" fill="%23ffffff" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">MCP Proxy</text><path d="M170 85 H420" stroke="%2394a3b8" stroke-width="1.5"/><path d="M480 120 L360 190" stroke="%2394a3b8" stroke-width="1.5"/><text x="300" y="30" fill="%23e2e8f0" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">OAuth 2.0 PKCE Callback Sequence</text></svg>',
-  },
-  {
-    id: 'att-3',
-    name: 'gpu-vram-allocation-chart.png',
-    category: 'image',
-    mimeType: 'image/png',
-    sizeBytes: 1200000,
-    sizeFormatted: '1.2 MB',
-    uploadedAt: 'Yesterday, 6:20 PM',
-    dimensions: '1600 × 900',
-    sessionTitle: 'Unified Memory Benchmarks',
-    modelName: 'DeepSeek-Coder-V2',
-    thumbnailUrl:
-      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="340" viewBox="0 0 600 340"><rect width="600" height="340" fill="%230f141c"/><rect x="80" y="180" width="60" height="100" rx="4" fill="%2338bdf8"/><text x="110" y="170" fill="%2338bdf8" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">14.2 GB</text><rect x="180" y="120" width="60" height="160" rx="4" fill="%2310b981"/><text x="210" y="110" fill="%2310b981" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">24.8 GB</text><rect x="280" y="80" width="60" height="200" rx="4" fill="%23a855f7"/><text x="310" y="70" fill="%23a855f7" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">38.4 GB</text><rect x="380" y="50" width="60" height="230" rx="4" fill="%23f43f5e"/><text x="410" y="40" fill="%23f43f5e" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">48.2 GB</text><line x1="50" y1="280" x2="520" y2="280" stroke="%23334155" stroke-width="2"/><text x="110" y="305" fill="%2394a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">Llama-8B</text><text x="210" y="305" fill="%2394a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">Qwen-14B</text><text x="310" y="305" fill="%2394a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">DeepSeek-33B</text><text x="410" y="305" fill="%2394a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">Llama-70B</text></svg>',
-  },
-  {
-    id: 'att-4',
-    name: 'ADR-004-Local-Inference-Engine.pdf',
-    category: 'document',
-    mimeType: 'application/pdf',
-    sizeBytes: 1850000,
-    sizeFormatted: '1.8 MB',
-    uploadedAt: 'Yesterday, 3:10 PM',
-    pageCount: 14,
-    sessionTitle: 'Architecture Decision Records',
-    modelName: 'Claude 3.5 Sonnet',
-    previewText:
-      '# ADR 004: Direct IPC & Wire Protocol Selection for Local Inference Runners\n\nStatus: Accepted\nContext: We evaluated Unix Domain Sockets, Local TCP Loopback (ports 11434, 1234, 8000), and Named Pipes across macOS and Linux.\nDecision: Enforce typed HTTP wire communication for maximum runner compatibility without guessing port loops.\n\n' + 
-      '--- MULTI-PAGE SIMULATION BEGINS ---\n\n' +
-      'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(100) + '\n\n' +
-      'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. '.repeat(100) + '\n\n' +
-      'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. '.repeat(100) + '\n\n' +
-      'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. '.repeat(100) + '\n\n' +
-      'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. '.repeat(100) + '\n\n' +
-      '--- END OF DOCUMENT ---',
-  },
-  {
-    id: 'att-5',
-    name: 'MCP-Protocol-Specification-2026.pdf',
-    category: 'document',
-    mimeType: 'application/pdf',
-    sizeBytes: 3400000,
-    sizeFormatted: '3.4 MB',
-    uploadedAt: 'Oct 3, 2026',
-    pageCount: 32,
-    sessionTitle: 'MCP Tool Integration',
-    modelName: 'Llama 3.3 70B',
-    previewText:
-      'Model Context Protocol (MCP) Specification v2.0\nAbstract: An open standard for connecting AI models to data sources and tools with structured JSON-RPC 2.0 payloads.',
-  },
-  {
-    id: 'att-6',
-    name: 'product-requirements-PRD.docx',
-    category: 'document',
-    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    sizeBytes: 680000,
-    sizeFormatted: '680 KB',
-    uploadedAt: 'Oct 2, 2026',
-    pageCount: 8,
-    sessionTitle: 'Desktop Workspace Scope',
-    modelName: 'Claude 3.5 Sonnet',
-    previewText:
-      'Product Requirements Document: Unfuse Desktop Engineering Workspace\nCore Pillars:\n1. Zero-latency local inference\n2. Real file system pairing\n3. High-density telemetry dashboard\n4. Unified attachments library',
-  },
-  {
-    id: 'att-7',
-    name: 'token-latency-benchmarks.csv',
-    category: 'data',
-    mimeType: 'text/csv',
-    sizeBytes: 420000,
-    sizeFormatted: '420 KB',
-    uploadedAt: 'Oct 1, 2026',
-    sessionTitle: 'Runner Performance Profiling',
-    modelName: 'Qwen 2.5 Coder',
-    previewText:
-      'model,runner,quantization,context_len,prompt_tok_s,eval_tok_s,vram_gb\nqwen2.5-coder-7b,ollama,q4_k_m,8192,142.4,54.2,5.2\nllama-3.3-70b,mlx,4bit,16384,89.1,28.4,38.1\ndeepseek-coder-v2,vllm,awq,32768,112.0,36.5,24.2\nhermes-3-8b,llamacpp,q8_0,8192,130.5,49.8,8.6',
-  },
-  {
-    id: 'att-8',
-    name: 'mcp-tools-schema-export.json',
-    category: 'code',
-    mimeType: 'application/json',
-    sizeBytes: 185000,
-    sizeFormatted: '185 KB',
-    uploadedAt: 'Sep 29, 2026',
-    sessionTitle: 'Tool Call Schema Verification',
-    modelName: 'Llama 3.3 70B',
-    previewText:
-      '{\n  "version": "2.0.0",\n  "tools": [\n    {\n      "name": "read_url_content",\n      "description": "Fetch content from a URL via HTTP request",\n      "parameters": { "type": "object", "required": ["Url"] }\n    },\n    {\n      "name": "run_command",\n      "description": "Execute local commands within workspace",\n      "parameters": { "type": "object", "required": ["CommandLine"] }\n    }\n  ]\n}',
-  },
-  {
-    id: 'att-9',
-    name: 'cluster-nodes-manifest.yaml',
-    category: 'code',
-    mimeType: 'text/yaml',
-    sizeBytes: 48000,
-    sizeFormatted: '48 KB',
-    uploadedAt: 'Sep 28, 2026',
-    sessionTitle: 'Distributed vLLM Setup',
-    modelName: 'DeepSeek-Coder-V2',
-    previewText:
-      'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vllm-cluster-worker\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n        - name: runner\n          image: vllm/vllm-openai:latest\n          resources:\n            limits:\n              nvidia.com/gpu: "2"',
-  },
-];
-
-// Preview examples are separate from the user's saved attachments.
-const PREVIEW_EXAMPLES: PreviewItem[] = [
-  { id: 'example-image', name: 'architecture.svg', detail: 'Sample · Image', imageUrl: SAMPLE_LIBRARY_ATTACHMENTS[0].thumbnailUrl },
-  { id: 'example-pdf', name: 'welcome.pdf', detail: 'Sample · PDF', pdfUrl: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA0IDAgUiA+PiA+PiAvQ29udGVudHMgNSAwIFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggMTg1ID4+CnN0cmVhbQpCVCAvRjEgMjQgVGYgNzIgNzIwIFRkIChVbmZ1c2UgLSBTYW1wbGUgUERGKSBUaiAvRjEgMTIgVGYgMCAtNDIgVGQgKFRoaXMgaXMgYSByZWFsIFBERiBwcmV2aWV3LCBub3QgYSB0ZXh0IHNpbXVsYXRpb24uKSBUaiAwIC0yNCBUZCAoVXBsb2FkIHlvdXIgb3duIFBERiB1c2luZyBVcGxvYWQgQXR0YWNobWVudHMuKSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDI0MSAwMDAwMCBuIAowMDAwMDAwMzExIDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUgNiAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKNTQ3CiUlRU9G' },
-  { id: 'example-markdown', name: 'workspace.md', detail: 'Sample · Markdown', text: '# Your local workspace\n\nOne project. Your models.\n\n## A simple pipeline\n\n- Investigate the problem\n- Review the findings\n- Verify the fix\n\n**Each step builds on the previous result.**' },
-  { id: 'example-code', name: 'pipeline.ts', detail: 'Sample · TypeScript', text: 'interface Step {\n  model: string;\n  instruction: string;\n}\n\nconst steps: Step[] = [\n  { model: "Model A", instruction: "Investigate" },\n  { model: "Model B", instruction: "Review" },\n];' },
-  { id: 'example-json', name: 'settings.json', detail: 'Sample · JSON', text: '{\n  "workspace": "Unfuse",\n  "sequential": true,\n  "models": ["Model A", "Model B"]\n}' },
-  { id: 'example-csv', name: 'runs.csv', detail: 'Sample · CSV table', text: 'Run,Model,Status,Duration\nInvestigate,Model A,Completed,12s\nReview,Model B,Completed,8s\nVerify,Model A,Completed,10s' },
-  { id: 'example-text', name: 'notes.txt', detail: 'Sample · Plain text', text: 'Workspace notes\n\nKeep the change small.\nReview the result before continuing.\nRun the relevant checks.' },
-  { id: 'example-unsupported', name: 'design.fig', detail: 'Sample · Unsupported binary format' },
-];
-
 const STORAGE_KEY = 'unfuse_user_attachments_library_v2';
 
 export const LibraryView: React.FC = () => {
@@ -196,12 +50,12 @@ export const LibraryView: React.FC = () => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed.filter(item => !/^att-[1-9]$/.test(item.id));
       }
     } catch {
       // fallback
     }
-    return SAMPLE_LIBRARY_ATTACHMENTS;
+    return [];
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -209,7 +63,6 @@ export const LibraryView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
   const [sortAsc, setSortAsc] = useState(false);
-  const [exampleId, setExampleId] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<AttachmentItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -277,7 +130,6 @@ export const LibraryView: React.FC = () => {
       } else if (sortBy === 'size') {
         comparison = a.sizeBytes - b.sizeBytes;
       } else {
-        // By date (sample list order acts as chronologically descending)
         comparison = attachments.indexOf(a) - attachments.indexOf(b);
       }
       return sortAsc ? comparison : -comparison;
@@ -433,10 +285,6 @@ export const LibraryView: React.FC = () => {
               onChange={(e) => handleUploadFiles(e.target.files)}
             />
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-[var(--text-muted)] mr-1">Try a preview</span>
-          {PREVIEW_EXAMPLES.map(item => <button key={item.id} onClick={() => setExampleId(item.id)} className="px-2.5 py-1.5 text-[11px] rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)]">{item.detail.replace('Sample · ', '')}</button>)}
         </div>
       </div>
 
@@ -646,7 +494,6 @@ export const LibraryView: React.FC = () => {
         )}
       </div>
 
-      {exampleId && <QuickLookPreview items={PREVIEW_EXAMPLES} selectedId={exampleId} onSelect={setExampleId} onClose={() => setExampleId(null)} />}
       {previewItem && <QuickLookPreview selectedId={previewItem.id} onSelect={id => setPreviewItem(filteredAttachments.find(item => item.id === id) || null)} onClose={() => setPreviewItem(null)} items={filteredAttachments.map(item => ({
         id: item.id, name: item.name, detail: `${item.sizeFormatted} · ${item.mimeType} · ${item.sessionTitle}${item.category === 'document' && item.previewText && !item.fileUrl ? ' · Text excerpt' : ''}`,
         imageUrl: item.category === 'image' ? item.thumbnailUrl : undefined,

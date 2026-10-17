@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
 import { LocalModelBlade } from './types';
+import { ModelFamilyLogo, modelLogoCatalog } from '../chat/ModelIdentity';
 import { getProviderLogo } from './Logos';
 import { ArrowLeft, Save, Check, ChevronDown, SlidersHorizontal, Server, Trash2 } from 'lucide-react';
 
 interface BladeConfigViewProps {
   model: LocalModelBlade;
+  customIcon?: string;
+  onIconChange: (icon?: string) => void;
   onClose: () => void;
   onSave: (updated: LocalModelBlade) => void;
   onUnload: (id: string) => void;
 }
 
-export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, onClose, onSave, onUnload }) => {
+export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, customIcon, onIconChange, onClose, onSave, onUnload }) => {
+  const selectedLogo = modelLogoCatalog.find(logo => logo.url === customIcon);
+  const [iconError, setIconError] = useState('');
   const [temperature, setTemperature] = useState(model.temperature ?? 0.0);
   const [maxTokens, setMaxTokens] = useState(model.maxTokens ?? 4096);
   const [isPrimary, setIsPrimary] = useState(model.status === 'active');
@@ -31,10 +36,15 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, onClose
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 space-y-6">
         <div className="flex items-center gap-3">{getProviderLogo(model.provider, 24)}<div className="min-w-0"><p className="text-xs font-medium">{model.provider === 'lmstudio' ? 'LM Studio' : model.provider === 'llamacpp' ? 'llama.cpp' : model.provider === 'mlx' ? 'Apple MLX' : model.provider === 'vllm' ? 'vLLM' : model.provider === 'unsloth' ? 'Unsloth' : 'Ollama'}</p><p className="text-[11px] mt-1 break-all select-text" style={{ color: 'var(--text-muted)' }}>{model.endpoint}</p></div></div>
+        <section><h3 className="text-xs font-medium mb-3">Model icon</h3><div className="flex gap-3 items-center">{selectedLogo ? <ModelFamilyLogo family={selectedLogo.key} size={28} /> : customIcon ? <img src={customIcon} alt="Custom model icon" className="w-8 h-8 object-contain" /> : <ModelFamilyLogo family={model.family} modelId={model.name} size={28} />}<label className="cursor-pointer text-xs hover:underline">Choose image<input aria-label="Choose custom model icon" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) { setIconError('Choose a PNG, JPEG or WebP up to 2 MB.'); return; }
+          const reader = new FileReader(); reader.onload = () => { onIconChange(String(reader.result)); setIconError(''); }; reader.readAsDataURL(file); event.target.value = '';
+        }} /></label>{customIcon && <button onClick={() => onIconChange(undefined)} className="text-xs text-[var(--text-muted)] hover:underline">Use default</button>}</div><label className="block text-[11px] mt-3 text-[var(--text-muted)]">Brand logo<select aria-label="Choose model brand logo" value={modelLogoCatalog.find(logo => logo.url === customIcon)?.key ?? ''} onChange={event => onIconChange(modelLogoCatalog.find(logo => logo.key === event.target.value)?.url)} className="block w-full text-xs rounded-lg bg-[var(--bg-surface)] px-2 py-2 mt-1"><option value="">Automatic / custom image</option>{modelLogoCatalog.map(logo => <option key={logo.key} value={logo.key}>{logo.label}</option>)}</select></label><p className="text-[10px] text-[var(--text-muted)] mt-2">Appearance only · Kept for this app session</p>{iconError && <p role="alert" className="text-xs text-red-400 mt-2">{iconError}</p>}</section>
         <button onClick={() => setIsPrimary(!isPrimary)} aria-pressed={isPrimary} className="w-full flex items-center justify-between text-xs p-3 rounded-lg border" style={{ borderColor: 'var(--border-subtle)', backgroundColor: isPrimary ? 'var(--bg-active)' : undefined }}>Default in rack{isPrimary ? <Check size={15} /> : <span style={{ color: 'var(--text-muted)' }}>Set default</span>}</button>
         <section>
           <h3 className="text-xs font-medium flex items-center gap-2"><SlidersHorizontal size={14} />Generation</h3>
-          <p className="text-[11px] leading-5 mt-2" style={{ color: 'var(--text-muted)' }}>Saved for this rack session. The main chat is not connected to execution yet.</p>
           <div className="py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
             <div className="flex justify-between items-center gap-3"><label htmlFor="model-temperature" className="text-xs">Temperature</label><input id="model-temperature" type="number" min={0} max={2} step={0.01} value={Number.isNaN(temperature) ? '' : temperature} onChange={(e) => setTemperature(e.target.value === '' ? NaN : Number(e.target.value))} className={fieldClass} style={fieldStyle} /></div>
             <input aria-label="Temperature slider" type="range" min={0} max={2} step={0.01} value={Number.isFinite(temperature) ? temperature : 0} onChange={(event) => setTemperature(Number(event.target.value))} className="w-full mt-4 cursor-pointer accent-[var(--accent)]" />
@@ -50,7 +60,7 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, onClose
         </section>
         <section>
           <button onClick={() => setAdvanced(!advanced)} aria-expanded={advanced} className="w-full flex justify-between items-center text-xs font-medium">Advanced sampling<ChevronDown size={15} className={advanced ? 'rotate-180' : ''} /></button>
-          {advanced && <div className="mt-3"><p className="text-[11px] leading-5 mb-2" style={{ color: 'var(--text-muted)' }}>Not wired to requests. These controls remain disabled until provider support is implemented.</p>
+          {advanced && <div className="mt-3">
             {[
               { label: 'Top-P', value: model.topP, hint: 'Probability mass used for nucleus sampling.', step: '0.01' },
               { label: 'Top-K', hint: 'Limit sampling to the highest-ranked tokens.', step: '1' },
@@ -65,10 +75,10 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, onClose
         </section>
         <section className="border-t pt-5" style={{ borderColor: 'var(--border-subtle)' }}>
           <h3 className="text-xs font-medium flex items-center gap-2"><Server size={14} />Provider runtime</h3>
-          <dl className="text-[11px] space-y-3 mt-4"><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported context capacity</dt><dd>{model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Quantization</dt><dd>{model.quantization || 'Not reported'}</dd></div></dl>
+          <dl className="text-[11px] space-y-3 mt-4"><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported tokens used</dt><dd>{(model.tokensUsed || 0).toLocaleString()}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported context capacity</dt><dd>{model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Quantization</dt><dd>{model.quantization || 'Not reported'}</dd></div></dl>
           <div className="mt-4"><label htmlFor="model-context-slider" className="text-xs">Context allocation · Provider managed</label><input id="model-context-slider" type="range" disabled min={1} max={Math.max(1, model.contextLength || 1)} value={Math.max(1, model.contextLength || 1)} className="w-full mt-3 opacity-40 cursor-not-allowed accent-[var(--accent)]" /><p className="text-[11px] leading-5 mt-1" style={{ color: 'var(--text-muted)' }}>Uses the provider’s current configuration. Reported capacity does not necessarily mean all of it is allocated.</p></div>
           <p className="text-[11px] leading-5 mt-4" style={{ color: 'var(--text-muted)' }}>Context allocation, GPU offload, KV cache, and loading are managed in your inference provider. Unfuse cannot change them yet.</p>
-          <button disabled className="text-xs mt-3 opacity-40 cursor-not-allowed">Unload from provider · Not connected</button>
+          <button aria-disabled="true" data-ui-only="true" className="text-xs mt-3 opacity-40 cursor-not-allowed">Unload from provider</button>
         </section>
       </div>
       <footer className="border-t p-4 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>

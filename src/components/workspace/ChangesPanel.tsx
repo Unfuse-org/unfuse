@@ -38,11 +38,10 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({ filename, originalCo
 
   return (
     <div className="flex-1 flex flex-col min-h-0 text-[var(--text-main)]">
-      <header className="px-4 py-3 border-b flex items-center justify-between gap-3"
+      <header className="px-4 py-3 flex items-center justify-between gap-3"
         style={{ borderColor: 'var(--border-subtle)' }}>
         <div>
           <h2 className="text-sm font-semibold">Changes</h2>
-          <p className="text-[11px] text-[var(--text-muted)] mt-1">Sample diff · Git not connected</p>
         </div>
         <div className="text-xs font-mono flex gap-2 shrink-0">
           <span className="text-[#4ade80]">+{additions}</span>
@@ -50,7 +49,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({ filename, originalCo
         </div>
       </header>
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <aside className="lg:w-52 shrink-0 border-b lg:border-b-0 lg:border-r p-2"
+        <aside className="lg:w-52 shrink-0 p-2"
           style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'var(--bg-panel)' }}>
           <input type="search" aria-label="Filter changed files" placeholder="Filter files…"
             value={query} onChange={(event) => setQuery(event.target.value)}
@@ -67,7 +66,7 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({ filename, originalCo
           ) : <p className="px-2 text-xs text-[var(--text-muted)]">No matching files.</p>}
         </aside>
         <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b"
+          <div className="flex items-center justify-between gap-2 px-3 py-2"
             style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'var(--bg-panel)' }}>
             <button type="button" onClick={() => setCollapsed((value) => !value)}
               aria-expanded={!collapsed} className="flex items-center gap-2 min-w-0 text-xs">
