@@ -2,44 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { LocalProvider, AvailableProviderModel, LocalModelBlade, ModelFamily, ModelCapabilities } from './types';
 import { X, Plus, ArrowLeft, RefreshCw, AlertCircle, Key } from 'lucide-react';
-import { normalizeFamilyForLogo, formatBytes } from './modelResolver';
-import {
-  OllamaLogo,
-  LMStudioLogo,
-  VLLMLogo,
-  UnslothLogo,
-  LlamaCppLogo,
-  MLXLogo,
-  QwenLogo,
-  DeepSeekLogo,
-  MetaLlamaLogo,
-  MistralLogo,
-  MicrosoftPhiLogo,
-  GoogleGemmaLogo,
-  YiLogo,
-  IBMGraniteLogo,
-  NvidiaLogo,
-  NousResearchLogo,
-  InternLMLogo,
-  ChatGLMLogo,
-  StabilityLogo,
-  SnowflakeLogo,
-  BaichuanLogo,
-  MinimaxLogo,
-  MoonshotLogo,
-  StepfunLogo,
-  DolphinLogo,
-  TIILogo,
-  RwkvLogo,
-  LLaVALogo,
-  CohereLogo,
-  StarCoderLogo,
-  BAAILogo,
-  MiniCPMLogo,
-  NomicEmbeddingLogo,
-  WhisperAudioLogo,
-  getProviderLogo,
-} from './Logos';
+import { formatBytes } from './modelResolver';
+import { OllamaLogo, LMStudioLogo, VLLMLogo, UnslothLogo, LlamaCppLogo, MLXLogo } from './Logos';
+import { ModelFamilyLogo } from '../chat/ModelIdentity';
 
 interface MountModelViewProps {
   onClose: () => void;
@@ -103,80 +68,7 @@ const PROVIDER_DATA: Record<
   },
 };
 
-export const getModelLogo = (
-  family: string,
-  providerOrSize?: string | number,
-  maybeSize?: number
-): React.ReactElement => {
-  const provider = typeof providerOrSize === 'string' ? providerOrSize : undefined;
-  const size = typeof providerOrSize === 'number' ? providerOrSize : (maybeSize ?? 16);
-
-  const normalized = normalizeFamilyForLogo(family);
-  switch (normalized) {
-    case 'qwen':
-      return <QwenLogo size={size} />;
-    case 'deepseek':
-      return <DeepSeekLogo size={size} />;
-    case 'llama':
-      return <MetaLlamaLogo size={size} />;
-    case 'mistral':
-      return <MistralLogo size={size} />;
-    case 'phi':
-      return <MicrosoftPhiLogo size={size} />;
-    case 'gemma':
-      return <GoogleGemmaLogo size={size} />;
-    case 'yi':
-      return <YiLogo size={size} />;
-    case 'granite':
-      return <IBMGraniteLogo size={size} />;
-    case 'nvidia':
-      return <NvidiaLogo size={size} />;
-    case 'nous':
-      return <NousResearchLogo size={size} />;
-    case 'internlm':
-      return <InternLMLogo size={size} />;
-    case 'glm':
-      return <ChatGLMLogo size={size} />;
-    case 'stability':
-      return <StabilityLogo size={size} />;
-    case 'snowflake':
-      return <SnowflakeLogo size={size} />;
-    case 'baichuan':
-      return <BaichuanLogo size={size} />;
-    case 'minimax':
-      return <MinimaxLogo size={size} />;
-    case 'moonshot':
-      return <MoonshotLogo size={size} />;
-    case 'stepfun':
-      return <StepfunLogo size={size} />;
-    case 'dolphin':
-      return <DolphinLogo size={size} />;
-    case 'falcon':
-      return <TIILogo size={size} />;
-    case 'rwkv':
-      return <RwkvLogo size={size} />;
-    case 'llava':
-      return <LLaVALogo size={size} />;
-    case 'starcoder':
-      return <StarCoderLogo size={size} />;
-    case 'command-r':
-    case 'cohere':
-      return <CohereLogo size={size} />;
-    case 'bge':
-    case 'baai':
-      return <BAAILogo size={size} />;
-    case 'minicpm':
-      return <MiniCPMLogo size={size} />;
-    case 'nomic':
-      return <NomicEmbeddingLogo size={size} />;
-    case 'whisper':
-      return <WhisperAudioLogo size={size} />;
-    case 'unsloth':
-      return <UnslothLogo size={size} />;
-    default:
-      return getProviderLogo(provider, size);
-  }
-};
+export const getModelLogo = (family: string, providerOrSize?: string | number, maybeSize?: number, modelId?: string): React.ReactElement => <ModelFamilyLogo family={family} modelId={modelId} size={typeof providerOrSize === 'number' ? providerOrSize : maybeSize ?? 16} />;
 
 export const MountModelView: React.FC<MountModelViewProps> = ({
   onClose,
@@ -258,7 +150,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
           if (Array.isArray(data.models) && data.models.length > 0) {
             const listPromises = data.models.map(async (m: any) => {
               const name = m.name || m.model;
-              const tagsFamily = m.details?.family || normalizeFamilyForLogo(name);
+              const tagsFamily = m.details?.family || 'custom';
               const sizeBytes = typeof m.size === 'number' && m.size > 0 ? m.size : undefined;
               const tagsQuant = m.details?.quantization_level || 'unknown';
               const details = await inspectOllamaModel(name, port);
@@ -314,8 +206,8 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
           if (Array.isArray(modelsArr) && modelsArr.length > 0) {
             const listPromises = modelsArr.map(async (m: any) => {
               const name = m.id || m.name;
-              const family = normalizeFamilyForLogo(name);
               const metadata = p === 'llamacpp' && llamacppProps ? { ...m, ...llamacppProps } : m;
+              const family = typeof metadata.details?.family === 'string' ? metadata.details.family : typeof metadata.family === 'string' ? metadata.family : 'custom';
               const caps = (await invoke('resolve_model_capabilities', { provider: p, metadata })) as ModelCapabilities;
               const ctx = typeof m.context_length === 'number' && m.context_length > 0
                 ? m.context_length
@@ -550,7 +442,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center p-1 shadow-sm shrink-0 border border-white/20">
-                    {getModelLogo(m.family, selectedProvider, 16)}
+                    {getModelLogo(m.family, selectedProvider, 16, m.name)}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -568,7 +460,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                         m.quantization !== 'unknown' ? m.quantization : null,
                         m.sizeBytes ? formatBytes(m.sizeBytes) : null,
                         m.contextLength ? `${m.contextLength.toLocaleString()} ctx` : null,
-                      ].filter(Boolean).join(' · ') || 'Ready'}
+                      ].filter(Boolean).join('') || 'Ready'}
                     </div>
                   </div>
                 </div>
