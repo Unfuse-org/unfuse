@@ -22,13 +22,18 @@ pub enum CapabilitySource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCapabilities {
     pub image_input: CapabilityStatus,
+    #[serde(default = "unknown")]
+    pub tool_calling: CapabilityStatus,
     pub source: CapabilitySource,
 }
+
+fn unknown() -> CapabilityStatus { CapabilityStatus::Unknown }
 
 impl ModelCapabilities {
     pub fn runtime(image_input: CapabilityStatus) -> Self {
         Self {
             image_input,
+            tool_calling: CapabilityStatus::Unknown,
             source: CapabilitySource::Runtime,
         }
     }
@@ -36,6 +41,7 @@ impl ModelCapabilities {
     pub fn fallback(image_input: CapabilityStatus) -> Self {
         Self {
             image_input,
+            tool_calling: CapabilityStatus::Unknown,
             source: CapabilitySource::Fallback,
         }
     }
@@ -59,9 +65,9 @@ pub fn inspect_ollama_capabilities(show_response: Option<&Value>) -> ModelCapabi
     if let Some(caps) = data.get("capabilities").and_then(|c| c.as_array()) {
         let vision = caps.iter().any(|v| v.as_str() == Some("vision"));
 
-        return ModelCapabilities::runtime(
-            if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported },
-        );
+        let mut result = ModelCapabilities::runtime(if vision { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported });
+        result.tool_calling = if caps.iter().any(|v| v.as_str() == Some("tools")) { CapabilityStatus::Supported } else { CapabilityStatus::Unsupported };
+        return result;
     }
 
     ModelCapabilities::runtime(CapabilityStatus::Unknown)
@@ -82,7 +88,11 @@ pub fn inspect_lmstudio_capabilities(model_metadata: Option<&Value>) -> ModelCap
         None => CapabilityStatus::Unknown,
     };
 
-    ModelCapabilities::runtime(vision)
+    let mut result = ModelCapabilities::runtime(vision);
+    result.tool_calling = match data["capabilities"]["trained_for_tool_use"].as_bool() {
+        Some(true) => CapabilityStatus::Supported, Some(false) => CapabilityStatus::Unsupported, None => CapabilityStatus::Unknown,
+    };
+    result
 }
 
 /// 3. llama.cpp: Inspects llama.cpp server model/props metadata.
@@ -129,8 +139,8 @@ pub fn inspect_vllm_capabilities(model_metadata: Option<&Value>) -> ModelCapabil
 
 /// 5. MLX: Inspects MLX runtime metadata.
 ///
-/// Distinguishes mlx-vlm (which declares vision/capabilities or runtime "mlx-vlm") from mlx-lm.
-/// - If capabilities contains "vision" or runtime is "mlx-vlm": Supported / Runtime
+/// Uses explicit per-model capability metadata; a server name alone proves nothing.
+/// - If capabilities contains "vision": Supported / Runtime
 /// - If capabilities present and does not contain "vision": Unsupported / Runtime
 /// - If insufficient metadata: Unknown / Runtime
 pub fn inspect_mlx_capabilities(runtime_metadata: Option<&Value>) -> ModelCapabilities {
@@ -143,12 +153,6 @@ pub fn inspect_mlx_capabilities(runtime_metadata: Option<&Value>) -> ModelCapabi
             CapabilityStatus::Supported
         } else {
             CapabilityStatus::Unsupported
-        }
-    } else if let Some(runtime_str) = data.get("runtime").and_then(|r| r.as_str()) {
-        if runtime_str == "mlx-vlm" {
-            CapabilityStatus::Supported
-        } else {
-            CapabilityStatus::Unknown
         }
     } else {
         CapabilityStatus::Unknown
@@ -439,7 +443,7 @@ mod tests {
             "runtime": "mlx-vlm"
         });
         let res2 = inspect_mlx_capabilities(Some(&mlx_vlm_runtime));
-        assert_eq!(res2.image_input, CapabilityStatus::Supported);
+        assert_eq!(res2.image_input, CapabilityStatus::Unknown);
         assert_eq!(res2.source, CapabilitySource::Runtime);
     }
 

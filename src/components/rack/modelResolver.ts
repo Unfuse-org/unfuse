@@ -67,11 +67,11 @@ export function resolveModelInfo(model: AvailableProviderModel, provider: string
   const parameters = paramMatch ? `${paramMatch[1].toUpperCase()}B Parameters` : (model.parameters || 'Unknown Parameters');
 
   // Context window
-  const ctxLength = model.contextLength || 4096;
-  const contextWindow = `${ctxLength.toLocaleString()} tokens`;
+  const ctxLength = model.contextLength ?? undefined;
+  const contextWindow = ctxLength ? `${ctxLength.toLocaleString()} tokens` : 'Not reported';
 
   // Description
-  const description = model.description || formatModelSubtitle(family, parameters, model.quantization, ctxLength);
+  const description = model.description || formatModelSubtitle(family, parameters, model.quantization ?? undefined, ctxLength);
 
   // Link
   let link = model.link || '';
@@ -93,4 +93,50 @@ export function resolveModelInfo(model: AvailableProviderModel, provider: string
     description,
     link,
   };
+}
+
+// Display identity only: these mappings never determine roles or inference capabilities.
+const logoFamilies: Record<string, string> = {
+  qwen2: 'qwen', qwen3: 'qwen', qwen35: 'qwen', qwen3next: 'qwen', deepseek2: 'deepseek', deepseek3: 'deepseek',
+  llama: 'meta', gemma2: 'gemma', gemma3: 'gemma', gemma4: 'gemma', phi: 'microsoft', phi3: 'microsoft', phi4: 'microsoft',
+  granite: 'ibm', nemotron: 'nvidia', olmo: 'ai2', falcon: 'tii', hermes: 'nousresearch', kimi: 'moonshot', glm: 'chatglm',
+  exaone: 'lg', solar: 'upstage', jamba: 'ai21', bge: 'baai', arctic: 'snowflake', smollm: 'huggingface', openelm: 'apple',
+};
+const logoPublishers: Record<string, string> = {
+  qwen: 'qwen', 'deepseek-ai': 'deepseek', 'meta-llama': 'meta', microsoft: 'microsoft', mistralai: 'mistral',
+  'zai-org': 'chatglm', 'thudm': 'chatglm', moonshotai: 'moonshot', minimaxai: 'minimax', '01-ai': 'yi', baichuaninc: 'baichuan',
+  internlm: 'internlm', nousresearch: 'nousresearch', dphnai: 'dolphin', 'tiiuae': 'tii', 'rwkv': 'rwkv', allenai: 'ai2',
+  'ibm-granite': 'ibm', nvidia: 'nvidia', cohereforai: 'cohere', databricks: 'dbrx', ai21labs: 'ai21', 'arcee-ai': 'arcee',
+  liquidai: 'liquid', huggingfacetb: 'huggingface', baai: 'baai', 'jinaai': 'jina', snowflake: 'snowflake', openchat: 'openchat',
+  tencent: 'hunyuan', baidu: 'wenxin', xiaomimimo: 'xiaomimimo', 'meituan-longcat': 'longcat', 'stepfun-ai': 'stepfun',
+  skywork: 'skywork', deepcogito: 'deepcogito', 'lgai-exaone': 'lg', openai: 'openai', stabilityai: 'stability',
+  'black-forest-labs': 'flux', 'kwai-kolors': 'kolors', 'codegeex': 'codegeex', 'essentialai': 'essentialai',
+  'sensetime': 'sensenova', upstage: 'upstage', apple: 'apple', alephalpha: 'alephalpha',
+};
+const logoNames: Record<string, string[]> = {
+  qwen: ['qwen', 'qwq', 'qvq'], deepseek: ['deepseek'], meta: ['llama', 'codellama', 'llama-guard'], gemma: ['gemma', 'codegemma', 'recurrentgemma', 'embeddinggemma'],
+  microsoft: ['phi'], mistral: ['mistral', 'mixtral', 'codestral', 'devstral', 'ministral', 'mathstral', 'magistral', 'pixtral', 'voxtral'],
+  chatglm: ['chatglm', 'glm'], moonshot: ['kimi', 'moonshot'], minimax: ['minimax'], yi: ['yi'], baichuan: ['baichuan'],
+  internlm: ['internlm', 'internvl'], nousresearch: ['hermes', 'nous-hermes', 'nous'], dolphin: ['dolphin'], tii: ['falcon'], rwkv: ['rwkv'],
+  ai2: ['olmo', 'olmoe', 'molmo'], ibm: ['granite'], nvidia: ['nemotron', 'llama-nemotron', 'nvidia-nemotron'], cohere: ['command'],
+  aya: ['aya'], dbrx: ['dbrx'], ai21: ['jamba'], arcee: ['arcee'], liquid: ['lfm', 'liquid'], huggingface: ['smollm'],
+  baai: ['bge'], jina: ['jina'], snowflake: ['arctic', 'snowflake-arctic'], openchat: ['openchat'], hunyuan: ['hunyuan'],
+  wenxin: ['ernie', 'wenxin'], xiaomimimo: ['mimo', 'xiaomi-mimo'], longcat: ['longcat'], stepfun: ['step', 'stepfun'],
+  skywork: ['skywork'], deepcogito: ['cogito', 'deepcogito'], lg: ['exaone'], openai: ['gpt-oss'], stability: ['stable-diffusion', 'stablelm', 'stable-code', 'sdxl'],
+  flux: ['flux'], cogview: ['cogview'], kolors: ['kolors'], codegeex: ['codegeex'], bilibiliindex: ['index'],
+  essentialai: ['rnj', 'essentialai'], sensenova: ['sensenova', 'sensenova-u1'], upstage: ['solar'], apple: ['openelm'], alephalpha: ['pharia', 'luminous'],
+};
+
+export function resolveModelLogoKey(family: string, modelId?: string): string | undefined {
+  const parts = (modelId ?? '').toLowerCase().split('/').filter(Boolean);
+  const name = parts[parts.length - 1]?.split(':')[0] ?? '';
+  // Longest anchored family name wins, so llama-nemotron is not mislabeled as Meta.
+  const matching = Object.entries(logoNames).flatMap(([key, names]) => names.map(prefix => ({ key, prefix })))
+    .sort((a, b) => b.prefix.length - a.prefix.length)
+    .find(({ prefix }) => name === prefix || name.startsWith(prefix) && /^[0-9._\- ]/.test(name.slice(prefix.length)));
+  if (matching) return matching.key;
+  const publisher = parts.length > 1 ? logoPublishers[parts[parts.length - 2]] : undefined;
+  if (publisher) return publisher;
+  const reported = family.toLowerCase().trim();
+  return logoFamilies[reported] ?? (Object.prototype.hasOwnProperty.call(logoNames, reported) ? reported : undefined);
 }

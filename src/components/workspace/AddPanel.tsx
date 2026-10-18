@@ -72,7 +72,6 @@ import {
   siGraphql,
   siPrisma,
 } from 'simple-icons';
-import { ChangesPanel } from './ChangesPanel';
 import { LinearLogo, NotionLogo } from '../integrations/IntegrationLogos';
 
 export type AddPanelOption = 'terminal' | 'files' | 'changes' | 'library';
@@ -219,356 +218,13 @@ export const FileIcon: React.FC<{ filename: string; size?: number }> = ({ filena
   }
 };
 
-const INITIAL_WORKSPACE_FILES: FileNode[] = [
-  {
-    name: 'src',
-    type: 'folder',
-    children: [
-      {
-        name: 'components',
-        type: 'folder',
-        children: [
-          { name: 'chat', type: 'folder', children: [{ name: 'ChatPanel.tsx', type: 'file', size: '24 KB' }, { name: 'DiffViewer.tsx', type: 'file', size: '13 KB' }] },
-          { name: 'dashboard', type: 'folder', children: [{ name: 'DashboardView.tsx', type: 'file', size: '39 KB' }] },
-          { name: 'rack', type: 'folder', children: [{ name: 'RackPanel.tsx', type: 'file', size: '6.5 KB' }, { name: 'types.ts', type: 'file', size: '1.3 KB' }] },
-          { name: 'workspace', type: 'folder', children: [{ name: 'AddPanel.tsx', type: 'file', size: '18 KB' }] },
-          { name: 'theme', type: 'folder', children: [{ name: 'ThemeSelector.tsx', type: 'file', size: '4.2 KB' }] },
-          { name: 'settings', type: 'folder', children: [{ name: 'SettingsView.tsx', type: 'file', size: '8.1 KB' }] },
-        ],
-      },
-      { name: 'App.tsx', type: 'file', size: '9.2 KB' },
-      { name: 'index.css', type: 'file', size: '3.4 KB' },
-      { name: 'main.tsx', type: 'file', size: '1.1 KB' },
-    ],
-  },
-  {
-    name: 'src-tauri',
-    type: 'folder',
-    children: [
-      { name: 'src', type: 'folder', children: [{ name: 'main.rs', type: 'file', size: '18 KB' }, { name: 'agent.rs', type: 'file', size: '32 KB' }] },
-      { name: 'Cargo.toml', type: 'file', size: '2.4 KB' },
-      { name: 'tauri.conf.json', type: 'file', size: '3.1 KB' },
-    ],
-  },
-  {
-    name: 'scripts',
-    type: 'folder',
-    children: [
-      { name: 'benchmarks.py', type: 'file', size: '4.5 KB' },
-      { name: 'deploy.sh', type: 'file', size: '1.2 KB' },
-    ],
-  },
-  { name: 'index.html', type: 'file', size: '0.8 KB' },
-  { name: 'package.json', type: 'file', size: '1.8 KB' },
-  { name: 'tsconfig.json', type: 'file', size: '0.9 KB' },
-  { name: 'vite.config.ts', type: 'file', size: '1.2 KB' },
-  { name: 'tailwind.config.js', type: 'file', size: '1.4 KB' },
-  { name: 'README.md', type: 'file', size: '5.6 KB' },
-  { name: '.gitignore', type: 'file', size: '0.4 KB' },
-  { name: 'Dockerfile', type: 'file', size: '1.1 KB' },
-];
+const INITIAL_WORKSPACE_FILES: FileNode[] = [];
 
-const SAMPLE_FILES_CODE: Record<string, string> = {
-  'App.tsx': `import React, { useState } from 'react';
-import { Plus, Server, MoreHorizontal } from 'lucide-react';
-import { DashboardView } from './components/dashboard/DashboardView';
-import { AddPanel } from './components/workspace/AddPanel';
-import { RackPanel } from './components/rack/RackPanel';
-
-export default function App() {
-  const [activeNav, setActiveNav] = useState('dashboard');
-  const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'rack' | 'add'>('none');
-
-  return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden font-sans bg-[#09090b] text-white">
-      <header className="h-[40px] border-b border-zinc-800 flex items-center justify-between px-3">
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setActiveRightPanel(p => p === 'add' ? 'none' : 'add')}>
-            <Plus size={16} />
-          </button>
-          <button onClick={() => setActiveRightPanel(p => p === 'rack' ? 'none' : 'rack')}>
-            <Server size={16} />
-          </button>
-        </div>
-      </header>
-      <main className="flex-1 flex overflow-hidden">
-        <DashboardView />
-        {activeRightPanel === 'add' && <AddPanel onClose={() => setActiveRightPanel('none')} />}
-        {activeRightPanel === 'rack' && <RackPanel />}
-      </main>
-    </div>
-  );
-}`,
-  'ChatPanel.tsx': `import React, { useState } from 'react';
-import { Send, Sparkles } from 'lucide-react';
-
-export const ChatPanel: React.FC = () => {
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([
-    { role: 'assistant', text: 'Hello! I am Unfuse agent. How can I assist with your workspace?' }
-  ]);
-
-  const handleSend = () => {
-    if (!input.trim()) return;
-    setMessages(prev => [...prev, { role: 'user', text: input.trim() }]);
-    setInput('');
-  };
-
-  return (
-    <div className="flex flex-col h-full bg-zinc-950 text-white">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m, idx) => (
-          <div key={idx} className={\`p-3 rounded-xl \${m.role === 'user' ? 'bg-indigo-600/20 ml-auto' : 'bg-zinc-900 mr-auto'}\`}>
-            {m.text}
-          </div>
-        ))}
-      </div>
-      <div className="p-3 border-t border-zinc-800 flex gap-2">
-        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} className="flex-1 bg-zinc-900 px-3 py-2 rounded-lg text-sm outline-none" />
-        <button onClick={handleSend} className="px-3 py-2 bg-indigo-600 rounded-lg text-sm font-semibold">Send</button>
-      </div>
-    </div>
-  );
-};`,
-  'DiffViewer.tsx': `import React from 'react';
-import Prism from 'prismjs';
-import { diffLines } from 'diff';
-
-interface DiffViewerProps {
-  filename: string;
-  originalCode: string;
-  modifiedCode: string;
-}
-
-export const DiffViewer: React.FC<DiffViewerProps> = ({ filename, originalCode, modifiedCode }) => {
-  const changes = diffLines(originalCode, modifiedCode);
-  return (
-    <div className="font-mono text-xs select-text overflow-x-auto bg-[#1e1e1e] p-3 rounded-lg">
-      <div className="text-zinc-400 pb-2 border-b border-zinc-800 font-semibold">{filename}</div>
-      {changes.map((part, i) => (
-        <div key={i} className={\`\${part.added ? 'bg-emerald-500/20 text-emerald-300' : part.removed ? 'bg-rose-500/20 text-rose-300' : 'text-zinc-300'}\`}>
-          {part.value}
-        </div>
-      ))}
-    </div>
-  );
-};`,
-  'DashboardView.tsx': `import React, { useState } from 'react';
-import { Activity, CheckCircle2, XCircle } from 'lucide-react';
-
-export const DashboardView: React.FC = () => {
-  const stats = { passed: 42, failed: 2, stopped: 1 };
-
-  return (
-    <div className="flex-1 flex flex-col p-6 space-y-6 overflow-y-auto bg-[#09090b]">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-white">Live Monitor</h1>
-        <div className="flex gap-1.5">
-          <span className="text-xs px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-md">Passed: {stats.passed}</span>
-          <span className="text-xs px-2 py-1 bg-rose-500/10 text-rose-400 rounded-md">Failed: {stats.failed}</span>
-        </div>
-      </div>
-    </div>
-  );
-};`,
-  'RackPanel.tsx': `import React from 'react';
-import { Server } from 'lucide-react';
-
-export const RackPanel: React.FC = () => {
-  return (
-    <div className="flex flex-col h-full bg-[#111113] p-4 text-white">
-      <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider pb-3 border-b border-zinc-800">
-        <Server size={16} />
-        <span>Model Rack (Blades)</span>
-      </div>
-    </div>
-  );
-};`,
-  'AddPanel.tsx': `// AddPanel: Workspace Tools and Navigation Panel
-export const AddPanel: React.FC = () => {
-  return <div className="h-full w-full select-none" />;
-};`,
-  'ThemeSelector.tsx': `import React from 'react';
-
-export const ThemeSelector: React.FC = () => {
-  return <div className="text-xs text-zinc-400 font-medium">Dark Minimal</div>;
-};`,
-  'SettingsView.tsx': `import React from 'react';
-
-export const SettingsView: React.FC = () => {
-  return <div className="p-6 text-white font-bold">Workspace Settings</div>;
-};`,
-  'types.ts': `export type ServiceId = 'notion' | 'linear' | 'github' | 'slack';
-
-export interface LocalModelBlade {
-  id: string;
-  name: string;
-  status: 'running' | 'idle' | 'stopped';
-  vramUsageBytes: number;
-}`,
-  'index.css': `@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  --bg-app: #09090b;
-  --bg-panel: #111113;
-  --bg-surface: #18181b;
-  --bg-surface-hover: #222226;
-  --border-subtle: #27272a;
-  --accent: #6366f1;
-}`,
-  'main.tsx': `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import './index.css';
-
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);`,
-  'main.rs': `use tauri::Manager;
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}`,
-  'agent.rs': `use std::sync::Arc;
-use tokio::sync::Mutex;
-
-pub struct AgentSession {
-    pub is_running: bool,
-    pub step_count: u64,
-}
-
-impl AgentSession {
-    pub async fn run_step(&mut self) -> Result<(), String> {
-        self.step_count += 1;
-        Ok(())
-    }
-}`,
-  'Cargo.toml': `[package]
-name = "unfuse-desktop"
-version = "1.0.0"
-edition = "2021"
-
-[dependencies]
-tauri = { version = "2.0.0", features = [] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }`,
-  'tauri.conf.json': `{
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Unfuse",
-  "version": "1.0.0",
-  "identifier": "com.unfuse.desktop",
-  "build": {
-    "frontendDist": "../dist"
-  }
-}`,
-  'package.json': `{
-  "name": "@unfuse/desktop",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build"
-  }
-}`,
-  'tsconfig.json': `{
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true
-  }
-}`,
-  'vite.config.ts': `import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-export default defineConfig({
-  plugins: [react()],
-  clearScreen: false,
-  server: {
-    port: 1420,
-    strictPort: true,
-  }
-});`,
-  'tailwind.config.js': `/** @type {import('tailwindcss').Config} */
-export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  theme: {
-    extend: {
-      colors: {
-        app: 'var(--bg-app)',
-        panel: 'var(--bg-panel)',
-      }
-    },
-  },
-  plugins: [],
-};`,
-  'README.md': `# Unfuse Desktop
-Agentic AI Desktop Environment for Software Engineering.
-
-## Architecture
-- **Frontend**: React 18, Vite, Tailwind CSS, PrismJS syntax engine
-- **Backend**: Rust Tauri v2 Core, Local Blade Process Management
-- **Integrations**: Linear & Notion sync with MCP protocols`,
-  '.gitignore': `target/
-node_modules/
-dist/
-.DS_Store
-*.env*
-Cargo.lock`,
-  'Dockerfile': `FROM node:20-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]`,
-  'benchmarks.py': `import time
-import requests
-
-def benchmark_latency(url: str, iterations: int = 50):
-    latencies = []
-    for _ in range(iterations):
-        start = time.perf_counter()
-        resp = requests.get(url)
-        latencies.append((time.perf_counter() - start) * 1000)
-    print(f"Avg latency: {sum(latencies)/len(latencies):.2f}ms")
-
-if __name__ == "__main__":
-    benchmark_latency("http://localhost:1420")`,
-  'deploy.sh': `#!/usr/bin/env bash
-set -euo pipefail
-
-echo "==> Building Unfuse Desktop for production..."
-npm run build
-cargo build --manifest-path src-tauri/Cargo.toml --release
-echo "==> Build complete!"`,
-};
+const SAMPLE_FILES_CODE: Record<string, string> = {};
 
 const getFileCode = (filename: string): string => {
   if (SAMPLE_FILES_CODE[filename]) return SAMPLE_FILES_CODE[filename];
-  return `// ${filename}\n// File loaded in Unfuse Workspace\nexport default function () {\n  return null;\n}`;
+  return '';
 };
 
 const getPrismLang = (filename: string) => {
@@ -616,192 +272,14 @@ Prism.hooks.add('wrap', (env) => {
   }
 });
 
-const SAMPLE_DIFF_ORIGINAL = `export default function App() {
-  const [activeNav, setActiveNav] = useState('dashboard');
-
-  return (
-    <div className="flex flex-col h-screen">
-      <header className="h-[40px] border-b">
-        <ThemeSelector />
-      </header>
-      <aside className="w-72 h-full border-l" />
-    </div>
-  );
-}`;
-
-const SAMPLE_DIFF_MODIFIED = `export default function App() {
-  const [activeNav, setActiveNav] = useState('dashboard');
-  const [activeRightPanel, setActiveRightPanel] = useState<'none' | 'rack' | 'add'>('none');
-
-  return (
-    <div className="flex flex-col h-screen">
-      <header className="h-[40px] border-b">
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => setActiveRightPanel(p => p === 'add' ? 'none' : 'add')}>
-            <Plus size={16} />
-          </button>
-          <button onClick={() => setActiveRightPanel(p => p === 'rack' ? 'none' : 'rack')}>
-            <Server size={16} />
-          </button>
-        </div>
-      </header>
-      {activeRightPanel === 'add' && <AddPanel />}
-      {activeRightPanel === 'rack' && <RackPanel />}
-    </div>
-  );
-}`;
-
 // RECENTS (RECENTLY MADE ARTIFACTS CREATED BY AGENT/WORKSPACE)
-const INITIAL_ARTIFACTS: ArtifactItem[] = [
-  {
-    id: 'art-1',
-    title: 'architecture-spec.md',
-    type: 'markdown',
-    size: '14.2 KB',
-    timestamp: '12m ago',
-    description: 'Workspace layout, 4-button canvas tool architecture, and Tauri v2 event streaming specification',
-    content: `# Workspace Architecture Spec\n- 4 buttons in canvas: Terminal, Files, Changes, Library\n- Downside: Recents & Notion/Linear sync\n- Real-time event monitor via Tauri v2 channels`,
-  },
-  {
-    id: 'art-2',
-    title: 'live-monitor-schema.json',
-    type: 'json',
-    size: '3.4 KB',
-    timestamp: '38m ago',
-    description: 'Live monitor event schema with passed, failed, and stopped state payloads',
-    content: `{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "title": "LiveMonitorEvent",\n  "type": "object",\n  "properties": {\n    "id": { "type": "string" },\n    "status": { "enum": ["passed", "failed", "stopped"] }\n  }\n}`,
-  },
-  {
-    id: 'art-3',
-    title: 'tauri-ipc-patch.diff',
-    type: 'diff',
-    size: '8.1 KB',
-    timestamp: '1h ago',
-    description: 'Unified diff patch for backend agent streaming and command execution',
-    content: `diff --git a/src-tauri/src/agent.rs b/src-tauri/src/agent.rs\n--- a/src-tauri/src/agent.rs\n+++ b/src-tauri/src/agent.rs\n@@ -112,6 +112,12 @@ pub async fn stream_execution() {\n+    emit_ipc_event("agent_progress", &status).await;\n }`,
-  },
-  {
-    id: 'art-4',
-    title: 'system-topology.mermaid',
-    type: 'diagram',
-    size: '2.6 KB',
-    timestamp: '3h ago',
-    description: 'Mermaid flowchart of Tauri IPC, React frontend, and local LLM blade runners',
-    content: `flowchart TD\n  UI[React Frontend] --> IPC[Tauri v2 IPC]\n  IPC --> Engine[Rust Core Engine]\n  Engine --> Blade[Local Model Blades]`,
-  },
-];
+const INITIAL_ARTIFACTS: ArtifactItem[] = [];
 
 // PUSHED TO INTEGRATIONS (NOTION, LINEAR - KEEP ORIGINAL LOGOS)
-const INITIAL_INTEGRATIONS: IntegrationItem[] = [
-  {
-    id: 'int-1',
-    service: 'linear',
-    title: 'UNF-104: Fix live message monitor scrollbar & layout stability',
-    subtitle: 'Assigned to @lichi • Linear Issues',
-    timestamp: '18m ago',
-    url: 'https://linear.app/unfuse/issue/UNF-104',
-  },
-  {
-    id: 'int-2',
-    service: 'notion',
-    title: 'Unfuse Architecture Spec & UI System v2',
-    subtitle: 'Synced to Engineering Wiki • Workspace Docs',
-    timestamp: '35m ago',
-    url: 'https://notion.so/unfuse/Architecture-Spec-v2',
-  },
-  {
-    id: 'int-3',
-    service: 'linear',
-    title: 'UNF-98: Wire Tauri v2 streaming IPC events with blade runners',
-    subtitle: 'Assigned to @lichi • Linear Issues',
-    timestamp: '1h ago',
-    url: 'https://linear.app/unfuse/issue/UNF-98',
-  },
-  {
-    id: 'int-4',
-    service: 'notion',
-    title: 'Sprint 4 Release Notes & Agent Performance Benchmarks',
-    subtitle: 'Synced to Changelog & Benchmarks',
-    timestamp: '3h ago',
-    url: 'https://notion.so/unfuse/Sprint-4-Release-Notes',
-  },
-];
+const INITIAL_INTEGRATIONS: IntegrationItem[] = [];
 
 // LIBRARY ITEMS (THE STUFF PEOPLE SEND TO AI: PROMPTS, CONTEXT, TEMPLATES, REFERENCES)
-const INITIAL_LIBRARY_ITEMS: LibraryItem[] = [
-  {
-    id: 'lib-1',
-    title: 'Strict Minimal Diff & Zero Warnings Directive',
-    category: 'rule',
-    description: 'System instructions enforcing zero warnings on Rust/TypeScript and surgical diffs without cosmetic noise.',
-    content: `You are an expert AI engineer. Follow these rules strictly:
-1. Do exactly what the user asks. Do not invent unrequested changes.
-2. Maintain zero warnings: cargo clippy -- -D warnings and npm run build must be 100% clean.
-3. Make minimal, surgical diffs. Preserve all existing styles and comments.`,
-    usageCount: 42,
-  },
-  {
-    id: 'lib-2',
-    logo: 'tauri',
-    language: 'rust',
-    title: 'Tauri v2 IPC Handler Boilerplate',
-    category: 'snippet',
-    description: 'Reusable Rust command pattern with State injection, Mutex handling, and typed serializable responses.',
-    content: `#[tauri::command]
-pub async fn execute_agent_step(
-    state: State<'_, AppState>,
-    payload: StepPayload,
-) -> Result<StepResponse, String> {
-    let mut session = state.session.lock().map_err(|e| e.to_string())?;
-    session.run_step(payload).await
-}`,
-    usageCount: 28,
-  },
-  {
-    id: 'lib-3',
-    title: 'Security & Edge Case Code Review Prompt',
-    category: 'prompt',
-    description: 'Prompt template for adversarial code audits, race conditions, memory leaks, and input sanitization.',
-    content: `Perform an exhaustive adversarial code review of the supplied diff:
-1. Check for memory leaks, unclosed listeners, or unbounded state growth.
-2. Verify input validation, boundary values, and authentication bypasses.
-3. Confirm error handling fails safely without crashing the host process.`,
-    usageCount: 19,
-  },
-  {
-    id: 'lib-4',
-    logo: 'tailwind',
-    language: 'css',
-    title: 'Tailwind Design Tokens & Glassmorphism Theme',
-    category: 'context',
-    description: 'Reference styles for CSS variables, surface borders, background tints, and active accents.',
-    content: `:root {
-  --bg-app: #09090b;
-  --bg-panel: #111113;
-  --bg-surface: #18181b;
-  --bg-surface-hover: #222226;
-  --border-subtle: #27272a;
-  --accent: #6366f1;
-}`,
-    usageCount: 35,
-  },
-  {
-    id: 'lib-5',
-    logo: 'integrations',
-    language: 'typescript',
-    title: 'Linear & Notion Integration Payload Spec',
-    category: 'context',
-    description: 'Data models for exporting agent research summaries and creating Linear issues directly from chat.',
-    content: `{
-  "integration": "linear",
-  "action": "create_issue",
-  "teamId": "ENG",
-  "priority": 1,
-  "title": "[Agent] Implement streaming response buffer"
-}`,
-    usageCount: 12,
-  },
-];
+const INITIAL_LIBRARY_ITEMS: LibraryItem[] = [];
 
 export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange }) => {
   const [activeOption, setActiveOption] = useState<AddPanelOption | null>(null);
@@ -1028,9 +506,10 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
               `}</style>
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold">Recents</h3>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sample preview · {INITIAL_ARTIFACTS.length} files</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{INITIAL_ARTIFACTS.length} files</span>
               </div>
               <div>
+                {INITIAL_ARTIFACTS.length === 0 && <p className="py-6 text-xs text-[var(--text-muted)]">No recent files.</p>}
                 {INITIAL_ARTIFACTS.map((artifact) => (
                   <article key={artifact.id} tabIndex={0} aria-label={`Preview ${artifact.title}`} onClick={() => setQuickLook({ source: 'recents', id: artifact.id })} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); setQuickLook({ source: 'recents', id: artifact.id }); } }} className="group min-w-0 px-3 py-4 cursor-pointer rounded-md hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]">
                     <div className="flex items-start gap-3">
@@ -1052,9 +531,9 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
             <section className="space-y-3" aria-label="Latest integration previews">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold">Latest</h3>
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Sample activity</span>
               </div>
               <div className="divide-y divide-[var(--border-subtle)]">
+                {INITIAL_INTEGRATIONS.length === 0 && <p className="py-6 text-xs text-[var(--text-muted)]">No integration activity.</p>}
                 {INITIAL_INTEGRATIONS.map((item) => (
                   <article key={item.id} className="py-4 flex gap-3 min-w-0 hover:bg-[var(--bg-surface-hover)] transition-colors">
                     <div className="w-6 pt-1 flex items-center justify-center shrink-0" style={{ color: 'var(--text-main)' }}>
@@ -1110,7 +589,7 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                         .unfuse-file-viewer .token.string,
                         .unfuse-file-viewer .token.number { color: color-mix(in srgb, var(--accent) 65%, var(--text-main)); }
                       `}</style>
-                      <div className="h-10 px-3 border-b flex items-center gap-2 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                      <div className="h-10 px-3 flex items-center gap-2 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
                         <FileIcon filename={selectedFile} />
                         <span title={selectedFilePath} className="flex-1 truncate text-xs" style={{ color: 'var(--text-main)' }}>{selectedFilePath}</span>
                         <button onClick={() => setWordWrap((wrap) => !wrap)} title="Toggle word wrap" aria-label="Word wrap" aria-pressed={wordWrap} className="p-1.5 rounded hover:bg-[var(--bg-surface-hover)]" style={{ color: wordWrap ? 'var(--accent)' : 'var(--text-muted)' }}><WrapText size={15} /></button>
@@ -1164,7 +643,7 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
             />
             {/* RIGHT SIDE: FILE EXPLORER SHIFTED TO RIGHT */}
             <div
-              className="shrink-0 h-full flex flex-col border-l overflow-hidden"
+              className="shrink-0 h-full flex flex-col overflow-hidden"
               style={{
                 width: explorerWidth,
                 backgroundColor: 'var(--bg-panel)',
@@ -1173,7 +652,7 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
             >
               {/* SEARCH & NAVIGATION CONTROLS */}
               <div
-                className="p-2 border-b shrink-0 flex items-center gap-1.5"
+                className="p-2 shrink-0 flex items-center gap-1.5"
                 style={{ borderColor: 'var(--border-subtle)' }}
               >
                 <button
@@ -1228,15 +707,14 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
                 <ArrowLeft size={14} /> Back
               </button>
             </div>
-            <ChangesPanel filename="src/App.tsx"
-              originalCode={SAMPLE_DIFF_ORIGINAL} modifiedCode={SAMPLE_DIFF_MODIFIED} />
+            <div className="flex-1 flex items-center justify-center px-6 text-center text-sm text-[var(--text-muted)]">No changes to review.</div>
           </div>
         )}
 
         {/* ACTIVE OPTION 4: LIBRARY (STUFF PEOPLE SEND TO AI) */}
         {activeOption === 'library' && (
           <div className="flex-1 flex flex-col min-h-0" style={{ color: 'var(--text-main)' }}>
-            <header className="px-4 py-3 flex items-center gap-3 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+            <header className="px-4 py-3 flex items-center gap-3 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
               <button onClick={() => handleSelectOption(null)} title="Back to workspace" aria-label="Back to workspace" className="p-1.5 rounded-md hover:bg-[var(--bg-surface-hover)]"><ArrowLeft size={15} /></button>
               <div className="flex-1"><h2 className="text-sm font-medium">Saved</h2><p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Reusable material for your next conversation</p></div>
               <button onClick={onClose} aria-label="Close Saved" className="p-1.5 rounded-md hover:bg-[var(--bg-surface-hover)]"><X size={15} /></button>
@@ -1257,7 +735,7 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4" style={{ scrollbarWidth: 'thin' }}>
               {filteredLibraryItems.length === 0 && (
-                <div className="py-12 text-center"><Search size={22} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} /><p className="text-sm">No matching items</p><p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>Try another search or category.</p></div>
+                <div className="py-12 text-center"><Search size={22} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} /><p className="text-sm">Nothing saved yet</p></div>
               )}
               {filteredLibraryItems.map((item) => {
                 const Icon = { prompt: MessageSquare, context: FileText, snippet: Code2, rule: ShieldCheck }[item.category];
@@ -1279,7 +757,7 @@ export const AddPanel: React.FC<AddPanelProps> = ({ onClose, onExpandedChange })
           </div>
         )}
       {quickLook && <QuickLookPreview selectedId={quickLook.id} onSelect={id => setQuickLook({ ...quickLook, id })} onClose={() => setQuickLook(null)} items={quickLook.source === 'recents'
-        ? INITIAL_ARTIFACTS.map(item => ({ id: item.id, name: item.title, detail: `${item.type} · ${item.size} · Sample artifact`, text: item.content.replace(/\\n/g, '\n') }))
+        ? INITIAL_ARTIFACTS.map(item => ({ id: item.id, name: item.title, detail: `${item.type} · ${item.size}`, text: item.content.replace(/\\n/g, '\n') }))
         : filteredLibraryItems.map(item => ({ id: item.id, name: item.title, detail: `${item.category} · ${item.description}`, text: item.content, language: item.language }))} />}
       </div>
     </div>

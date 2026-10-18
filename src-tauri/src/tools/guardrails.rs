@@ -2,7 +2,7 @@ use std::path::{Component, Path, PathBuf};
 
 /// Denylist of sensitive file or directory names that should never be accessed or modified.
 /// Matched against individual path segments to prevent credential leakage.
-const SENSITIVE_SEGMENTS: &[&str] = &[
+pub(crate) const SENSITIVE_SEGMENTS: &[&str] = &[
     // SSH / GPG / Cloud credentials
     ".ssh",
     ".gnupg",
@@ -37,14 +37,14 @@ const SENSITIVE_SEGMENTS: &[&str] = &[
     ".mysql_history",
 ];
 
-const SENSITIVE_EXTENSIONS: &[&str] = &[
+pub(crate) const SENSITIVE_EXTENSIONS: &[&str] = &[
     ".pem",
     ".key",
     ".p12",
     ".pfx",
 ];
 
-const SENSITIVE_PREFIXES: &[&str] = &[
+pub(crate) const SENSITIVE_PREFIXES: &[&str] = &[
     "/etc/shadow",
     "/etc/passwd",
     "/etc/sudoers",

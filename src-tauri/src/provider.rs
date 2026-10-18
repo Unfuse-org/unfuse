@@ -1,10 +1,15 @@
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 pub mod capability;
+pub mod connection;
+mod ollama;
+#[cfg(test)]
+mod tests;
+pub use connection::Runner;
+mod sse;
 pub use capability::{CapabilitySource, CapabilityStatus, ModelCapabilities};
 
 /// Strongly typed representation of message content for OpenAI-compatible APIs.
@@ -220,12 +225,16 @@ impl ChatMessage {
 /// Ollama, LM Studio, vLLM, llama.cpp, MLX, or Unsloth.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
+    pub provider: Runner,
+    pub capabilities: ModelCapabilities,
     pub base_url: String,
     pub api_key: Option<String>,
     pub model: String,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
+    #[serde(default)]
+    pub context_window: Option<usize>,
 }
 
 /// A fully assembled tool call ready for execution by the agent engine.
@@ -234,6 +243,23 @@ pub struct AssembledToolCall {
     pub id: String,
     pub name: String,
     pub arguments: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompletionReason { Stop, ToolCalls, Length, ContentFilter }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompletionResponse {
+    pub tool_calls: Vec<AssembledToolCall>,
+    pub reason: CompletionReason,
+}
+
+#[cfg(test)]
+impl CompletionResponse {
+    pub fn from_calls(tool_calls: Vec<AssembledToolCall>) -> Self {
+        let reason = if tool_calls.is_empty() { CompletionReason::Stop } else { CompletionReason::ToolCalls };
+        Self { tool_calls, reason }
+    }
 }
 
 /// Individual delta events emitted while streaming SSE from the model.
@@ -247,6 +273,7 @@ pub enum StreamChunk {
     ToolCall(AssembledToolCall),
     /// Stream finished.
     Done,
+    Finished(CompletionReason),
 }
 
 /// State machine that extracts embedded `<think>...</think>` tags from `content`
@@ -357,19 +384,23 @@ impl ThinkTagParser {
 #[derive(Default)]
 struct ToolCallAccumulator {
     calls: BTreeMap<usize, AssembledToolCall>,
+    error: Option<String>,
 }
 
 impl ToolCallAccumulator {
     fn update(&mut self, tc_chunk: &Value) {
         let index = tc_chunk["index"].as_u64().unwrap_or(0) as usize;
         let entry = self.calls.entry(index).or_insert_with(|| AssembledToolCall {
-            id: format!("call_{}", index),
+            id: String::new(),
             name: String::new(),
             arguments: String::new(),
         });
 
         if let Some(id) = tc_chunk["id"].as_str() {
             if !id.is_empty() {
+                if !entry.id.is_empty() && entry.id != id {
+                    self.error = Some("Runner changed a tool call ID within the same streamed index".into());
+                }
                 entry.id = id.to_string();
             }
         }
@@ -394,11 +425,9 @@ impl ToolCallAccumulator {
         }
     }
 
-    fn finish(self) -> Vec<AssembledToolCall> {
-        self.calls
-            .into_values()
-            .filter(|c| !c.name.is_empty())
-            .collect()
+    fn finish(self) -> Result<Vec<AssembledToolCall>, String> {
+        if let Some(error) = self.error { return Err(error); }
+        Ok(self.calls.into_values().collect())
     }
 }
 
@@ -413,139 +442,291 @@ impl ToolCallAccumulator {
 /// - **Unsloth** (`http://localhost:8000`)
 ///
 /// Calls `on_chunk` with each `StreamChunk` (Text, Thinking, ToolCall, Done)
-/// and returns the complete list of assembled tool calls.
+/// Returns validated tool calls and an explicit completion reason.
 pub fn stream_chat_completion<F>(
     config: &ProviderConfig,
     messages: &[ChatMessage],
     tools: Option<&[Value]>,
     mut on_chunk: F,
-) -> Result<Vec<AssembledToolCall>, String>
+) -> Result<CompletionResponse, String>
 where
     F: FnMut(StreamChunk),
 {
-    let endpoint = format!(
-        "{}/v1/chat/completions",
-        config.base_url.trim_end_matches('/')
-    );
+    stream_chat_completion_cancellable(
+        config,
+        messages,
+        tools,
+        &std::sync::atomic::AtomicBool::new(false),
+        &mut on_chunk,
+    )
+}
 
-    let mut payload = json!({
-        "model": config.model,
-        "messages": messages,
-        "stream": true,
-        "temperature": config.temperature.unwrap_or(0.0),
-    });
-
-    if let Some(max_tokens) = config.max_tokens {
-        payload["max_tokens"] = json!(max_tokens);
-    }
-
-    if let Some(tool_defs) = tools {
-        if !tool_defs.is_empty() {
-            payload["tools"] = json!(tool_defs);
-            payload["tool_choice"] = json!("auto");
-        }
-    }
-
-    let timeout_duration = Duration::from_secs(config.timeout_secs.unwrap_or(120).clamp(5, 600));
-
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(timeout_duration)
-        .build();
-
-    let mut request = agent
-        .post(&endpoint)
-        .set("Content-Type", "application/json");
-
-    if let Some(ref key) = config.api_key {
-        let trimmed = key.trim();
-        if !trimmed.is_empty() {
-            request = request.set("Authorization", &format!("Bearer {}", trimmed));
-        }
-    }
-
-    let response = request
-        .send_json(payload)
-        .map_err(|e| format!("Failed to connect to model runner at '{}': {}", endpoint, e))?;
-
-    let reader = BufReader::new(response.into_reader());
-    let mut think_parser = ThinkTagParser::new();
-    let mut tool_accumulator = ToolCallAccumulator::default();
-
-    for line_res in reader.lines() {
-        let line = line_res.map_err(|e| format!("SSE stream read error: {}", e))?;
-        let trimmed = line.trim();
-
-        // Skip empty lines and SSE ping comments
-        if trimmed.is_empty() || trimmed.starts_with(':') {
-            continue;
-        }
-
-        // Standard SSE payload begins with "data: "
-        if let Some(raw_data) = trimmed.strip_prefix("data: ") {
-            let data = raw_data.trim();
-
-            if data == "[DONE]" {
-                break;
-            }
-
-            let parsed: Value = match serde_json::from_str(data) {
-                Ok(v) => v,
-                Err(_) => continue, // Ignore malformed non-JSON frame
-            };
-
-            let choices = match parsed["choices"].as_array() {
-                Some(arr) if !arr.is_empty() => arr,
-                _ => continue,
-            };
-
-            let delta = &choices[0]["delta"];
-
-            // 1. Check for dedicated reasoning fields (LM Studio, vLLM, DeepSeek models)
-            let reasoning = delta["reasoning_content"]
-                .as_str()
-                .or_else(|| delta["reasoning"].as_str());
-
-            if let Some(reason_text) = reasoning {
-                if !reason_text.is_empty() {
-                    on_chunk(StreamChunk::Thinking(reason_text.to_string()));
-                }
-            }
-
-            // 2. Check for standard content (and parse embedded <think> tags for llama.cpp/MLX)
-            if let Some(content) = delta["content"].as_str() {
-                if !content.is_empty() {
-                    for chunk in think_parser.parse(content) {
-                        on_chunk(chunk);
-                    }
-                }
-            }
-
-            // 3. Accumulate incremental tool calls
-            if let Some(tc_array) = delta["tool_calls"].as_array() {
-                for tc_chunk in tc_array {
-                    tool_accumulator.update(tc_chunk);
-                }
-            }
-        }
-    }
-
-    if let Some(flushed) = think_parser.flush() {
-        on_chunk(flushed);
-    }
-
-    let final_tools = tool_accumulator.finish();
-    for tool_call in &final_tools {
-        on_chunk(StreamChunk::ToolCall(tool_call.clone()));
-    }
-
-    on_chunk(StreamChunk::Done);
-    Ok(final_tools)
+pub fn stream_chat_completion_cancellable<F>(
+    config: &ProviderConfig,
+    messages: &[ChatMessage],
+    tools: Option<&[Value]>,
+    cancelled: &std::sync::atomic::AtomicBool,
+    mut on_chunk: F,
+) -> Result<CompletionResponse, String>
+where
+    F: FnMut(StreamChunk),
+{
+    stream_with_timeouts(
+        config,
+        messages,
+        tools,
+        cancelled,
+        &mut on_chunk,
+        Duration::from_secs(config.timeout_secs.unwrap_or(300).clamp(1, 600)),
+        Duration::from_secs(120),
+    )
 }
 
 #[cfg(test)]
-mod tests {
+fn stream_chat_completion_with_timeouts<F>(
+    config: &ProviderConfig,
+    messages: &[ChatMessage],
+    tools: Option<&[Value]>,
+    mut on_chunk: F,
+    first: Duration,
+    idle: Duration,
+) -> Result<CompletionResponse, String>
+where
+    F: FnMut(StreamChunk),
+{
+    stream_with_timeouts(
+        config,
+        messages,
+        tools,
+        &std::sync::atomic::AtomicBool::new(false),
+        &mut on_chunk,
+        first,
+        idle,
+    )
+}
+
+fn completion_request(config: &ProviderConfig, messages: &[ChatMessage], tools: Option<&[Value]>) -> Result<(reqwest::Url, Value), String> {
+    if config.model.trim().is_empty() { return Err("Choose a model before running".into()); }
+    if config.temperature.is_some_and(|t| !t.is_finite() || !(0.0..=2.0).contains(&t)) { return Err("Temperature must be from 0 to 2".into()); }
+    let context = config.context_window.ok_or("Set a context budget matching the runner before running")?;
+    let output = config.max_tokens.unwrap_or(2048);
+    if output == 0 || output as usize >= context {
+        return Err("Output budget must be positive and smaller than the context budget".into());
+    }
+    if config.provider == Runner::Unsloth && config.api_key.as_deref().map(str::trim).is_none_or(str::is_empty) { return Err("Unsloth Studio requires an API key".into()); }
+    if tools.is_some_and(|t| !t.is_empty()) && config.capabilities.tool_calling == CapabilityStatus::Unsupported {
+        return Err("This model explicitly reports no tool support; select a tool-capable model or disable tools for this stage".into());
+    }
+    for message in messages {
+        if let MessageContent::Parts(parts) = &message.content {
+            for part in parts {
+                match part {
+                    ContentPart::Text { .. } => {},
+                    ContentPart::ImageUrl { .. } if config.capabilities.image_input == CapabilityStatus::Supported => {},
+                    ContentPart::ImageUrl { .. } => return Err("Image input has not been verified for this model and runner".into()),
+                    _ => return Err("Audio and video input are not supported by these provider adapters".into()),
+                }
+            }
+        }
+    }
+    if config.provider == Runner::Ollama {
+        return Ok((connection::endpoint(&config.base_url, "api/chat")?, ollama::payload(config, messages, tools)?));
+    }
+    let mut payload = json!({"model":config.model,"messages":messages,"stream":true,"max_tokens":config.max_tokens.unwrap_or(2048)});
+    if let Some(temperature) = config.temperature { payload["temperature"] = json!(temperature); }
+    if let Some(tools) = tools.filter(|t| !t.is_empty()) { payload["tools"] = json!(tools); if config.provider != Runner::Mlx { payload["tool_choice"] = json!("auto"); } }
+    if config.provider == Runner::Unsloth { payload["enable_tools"] = json!(false); }
+    Ok((connection::endpoint(&config.base_url, "v1/chat/completions")?, payload))
+}
+
+enum ResponseStream { Openai(sse::CompletionStream), Ollama(ollama::OllamaStream) }
+impl ResponseStream {
+    fn feed(&mut self, bytes: &[u8], emit: &mut impl FnMut(StreamChunk)) -> Result<bool, String> {
+        match self { Self::Openai(p) => p.feed(bytes, emit), Self::Ollama(p) => p.feed(bytes, emit) }
+    }
+    fn has_response(&self) -> bool { match self { Self::Openai(p) => p.has_response(), Self::Ollama(p) => p.has_response() } }
+    fn finish(self, emit: &mut impl FnMut(StreamChunk)) -> Result<CompletionResponse, String> {
+        match self { Self::Openai(p) => p.finish(emit), Self::Ollama(p) => p.finish(emit) }
+    }
+}
+
+fn stream_with_timeouts(
+    config: &ProviderConfig,
+    messages: &[ChatMessage],
+    tools: Option<&[Value]>,
+    cancelled: &std::sync::atomic::AtomicBool,
+    on_chunk: &mut impl FnMut(StreamChunk),
+    first: Duration,
+    idle: Duration,
+) -> Result<CompletionResponse, String> {
+    let (endpoint, payload) = completion_request(config, messages, tools)?;
+    let runner = config.provider;
+    let key = config.api_key.clone();
+    let (sender, mut receiver) = tauri::async_runtime::channel::<Result<Vec<u8>, String>>(8);
+    let task = tauri::async_runtime::spawn(async move {
+        let result = async {
+            let client = connection::client()?;
+            let request = connection::authorize(client.post(endpoint).json(&payload), key.as_deref());
+            let mut response = request.send().await
+                .map_err(|e| format!("Model request failed: {}", e.without_url()))?;
+            if !response.status().is_success() {
+                return Err(connection::response_error(response.status(), runner));
+            }
+            let expected = if runner == Runner::Ollama { "application/x-ndjson" } else { "text/event-stream" };
+            let content_type = response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
+            if !content_type.split(';').next().is_some_and(|kind| kind.trim() == expected || runner == Runner::Ollama && kind.trim() == "application/json") {
+                return Err(format!("Runner did not return {expected}; check the endpoint and streaming support"));
+            }
+            while let Some(bytes) = response
+                .chunk()
+                .await
+                .map_err(|e| format!("Model stream failed: {}", e.without_url()))?
+            {
+                if sender.send(Ok(bytes.to_vec())).await.is_err() {
+                    return Ok(());
+                }
+            }
+            Ok::<(), String>(())
+        }
+        .await;
+        if let Err(error) = result {
+            let _ = sender.send(Err(error)).await;
+        }
+    });
+    struct RequestTask(tauri::async_runtime::JoinHandle<()>);
+    impl Drop for RequestTask {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _request = RequestTask(task);
+    let mut parser = if runner == Runner::Ollama { ResponseStream::Ollama(ollama::OllamaStream::default()) } else { ResponseStream::Openai(sse::CompletionStream::default()) };
+    let mut deadline = Instant::now() + first;
+    let mut received = false;
+    loop {
+        if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("Model request cancelled".into());
+        }
+        if Instant::now() >= deadline {
+            return Err(if received {
+                format!("Model stream inactive for {idle:?}")
+            } else {
+                format!("Model first-response timeout after {first:?}")
+            });
+        }
+        match receiver.try_recv() {
+            Ok(Ok(bytes)) => {
+                let done = parser.feed(&bytes, on_chunk)?;
+                received = parser.has_response();
+                if received {
+                    deadline = Instant::now() + idle;
+                }
+                if done {
+                    break;
+                }
+            }
+            Ok(Err(error)) => return Err(error),
+            Err(_) if receiver.is_closed() && receiver.is_empty() => break,
+            Err(_) => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+    parser.finish(on_chunk)
+}
+
+#[cfg(test)]
+mod transport_tests {
     use super::*;
+
+    struct TestServer {
+        base_url: String,
+        ready: std::sync::mpsc::Receiver<()>,
+        closed: std::sync::mpsc::Receiver<bool>,
+        task: std::thread::JoinHandle<()>,
+    }
+    fn hanging_server(body: &'static str, hold: Duration) -> TestServer {
+        use std::io::{BufRead, Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (closed, observed) = std::sync::mpsc::channel();
+        let (ready, started) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(4);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
+                    Err(_) => { let _ = closed.send(false); return; }
+                }
+            };
+            socket.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+            let mut reader = std::io::BufReader::new(socket.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 { let _ = closed.send(false); return; }
+                if line == "\r\n" { break; }
+                if let Some(value) = line.to_lowercase().strip_prefix("content-length:") { length = value.trim().parse().unwrap(); }
+            }
+            reader.read_exact(&mut vec![0; length]).unwrap();
+            drop(reader);
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").unwrap();
+            if !body.is_empty() { write!(socket, "{:x}\r\n{}\r\n", body.len(), body).unwrap(); }
+            socket.flush().unwrap();
+            let _ = ready.send(());
+            std::thread::sleep(hold);
+            let deadline = Instant::now() + Duration::from_secs(1);
+            let disconnected = loop {
+                if socket.write_all(b"9\r\n: probe\n\n\r\n").and_then(|_| socket.flush()).is_err() { break true; }
+                if Instant::now() >= deadline { break false; }
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            let _ = closed.send(disconnected);
+        });
+        TestServer { base_url:format!("http://{address}"), ready:started, closed:observed, task:thread }
+    }
+
+    #[test]
+    fn provider_first_response_and_idle_deadlines_close_the_connection() {
+        for (body, expected) in [
+            ("", "first-response timeout"),
+            ("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n", "stream inactive"),
+        ] {
+            let hold = if body.is_empty() { Duration::from_millis(2200) } else { Duration::from_millis(300) };
+            let TestServer { base_url, ready:_ready, closed, task:server } = hanging_server(body, hold);
+            let config = ProviderConfig { provider:Runner::Vllm, capabilities:ModelCapabilities::runtime(CapabilityStatus::Unknown), base_url, api_key:None, model:"test".into(), temperature:None,
+                max_tokens:None, timeout_secs:None, context_window:Some(8192) };
+            let mut text = String::new();
+            let error = stream_chat_completion_with_timeouts(&config, &[], None, |chunk| {
+                if let StreamChunk::Text(delta) = chunk { text.push_str(&delta); }
+            }, Duration::from_secs(2), Duration::from_millis(100)).unwrap_err();
+            assert!(error.contains(expected), "{error}");
+            assert_eq!(text, if body.is_empty() { "" } else { "partial" });
+            assert!(closed.recv_timeout(Duration::from_secs(2)).unwrap());
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn cancellation_aborts_in_flight_inference() {
+        let TestServer { base_url, ready, closed, task:server } = hanging_server("", Duration::from_millis(500));
+        let config = ProviderConfig { provider:Runner::Vllm, capabilities:ModelCapabilities::runtime(CapabilityStatus::Unknown), base_url, api_key:None, model:"test".into(), temperature:None,
+            max_tokens:None, timeout_secs:None, context_window:Some(8192) };
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = cancelled.clone();
+        let cancel = std::thread::spawn(move || {
+            ready.recv_timeout(Duration::from_secs(3)).unwrap();
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        let start = Instant::now();
+        let error = stream_chat_completion_cancellable(&config, &[], None, &cancelled, |_| {}).unwrap_err();
+        assert!(error.contains("cancelled"));
+        assert!(start.elapsed() < Duration::from_secs(4));
+        assert!(closed.recv_timeout(Duration::from_secs(2)).unwrap());
+        cancel.join().unwrap();
+        server.join().unwrap();
+    }
 
     #[test]
     fn test_think_tag_parser_clean_text() {
@@ -662,7 +843,7 @@ mod tests {
         });
         accumulator.update(&chunk2);
 
-        let tools = accumulator.finish();
+        let tools = accumulator.finish().unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].id, "call_abc");
         assert_eq!(tools[0].name, "read_file");
@@ -692,7 +873,7 @@ mod tests {
         accumulator.update(&chunk2);
         accumulator.update(&chunk3);
 
-        let tools = accumulator.finish();
+        let tools = accumulator.finish().unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].id, "call_123");
         assert_eq!(tools[0].name, "read_file", "Repeated function name must not be concatenated");

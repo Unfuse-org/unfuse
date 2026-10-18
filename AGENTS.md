@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Graphify before code edits
+
+Before every Unfuse code-editing task, read and follow `/Users/lichi/.agents/skills/graphify/SKILL.md` and use Graphify to inspect the relevant code and relationships before editing. Do not wait for an explicit `/graphify` command. Verify findings against the current source because the graph may be stale.
+
 ## 1. PRIME DIRECTIVE
 
 **Do exactly what the user asks. Do not do more.**
@@ -494,6 +498,36 @@ If any answer is "no", correct it before finishing.
 
 ---
 
+# 26. NO COSMETIC SLOP OR FAKE PLUMBING (ANTI-HARDCODING DIRECTIVE)
+
+### 1. End-to-End Tracing (Zero Fake Plumbing)
+* Every parameter, setting, or configuration (e.g., `apiKey`, `contextLength`, `customUrl`, headers) must be verified through all 4 layers:
+  `UI Component` ➔ `Tauri IPC Payload` ➔ `Rust Engine / Config` ➔ `Wire HTTP Request`.
+* Never write UI inputs that drop data before reaching the network or engine. Hardcoding `null` or dummy values while pretending a feature works is strictly forbidden.
+
+### 2. Capabilities Are Functional, Never Cosmetic
+* Only track capabilities (e.g., `image_input`) to govern API payload composition (e.g., whether to attach image content parts).
+* Never convert typed structs into ad-hoc string arrays (like `['completion', 'vision']`) and string-sniff them with `.includes('vision')`.
+* Never render cosmetic badges based on ad-hoc string heuristics.
+
+### 3. No Artificial Role Classification
+* An agentic model is an agentic model. Never pigeonhole models into arbitrary roles ("Coder", "Reasoning", "VL", "General") by regex-matching names (`if (name.includes('code'))`).
+
+### 4. Protocols Over Vibes & Heuristics
+* Local model runners (Ollama, LM Studio, vLLM, llama.cpp, Apple MLX, Unsloth Desktop) must be integrated via their real wire specifications (OpenAI `/v1/chat/completions`, Ollama `/api/show`, Unsloth Desktop `/v1/models`).
+* No blind port-guessing loops that cause collisions (e.g. assuming port 8080 is MLX when llama.cpp is running).
+* Dynamic byte formatting: Store raw bytes. Format dynamically across B, KB, MB, GB, TB. Never hardcode GB assumptions.
+
+### 5. Benchmark Against Production Agentic CLIs First
+* Before designing provider integrations, agent loops, or tool calling, inspect and benchmark against established open-source production agents: **Goose** (`aaif-goose/goose`), **Pi** (`earendil-works/pi`), **OpenCode** (`anomalyco/opencode`), and **Continue.dev** (`continuedev/continue`).
+* If production systems do not use a hacky heuristic, do not invent one for Unfuse.
+
+### 6. Zero Warnings Bar
+* All code must compile with zero warnings across both backend and frontend:
+  `cargo clippy -- -D warnings`, `RUSTFLAGS="-D warnings" cargo test`, and `npm run build` must be 100% clean on every task.
+
+---
+
 # FINAL RULE
 
 **DO NOT BE HELPFUL BEYOND THE REQUEST.**
@@ -513,3 +547,13 @@ It does not mean:
 **Execute the request. Verify the result. Stop.**
 
 If additional work would be useful, tell the user about it separately and wait for authorization.
+
+
+
+## Installed development tools
+
+Project instructions and the user's scope take precedence over third-party skills.
+- UI guidance: `.agents/skills/baseline-ui/SKILL.md`, `fixing-accessibility/SKILL.md`, `fixing-motion-performance/SKILL.md`, and `improve-ui/SKILL.md` under the same directory. Use existing project patterns; these skills do not authorize dependencies or redesigns.
+- Anti-Slop: read `.agents/skills/antislop/SKILL.md` as the core (`antislop.md` referenced by the companion skills), then the relevant `antislop-*` skill. Do not run its install wizard again or change global preferences.
+- Reticle: `.agents/skills/reticle/SKILL.md`. Registered with Codex; the Vite connection is development-only. Do not send feedback externally without user authorization. Report unknown verification as unknown.
+- SkillSpector: run `skillspector scan <skill-directory> --no-llm` for local static review. Findings and incomplete analysis require review; this is not a safety guarantee. LLM analysis or remote submission requires explicit authorization.

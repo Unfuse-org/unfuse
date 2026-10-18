@@ -12,6 +12,7 @@ export interface RackPanelProps {
 }
 
 export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) => {
+  const [customIcons, setCustomIcons] = useState<Record<string, string>>({});
   const [isMountingOpen, setIsMountingOpen] = useState(false);
   const [selectedInfoModel, setSelectedInfoModel] = useState<LocalModelBlade | null>(null);
   const [editingModel, setEditingModel] = useState<LocalModelBlade | null>(null);
@@ -77,10 +78,8 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
   };
 
   const handleMountModel = (newModel: LocalModelBlade) => {
-    // Guard: Ensure only one model per provider is mounted
-    const filtered = models.filter((m) => m.provider !== newModel.provider);
-    const isFirst = filtered.length === 0;
-    onModelsChange([...filtered, { ...newModel, status: isFirst ? 'active' : 'loaded' }]);
+    if (models.length >= 6 || models.some(model => model.provider === newModel.provider)) return;
+    onModelsChange([...models, newModel]);
   };
 
   return (
@@ -89,6 +88,8 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
       {editingModel ? (
         <BladeConfigView
           model={editingModel}
+          customIcon={customIcons[editingModel.id]}
+          onIconChange={icon => setCustomIcons(current => ({ ...current, [editingModel.id]: icon ?? '' }))}
           onClose={() => setEditingModel(null)}
           onSave={handleSaveConfig}
           onUnload={handleUnload}
@@ -102,50 +103,11 @@ export const RackPanel: React.FC<RackPanelProps> = ({ models, onModelsChange }) 
         />
       ) : (
         <>
-          {models.length === 0 ? (
-        /* 2. INITIAL EMPTY STATE: BIG + WITH SMALL 'LOAD MODELS' TEXT */
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <button
-            type="button"
-            onClick={() => setIsMountingOpen(true)}
-            className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl hover:bg-[var(--bg-surface-hover)] active:scale-95 transition-all duration-150 cursor-pointer"
-          >
-            {/* BIG + ICON */}
-            <div className="w-12 h-12 rounded-xl bg-[var(--bg-surface)] group-hover:bg-[var(--bg-surface-hover)] border border-[var(--border-subtle)] group-hover:border-[var(--border-strong)] flex items-center justify-center transition-all duration-150 shadow-sm">
-              <Plus className="w-6 h-6 text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors" strokeWidth={1.5} />
-            </div>
+          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-3">
+            {models.length === 0 ? <div className="flex flex-col items-center justify-center h-full min-h-40 px-6 text-center"><Plus size={24} strokeWidth={1.4} className="text-[var(--text-muted)] mb-3" /><p className="text-sm">Add your first model</p><p className="text-[11px] leading-5 mt-2 text-[var(--text-muted)]">Choose a model from your local inference provider.</p></div> : <div className="space-y-1">{models.map(model => <ModelBladeCard customIcon={customIcons[model.id]} key={model.id} model={model} onOpenInfo={setSelectedInfoModel} onOpenConfig={setEditingModel} onSetPrimary={handleSetPrimary} onUnload={handleUnload} onEject={handleEject} />)}</div>}
+          </div>
+          <div className="shrink-0 px-3 pb-3 pt-2"><button disabled={models.length >= 6} onClick={() => setIsMountingOpen(true)} className="w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-xs bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] transition-colors"><Plus size={14} />Add model</button></div>
 
-            {/* SMALL TEXT */}
-            <span className="text-[11px] font-medium text-[var(--text-muted)] group-hover:text-[var(--text-main)] transition-colors tracking-tight">
-              Connect a model
-            </span>
-          </button>
-        </div>
-      ) : (
-        /* 3. MOUNTED MODEL BLADES STACK */
-        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 flex flex-col">
-          {/* MODEL CARDS */}
-          {models.map((model) => (
-            <ModelBladeCard
-              key={model.id}
-              model={model}
-              onOpenInfo={setSelectedInfoModel}
-              onOpenConfig={setEditingModel}
-              onSetPrimary={handleSetPrimary}
-              onUnload={handleUnload}
-              onEject={handleEject}
-            />
-          ))}
-
-          {/* ADD MODEL BUTTON (PIXEL FONT, NO ICON) */}
-          <button
-            onClick={() => setIsMountingOpen(true)}
-            className="w-full py-2.5 mt-1 rounded-xl border border-dashed border-[var(--border-subtle)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition-all flex items-center justify-center text-xs font-medium cursor-pointer"
-          >
-            Add Model
-          </button>
-        </div>
-      )}
     </>
   )}
 

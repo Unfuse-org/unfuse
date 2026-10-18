@@ -1,12 +1,22 @@
-import { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUp, ArrowUpRight, Bug, ChevronDown, Compass, FileCode2, Plus, Hand, FileCheck2 } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowUp, ArrowUpRight, Bug, ChevronDown, Compass, FileCode2, Plus, Hand, FileCheck2, Paperclip, FolderOpen, Sparkles, Search, MessageSquare, Check, X, FileText, Image as ImageIcon, Terminal, ListTodo } from 'lucide-react';
 import { LocalModelBlade } from '../rack/types';
+import { isTauri } from '@tauri-apps/api/core';
+import { ModelFamilyLogo } from './ModelIdentity';
+import { makePlan, ModelTag, moveTags } from './pipeline';
+import { usePipeline } from './usePipeline';
+import { PipelineConversation } from './PipelineConversation';
 
 interface MainChatPanelProps {
   sessionId: string;
   models: LocalModelBlade[];
   onOpenRack: () => void;
+  workspaceRoot: string;
+  workspaceError: string;
+  onWorkspaceChange: (path: string) => void;
+  onSessionStarted: (id: string, title: string) => void;
 }
+
 
 const starters = [
   { label: 'Explore a project', icon: Compass, color: '#4f9cf9', description: 'Find your way through the codebase.', prompt: 'Help me understand this project and explain how its main pieces fit together.' },
@@ -14,13 +24,56 @@ const starters = [
   { label: 'Review some code', icon: FileCode2, color: '#a78bfa', description: 'Get a fresh perspective on your code.', prompt: 'Review my code for correctness and explain any issues before suggesting changes.' },
 ];
 
-export function MainChatPanel({ sessionId, models, onOpenRack }: MainChatPanelProps) {
+export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, onWorkspaceChange, onSessionStarted, workspaceError }: MainChatPanelProps) {
+  const freshSession=useRef(crypto.randomUUID());
+  const effectiveSession=sessionId||freshSession.current;
+  const pipeline=usePipeline(workspaceRoot,effectiveSession);
+  const [projectPath,setProjectPath]=useState(workspaceRoot);
+  const [tagsByChat,setTagsByChat]=useState<Record<string,ModelTag[]>>({});
+  const [pickerAt,setPickerAt]=useState<number|null>(null);
+  const tags=tagsByChat[effectiveSession]??[];
+  useEffect(() => { setPickerAt(null); }, [effectiveSession]);
+  useEffect(() => { setProjectPath(workspaceRoot); }, [workspaceRoot]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const addMenuRef = useRef<HTMLDetailsElement>(null);
   const [selectedModelId, setSelectedModelId] = useState('');
-  const draft = drafts[sessionId] ?? '';
+  const [contextQuery, setContextQuery] = useState('');
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (addMenuRef.current && event.target instanceof Node && !addMenuRef.current.contains(event.target)) addMenuRef.current.open = false;
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, []);
+  const draft = drafts[effectiveSession] ?? '';
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
-  const updateDraft = (text: string) => setDrafts((current) => ({ ...current, [sessionId]: text }));
+  const updateDraft = (text: string) => {
+    setTagsByChat(current=>({...current,[effectiveSession]:moveTags(draft,text,tags)}));
+    setDrafts(current=>({...current,[effectiveSession]:text}));
+  };
+  const assignModel=(model:LocalModelBlade)=>{
+    const at=pickerAt??draft.length;
+    const replaceAt=draft[at]==='@'?at+1:at;
+    const label=`@${model.displayName}`;
+    const text=draft.slice(0,at)+label+' '+draft.slice(replaceAt);
+    const shifted=moveTags(draft,text,tags);
+    setTagsByChat(current=>({...current,[effectiveSession]:[...shifted,{start:at,end:at+label.length,modelId:model.id}]}));
+    setDrafts(current=>({...current,[effectiveSession]:text}));
+    setPickerAt(null);
+    requestAnimationFrame(()=>{inputRef.current?.focus();inputRef.current?.setSelectionRange(at+label.length+1,at+label.length+1);});
+  };
+  const send=async()=>{
+    try {
+      if(pipeline.busy)return;
+      const plan=makePlan(draft,tags,selectedModel?.id??'');
+      if(!workspaceRoot)throw new Error('Set the project directory before running.');
+      if(!isTauri())throw new Error('Run this conversation in the Unfuse desktop app.');
+      onSessionStarted(effectiveSession,draft.trim().slice(0,70));
+      const result=await pipeline.run(plan,null,models);
+      if(result){setDrafts(current=>({...current,[effectiveSession]:''}));setTagsByChat(current=>({...current,[effectiveSession]:[]}));}
+    }catch(error){pipeline.setError(String(error));}
+  };
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (!input) return;
@@ -40,62 +93,52 @@ export function MainChatPanel({ sessionId, models, onOpenRack }: MainChatPanelPr
   }, [draft, sessionId]);
 
 
-  return (
-    <main className="flex-1 h-full min-w-0 flex flex-col" style={{ backgroundColor: 'var(--bg-app)' }}>
-
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col justify-center">
-        <div className="w-full max-w-3xl mx-auto py-12">
-          <h2 className="text-[clamp(28px,3.5vw,44px)] leading-[1.15] tracking-[-0.04em] font-medium max-w-lg" style={{ color: 'var(--text-main)' }}>
-            What are we<br />working on?
-          </h2>
-          <div className="mt-9 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))' }}>
-            {starters.map((starter) => (
-              <button key={starter.label} onClick={() => { updateDraft(starter.prompt); inputRef.current?.focus(); }} className="group text-left rounded-xl border border-[var(--border-subtle)] p-3 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] transition-colors">
-                <div className="flex items-center justify-between mb-2.5" style={{ color: 'var(--text-muted)' }}>
-                  <starter.icon size={20} strokeWidth={1.8} style={{ color: `color-mix(in srgb, ${starter.color} 85%, var(--text-main))` }} />
-                  <ArrowUpRight size={15} className="opacity-40 group-hover:opacity-100 transition-opacity" />
-                </div>
-                <div className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>{starter.label}</div>
-                <div className="text-[11px] leading-4 mt-1" style={{ color: 'var(--text-muted)' }}>{starter.description}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
+  const composer = (
       <div className="px-4 sm:px-6 pb-5 pt-2 shrink-0">
         <div className="max-w-3xl mx-auto">
-          <div className="rounded-[24px] border border-[var(--border-subtle)] px-3 py-2.5 shadow-sm focus-within:border-[var(--border-strong)] transition-colors" style={{ backgroundColor: 'var(--bg-surface)' }}>
+          <div className="relative rounded-[24px] px-3 py-2.5 shadow-sm transition-colors" style={{ backgroundColor: 'var(--bg-surface)' }}>
             <textarea
               ref={inputRef}
               aria-label="Message draft"
               value={draft}
-              onChange={(event) => updateDraft(event.target.value)}
+              readOnly={pipeline.busy}
+              onChange={(event) => {updateDraft(event.target.value);const caret=event.target.selectionStart;if(event.target.value[caret-1]==='@')setPickerAt(caret-1);else setPickerAt(null);}}
+              onKeyDown={event=>{if(event.key==='Escape')setPickerAt(null);if(event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing){event.preventDefault();void send();}}}
               placeholder="Ask anything, or describe a task…"
               rows={1}
               className="block w-full resize-none overflow-y-auto bg-transparent outline-none text-sm leading-6 px-2 py-2 min-h-[44px] max-h-48 select-text placeholder:text-[var(--text-muted)]"
             />
+            {pickerAt!==null&&<div aria-label="Assign a model" className="absolute bottom-full left-0 mb-2 p-2 rounded-xl bg-[var(--bg-panel)] shadow-lg z-40 max-w-full w-80">
+              {models.length?models.map(model=><button key={model.id} onClick={()=>assignModel(model)} className="flex items-center gap-2 w-full text-left px-2 py-2 rounded-lg hover:bg-[var(--bg-surface)]"><ModelFamilyLogo family={model.family} modelId={model.name} size={18}/><span className="min-w-0"><span className="block text-xs truncate">{model.displayName}</span><span className="block text-[10px] text-[var(--text-muted)] truncate">{model.provider} · {model.endpoint}</span></span></button>):<button onClick={onOpenRack} className="p-2 text-xs">Connect a model in the rack</button>}
+            </div>}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <div className="flex items-center gap-1">
-              <button disabled title="Attachments will be available when chat is connected" aria-label="Attach files (not connected)" className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full border opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-main)' }}>
-                <Plus size={17} />
-              </button>
+              <details ref={addMenuRef} className="group/add" onToggle={event => { if (!event.currentTarget.open) setContextQuery(''); }} onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+                <summary aria-label="Add context" className="w-8 h-8 flex items-center justify-center rounded-full cursor-pointer list-none [&::-webkit-details-marker]:hidden hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]" style={{ color: 'var(--text-main)' }}><Plus size={17} /></summary>
+                <div aria-label="Add context menu" className="absolute left-0 bottom-full mb-2 w-[480px] max-w-full rounded-2xl p-2 shadow-lg z-30" style={{ backgroundColor: 'var(--bg-panel)' }}>
+                  <div className="flex items-center justify-between px-2 mb-2"><span className="text-xs font-medium">Add to chat</span></div>
+                  <label className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg text-[var(--text-muted)]"><Search size={15} /><input aria-label="Search context options" value={contextQuery} onChange={event => setContextQuery(event.target.value)} placeholder="Search files, integrations or skills…" className="w-full min-w-0 bg-transparent outline-none text-xs text-[var(--text-main)]" /></label>
+                  <div className="overflow-y-auto overscroll-contain max-h-[min(320px,50vh)]">
+                    {[{ name: 'Files and images', icon: Paperclip }, { name: 'Workspace files', icon: FileCode2 }, { name: 'Folders', icon: FolderOpen }, { name: 'Attach terminal', icon: Terminal }, { name: 'Skills', icon: Sparkles }].filter(item => item.name.toLowerCase().includes(contextQuery.toLowerCase())).map(item => <button key={item.name} disabled title="Context attachment is not connected" className="flex items-center gap-2.5 w-full px-2 py-2 text-xs text-left rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"><item.icon size={16} />{item.name}</button>)}
+                    <p className="px-2 py-3 text-[11px] text-[var(--text-muted)]">No attached context.</p>
+                  </div>
+                </div>
+              </details>
+              <button disabled={pipeline.busy} aria-label="Assign model task" onClick={()=>setPickerAt(inputRef.current?.selectionStart??draft.length)} className="w-8 h-8 rounded-full text-sm hover:bg-[var(--bg-surface-hover)] disabled:opacity-40">@</button>
               <details className="relative group/permissions">
-                <summary aria-label="Approval mode preview" className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs cursor-pointer hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]" style={{ color: 'var(--text-muted)' }}>
+                <summary aria-label="Approval mode" className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs cursor-pointer hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]" style={{ color: 'var(--text-muted)' }}>
                   <Hand size={14} /><span>Ask for approval</span><ChevronDown size={12} className="group-open/permissions:rotate-180 transition-transform" />
                 </summary>
-                <div className="absolute left-0 bottom-full mb-2 w-64 max-w-[calc(100vw-3rem)] rounded-xl border border-[var(--border-subtle)] p-2 shadow-xl z-20" style={{ backgroundColor: 'var(--bg-panel)' }}>
-                  <p className="px-2 pt-1 pb-2 text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Permissions · UI preview</p>
-                  <button disabled className="flex gap-2.5 w-full rounded-lg p-2 text-left cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)' }}>
+                <div className="absolute left-0 bottom-full mb-2 w-64 max-w-[calc(100vw-3rem)] rounded-xl p-2 shadow-xl z-20" style={{ backgroundColor: 'var(--bg-panel)' }}>
+                  <p className="px-2 pt-1 pb-2 text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Permissions</p>
+                  <button aria-disabled="true" data-ui-only="true" className="flex gap-2.5 w-full rounded-lg p-2 text-left cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)' }}>
                     <Hand size={16} className="mt-0.5 shrink-0" />
                     <span><span className="block text-xs font-medium">Ask for approval</span><span className="block mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>Ask before editing files or running commands.</span></span>
                   </button>
-                  <button disabled className="flex gap-2.5 w-full rounded-lg p-2 text-left opacity-50 cursor-not-allowed">
+                  <button aria-disabled="true" data-ui-only="true" className="flex gap-2.5 w-full rounded-lg p-2 text-left opacity-50 cursor-not-allowed">
                     <FileCheck2 size={16} className="mt-0.5 shrink-0" />
                     <span><span className="block text-xs font-medium">Auto-approve edits</span><span className="block mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>Allow file edits. Ask before running commands.</span></span>
                   </button>
-                  <p className="px-2 pt-2 pb-1 text-[11px] leading-4 border-t border-[var(--border-subtle)]" style={{ color: 'var(--text-muted)' }}>Mode switching is unavailable until chat execution is connected.</p>
                 </div>
               </details>
               </div>
@@ -112,7 +155,7 @@ export function MainChatPanel({ sessionId, models, onOpenRack }: MainChatPanelPr
                     <span className="truncate">Select model</span><ChevronDown size={12} className="shrink-0" />
                   </button>
                 )}
-                <button disabled aria-label="Send message (not connected)" title="Model execution is not connected yet" className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center opacity-40 cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
+                <button onClick={()=>void send()} disabled={pipeline.busy||!draft.trim()||!models.length} aria-label="Send message" title="Run assigned models in order" className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
                   <ArrowUp size={17} />
                 </button>
               </div>
@@ -121,6 +164,38 @@ export function MainChatPanel({ sessionId, models, onOpenRack }: MainChatPanelPr
 
         </div>
       </div>
+  );
+
+  return (
+    <main className="flex-1 h-full min-w-0 flex flex-col" style={{ backgroundColor: 'var(--bg-app)' }}>
+
+
+      <div className="px-6 pt-3 text-xs text-[var(--text-muted)]"><label className="flex items-center gap-2"><FolderOpen size={13}/><input aria-label="Project directory" placeholder="Absolute project directory" value={projectPath} disabled={pipeline.busy} onChange={event=>setProjectPath(event.target.value)} onBlur={()=>onWorkspaceChange(projectPath.trim())} onKeyDown={event=>{if(event.key==='Enter')onWorkspaceChange(projectPath.trim());}} className="min-w-0 flex-1 bg-transparent outline-none py-1 focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"/></label></div>
+      <div className={`flex-1 min-h-0 overflow-y-auto px-6 ${pipeline.runs.length?'':'flex flex-col justify-center'}`}>
+        {pipeline.runs.length>0?<PipelineConversation pipeline={pipeline} models={models}/>:''}
+        {!pipeline.runs.length&&(
+        <div className="w-full max-w-3xl mx-auto py-12">
+          <h2 className="text-[clamp(28px,3.5vw,44px)] leading-[1.15] tracking-[-0.04em] font-medium max-w-lg" style={{ color: 'var(--text-main)' }}>
+            What are we<br />working on?
+          </h2>
+          <div className="mt-9 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))' }}>
+            {starters.map((starter) => (
+              <button key={starter.label} onClick={() => { updateDraft(starter.prompt); inputRef.current?.focus(); }} className="group text-left rounded-xl border border-[var(--border-subtle)] p-3 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] hover:border-[var(--border-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] transition-colors">
+                <div className="flex items-center justify-between mb-2.5" style={{ color: 'var(--text-muted)' }}>
+                  <starter.icon size={20} strokeWidth={1.8} style={{ color: `color-mix(in srgb, ${starter.color} 85%, var(--text-main))` }} />
+                  <ArrowUpRight size={15} className="opacity-40 group-hover:opacity-100 transition-opacity" />
+                </div>
+                <div className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>{starter.label}</div>
+                <div className="text-[11px] leading-4 mt-1" style={{ color: 'var(--text-muted)' }}>{starter.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>)}
+      </div>
+      {(pipeline.error || workspaceError)&&<p role="alert" className="max-w-3xl mx-auto w-full px-6 py-2 text-xs text-[var(--text-muted)]">{pipeline.error || workspaceError}</p>}
+      {composer}
+
+
     </main>
   );
 }

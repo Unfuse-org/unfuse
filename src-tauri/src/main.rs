@@ -7,12 +7,12 @@ pub mod provider;
 pub mod prompt;
 pub mod storage;
 pub mod tools;
-pub mod integrations;
+pub mod mcp;
 mod terminal;
+mod sandbox;
 
 use tauri::Manager;
 use std::env;
-use std::collections::HashMap;
 use std::time::Duration;
 
 #[cfg(target_os = "macos")]
@@ -129,43 +129,12 @@ fn resolve_model_capabilities(provider: String, metadata: Option<serde_json::Val
     Ok(provider::capability::resolve_model_capabilities(&provider, metadata.as_ref()))
 }
 
-#[tauri::command]
-fn sync_integration_config(
-    session_id: String,
-    configs: HashMap<String, integrations::ServiceConfig>,
-) -> Result<(), String> {
-    let session = agent::get_or_create_session(&session_id);
-    let mut guard = session.lock().unwrap();
-    guard.integrations = configs;
-    Ok(())
-}
-
-#[tauri::command]
-async fn run_collaborative_turn(
-    app: tauri::AppHandle,
-    workspace_root: String,
-    session_id: String,
-    prompt: String,
-    llm_configs: HashMap<String, agent::LlmConfigPayload>,
-) -> Result<Vec<provider::ChatMessage>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        orchestrator::Orchestrator::run_collaborative_turn(
-            app,
-            workspace_root,
-            session_id,
-            prompt,
-            llm_configs,
-        )
-    })
-    .await
-    .map_err(|e| format!("Collaborative turn task failed: {}", e))?
-    .await
-}
 
 fn main() {
     tauri::Builder::default()
         .manage(terminal::TerminalState::default())
         .setup(|_app| {
+            sandbox::set_resources(_app.path().resource_dir()?);
             #[cfg(target_os = "macos")]
             {
                 if let Some(window) = _app.get_webview_window("main") {
@@ -185,14 +154,19 @@ fn main() {
             agent::cancel_agent_turn,
             agent::resolve_tool_permission,
             agent::update_session_policy,
-            run_collaborative_turn,
+            orchestrator::run_pipeline,
+            orchestrator::load_pipelines,
+            orchestrator::load_pipeline_activity,
             storage::create_session,
             storage::load_session,
             storage::list_sessions,
             storage::search_sessions,
-            storage::rebuild_index,
             resolve_model_capabilities,
-            sync_integration_config
+            provider::connection::discover_provider_models,
+            mcp::test_mcp_server,
+            mcp::disconnect_mcp_server,
+            mcp::auth::begin_mcp_authorization,
+            mcp::auth::complete_mcp_authorization
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,34 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Check, Palette, Server, ChevronRight, Settings2, MessageSquare, ShieldCheck, Database, SlidersHorizontal, Moon, Sun, MoonStar, ScrollText, Cpu, Sunset, Trees, Waves, Flower2, Coins, TerminalSquare, Heart, Sprout, Cat, Search, Keyboard } from 'lucide-react';
+import { Check, Palette, Server, ChevronRight, Settings2, MessageSquare, ShieldCheck, Database, SlidersHorizontal, Sun, Trees, Flower2, Search, Keyboard, Waves, Mountain, Snowflake, Disc3, Contrast } from 'lucide-react';
 import unfuseLogo from '../../assets/logo.png';
-import { siClaude } from 'simple-icons';
 import { ThemeId, THEMES, applyTheme, getStoredTheme } from '../../theme/themes';
 import { LocalModelBlade } from '../rack/types';
 
-// OpenAI symbol from Simple Icons 14.0.0 (CC0).
-const openAiPath = "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z";
-
-const themeIcons = {
-  dark: Moon,
-  light: Sun,
-  midnight: MoonStar,
-  paper: ScrollText,
-  cyberpunk: Cpu,
-  retrowave: Sunset,
-  forest: Trees,
-  ocean: Waves,
-  ume: Flower2,
-  copper: Coins,
-  terminal: TerminalSquare,
-  organs: Heart,
-  lavender: Sprout,
-  cute: Cat,
-} satisfies Record<Exclude<ThemeId, 'gpt' | 'claude' | 'unfuse'>, typeof Moon>;
+const themeIcons = { light: Sun, 'rose-pine': Flower2, everforest: Trees, nord: Snowflake, ocean: Waves, gruvbox: Disc3, 'high-contrast': Contrast, sand: Mountain };
 
 function ThemeIcon({ id }: { id: ThemeId }) {
-  const Icon = id === 'gpt' || id === 'claude' || id === 'unfuse' ? null : themeIcons[id];
-  return <span className="w-7 h-7 shrink-0 rounded-lg border flex items-center justify-center" style={{ backgroundColor: 'var(--bg-app)', borderColor: 'var(--border-subtle)', color: 'var(--text-main)' }}>
-    {id === 'unfuse' ? <img src={unfuseLogo} alt="" className="w-6 h-6 rounded" /> : Icon ? <Icon size={18} strokeWidth={1.8} aria-hidden="true" /> : <svg width={18} height={18} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={id === 'claude' ? siClaude.path : openAiPath} /></svg>}
+  const Icon = id === 'unfuse' ? null : themeIcons[id];
+  return <span className="w-7 h-7 shrink-0 flex items-center justify-center" style={{ color: THEMES[id].category === 'light' ? 'var(--text-main)' : THEMES[id].colors.accent }}>
+    {Icon ? <Icon size={18} strokeWidth={1.8} aria-hidden="true" /> : <img src={unfuseLogo} alt="" className="w-6 h-6 rounded" />}
   </span>;
 }
 
@@ -65,7 +46,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ models, onOpenRack }
   }, [query, sectionMatches, firstMatch]);
   return (
     <div className="flex-1 h-full flex min-h-0" style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)' }}>
-      <aside className="w-56 shrink-0 border-r px-3 py-6 overflow-y-auto" style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'var(--bg-panel)' }}>
+      <aside className="w-56 shrink-0 px-3 py-6 overflow-y-auto" style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'var(--bg-panel)' }}>
         <h1 className="text-sm font-semibold px-3 mb-5 flex items-center gap-2"><Settings2 size={16} /> Settings</h1>
         <label className="flex items-center gap-2 px-3 py-2 mb-5 rounded-lg border" style={{ borderColor: 'var(--border-subtle)' }}><Search size={14} style={{ color: 'var(--text-muted)' }} /><input aria-label="Search settings" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a setting…" className="w-full min-w-0 bg-transparent outline-none text-xs" /></label>
         {matchingSections.length === 0 && <p className="text-xs px-3" style={{ color: 'var(--text-muted)' }}>No matching settings.</p>}
@@ -186,13 +167,12 @@ const detailSections: Record<string, { title: string; rows: SettingRow[] }[]> = 
 function SettingsDetails({ section, query = '' }: { section: string; query?: string }) {
   const groups = detailSections[section]?.map((group) => ({ ...group, rows: group.rows.filter((row) => `${sections.find((item) => item.id === section)?.label} ${group.title} ${row.label} ${row.description}`.toLowerCase().includes(query.toLowerCase().trim())) })).filter((group) => group.rows.length > 0);
   return <div className="mt-6">
-    <p className="text-[11px] mb-5" style={{ color: 'var(--text-muted)' }}>Backend preferences are shown for planning and are not connected yet. Disabled controls do not change model or system behavior.</p>
     {groups?.map((group) => <section key={group.title} className="mb-7">
       <h3 className="text-xs font-medium mb-3">{group.title}</h3>
       <div className="border-y overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
         {group.rows.map((row, index) => <div key={row.label} className={`px-4 py-4 flex items-center justify-between gap-5 ${index ? 'border-t' : ''}`} style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="min-w-0"><p className="text-xs font-medium">{row.label}</p><p className="text-[11px] mt-1 leading-5" style={{ color: 'var(--text-muted)' }}>{row.description}</p></div>
-          {row.action ? <button disabled className="shrink-0 text-[11px] border rounded-md px-3 py-1.5 opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border-subtle)' }}>{row.action}</button> : row.choices ? <select disabled aria-label={row.label} className="w-40 shrink-0 text-[11px] rounded-md border px-2 py-1.5 opacity-40 cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-subtle)' }} defaultValue=""><option value="">Not configured</option>{row.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>
+          {row.action ? <button aria-disabled="true" data-ui-only="true" className="shrink-0 text-[11px] border rounded-md px-3 py-1.5 opacity-40 cursor-not-allowed" style={{ borderColor: 'var(--border-subtle)' }}>{row.action}</button> : row.choices ? <select disabled aria-label={row.label} className="w-40 shrink-0 text-[11px] rounded-md border px-2 py-1.5 opacity-40 cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-subtle)' }} defaultValue=""><option value="">Not configured</option>{row.choices.map((choice) => <option key={choice}>{choice}</option>)}</select>
             : row.numeric ? <input disabled type="number" aria-label={row.label} placeholder="—" className="w-20 shrink-0 text-xs border rounded-md px-2 py-1.5 opacity-40 cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-subtle)' }} />
             : <input disabled type="checkbox" aria-label={row.label} className="w-4 h-4 shrink-0 opacity-40 cursor-not-allowed" />}
         </div>)}

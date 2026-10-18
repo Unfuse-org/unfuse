@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Maximum character length for a persisted tool output in the JSONL log (100,000 chars).
+/// Maximum character length for a persisted tool output in stored history (100,000 chars).
 /// Outputs exceeding this are safely truncated with a trailing notice.
 pub const MAX_TOOL_OUTPUT_CHARS: usize = 100_000;
 
@@ -40,7 +40,7 @@ pub fn truncate_tool_output(output: &str) -> String {
     }
 }
 
-/// Strongly typed envelope for all persisted events in the append-only JSONL log.
+/// Strongly typed envelope for all persisted events in append-only SQLite history.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PersistedEvent {
     pub id: String,
@@ -68,6 +68,11 @@ impl PersistedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "data")]
 pub enum EventPayload {
+    PipelineState { state: Box<crate::orchestrator::PipelineState> },
+    AssistantMessage { message: crate::provider::ChatMessage, model: String },
+    AssistantPartial { content: String, model: String, reason: Option<crate::provider::CompletionReason> },
+    RunCheckpoint { checkpoint: Box<crate::agent::lifecycle::RunCheckpoint> },
+    RunStatus { run_id: String, status: crate::agent::lifecycle::RunStatus },
     /// Initial session metadata recorded at session creation
     SessionMetadata {
         workspace_path: String,
@@ -118,7 +123,7 @@ pub enum EventPayload {
         stage_index: usize,
         stage_name: String,
         model: String,
-        allowed_tools: Vec<String>,
+        allowed_tools: Option<Vec<String>>,
     },
     /// Multi-stage pipeline stage finished with deliverable
     PipelineStageComplete {

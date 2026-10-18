@@ -21,7 +21,6 @@ import {
 } from './types';
 import {
   getAllServiceStates,
-  saveServiceConfig,
   disconnectService,
   subscribeIntegrations,
 } from './integrationStore';
@@ -67,21 +66,13 @@ const PLUGIN_CATEGORIES: CategorySection[] = [
   },
 ];
 
-export const IntegrationsView: React.FC = () => {
+export const IntegrationsView: React.FC<{workspaceRoot?:string}> = ({workspaceRoot}) => {
   const [states, setStates] = useState(getAllServiceStates());
   const [activeTab, setActiveTab] = useState<'plugins' | 'skills'>('plugins');
   const [query, setQuery] = useState('');
   const [catalogFilter, setCatalogFilter] = useState<'browse' | 'saved'>('browse');
   const [selectedServiceId, setSelectedServiceId] = useState<ServiceId | null>(null);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
-  const [creationModalType, setCreationModalType] = useState<'plugin' | 'mcpm' | null>(null);
-
-
-  // Custom creation form state
-  const [customName, setCustomName] = useState('');
-  const [customDesc, setCustomDesc] = useState('');
-  const [customCommand, setCustomCommand] = useState('');
-
   const addMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,26 +109,10 @@ export const IntegrationsView: React.FC = () => {
 
   // Installed plugins list
   const installedPlugins = useMemo(() => {
-    return allPlugins.filter((p) => states[p.id]?.isConnected);
-  }, [allPlugins, states]);
+    return Object.values(SERVICE_METADATA).filter((p) => states[p.id]?.isConnected);
+  }, [states]);
 
-  const handleAddPlugin = (service: ServiceMetadata) => {
-    if (service.requiresKey === false) {
-      // Zero-config: 1-click install
-      saveServiceConfig(service.id, { isConnected: true });
-      return;
-    }
-    // Requires credentials: open modal
-    setSelectedServiceId(service.id);
-  };
-
-  const handleCreateCustom = () => {
-    if (!customName.trim()) return;
-    setCreationModalType(null);
-    setCustomName('');
-    setCustomDesc('');
-    setCustomCommand('');
-  };
+  const handleAddPlugin = (service: ServiceMetadata) => { setSelectedServiceId(service.id); };
 
   return (
     <div
@@ -163,7 +138,7 @@ export const IntegrationsView: React.FC = () => {
 
           {/* RIGHT ACTIONS: SETTINGS + ADD MENU */}
           {activeTab === 'skills' ? (
-            <button disabled title="Skill import requires the skill-loading backend" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] text-xs font-medium opacity-40 cursor-not-allowed"><Plus size={14} /> Import skill</button>
+            <button aria-disabled="true" data-ui-only="true" title="Skill import requires the skill-loading backend" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--bg-active)] text-xs font-medium opacity-40 cursor-not-allowed"><Plus size={14} /> Import skill</button>
           ) : <div className="flex items-center gap-2 relative" ref={addMenuRef}>
             {/* ADD MENU BUTTON */}
             <button
@@ -180,23 +155,12 @@ export const IntegrationsView: React.FC = () => {
                 <button
                   onClick={() => {
                     setIsAddMenuOpen(false);
-                    setCreationModalType('plugin');
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition-colors flex items-center gap-2.5"
-                >
-                  <Blocks className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                  <span>Create Plugin</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setIsAddMenuOpen(false);
-                    setCreationModalType('mcpm');
+                    setSelectedServiceId('mcp');
                   }}
                   className="w-full text-left px-3 py-2 rounded-lg text-xs text-[var(--text-main)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] transition-colors flex items-center gap-2.5"
                 >
                   <McpLogo size={14} className="text-[var(--text-muted)]" />
-                  <span>Create MCP</span>
+                  <span>Connect MCP server</span>
                 </button>
               </div>
             )}
@@ -287,8 +251,8 @@ export const IntegrationsView: React.FC = () => {
           </div>
         ) : (
           <div className="pb-6">
-            {catalogFilter === 'saved' ? <div className="py-16 text-center"><FolderOpen size={28} strokeWidth={1.3} className="mx-auto mb-4 text-[var(--text-muted)]" /><h2 className="text-sm font-medium">Your installed skills</h2><p className="text-xs text-[var(--text-muted)] mt-2">Local discovery is not connected yet.</p></div> : <>
-              <p className="text-xs text-[var(--text-muted)] mb-5">Source references from Anthropic · Import is not connected yet.</p>
+            {catalogFilter === 'saved' ? <div className="py-16 text-center"><FolderOpen size={28} strokeWidth={1.3} className="mx-auto mb-4 text-[var(--text-muted)]" /><h2 className="text-sm font-medium">Your installed skills</h2><p className="text-xs text-[var(--text-muted)] mt-2">No installed skills.</p></div> : <>
+              <p className="text-xs text-[var(--text-muted)] mb-5">Source references from Anthropic</p>
               <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]">
                 {[
                   {icon: FileText, id: 'docx', name: 'Word documents', description: 'Create and edit Word documents.'},
@@ -296,7 +260,7 @@ export const IntegrationsView: React.FC = () => {
                   {icon: Presentation, id: 'pptx', name: 'Presentations', description: 'Create and edit slide decks.'},
                   {icon: FileSpreadsheet, id: 'xlsx', name: 'Spreadsheets', description: 'Work with spreadsheets, formulas, and data.'},
                 ].filter(skill => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map(skill => <div key={skill.id} className="rounded-2xl border border-[var(--border-subtle)] p-4 hover:bg-[var(--bg-surface)] transition-colors">
-                  <div className="flex items-center justify-between mb-4"><skill.icon size={22} strokeWidth={1.5} /><button disabled title="Requires the skill-loading backend" className="text-xs text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 opacity-40 cursor-not-allowed">Import</button></div>
+                  <div className="flex items-center justify-between mb-4"><skill.icon size={22} strokeWidth={1.5} /><button aria-disabled="true" data-ui-only="true" title="Requires the skill-loading backend" className="text-xs text-[var(--text-muted)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1 opacity-40 cursor-not-allowed">Import</button></div>
                   <h2 className="text-sm font-medium">{skill.name}</h2><p className="text-xs text-[var(--text-muted)] leading-5 mt-1 mb-4">{skill.description}</p>
                   <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)]"><span>Anthropic</span><a className="inline-flex items-center gap-1 hover:text-[var(--text-main)]" href={`https://github.com/anthropics/skills/blob/main/skills/${skill.id}/SKILL.md`} target="_blank" rel="noreferrer">View instructions<ExternalLink size={12} /></a></div>
                 </div>)}
@@ -310,7 +274,7 @@ export const IntegrationsView: React.FC = () => {
 
       {/* 2. RIGHT SIDE PANEL: INTEGRATIONS, PLUGINS/SKILLS (WITH LOGOS), AND INSTALLED LIST (NO SURROUNDING BOXES, NO DIVIDER LINE) */}
       <div
-        className="integrations-navigation w-52 border-l p-4 flex flex-col gap-4 shrink-0 overflow-y-auto min-h-0"
+        className="integrations-navigation w-52 p-4 flex flex-col gap-4 shrink-0 overflow-y-auto min-h-0"
         style={{
           backgroundColor: 'var(--bg-panel)',
           borderColor: 'var(--border-subtle)',
@@ -364,7 +328,7 @@ export const IntegrationsView: React.FC = () => {
         {/* INSTALLED SECTION (NO LINE ABOVE IT) */}
         <details className="integrations-installed min-w-0">
           <summary className="flex items-center justify-between cursor-pointer gap-3 py-1">
-            <span className="text-xs font-semibold text-[var(--text-main)] tracking-tight">{activeTab === 'plugins' ? 'Installed' : 'Local skills'}</span>
+            <span className="text-xs font-semibold text-[var(--text-main)] tracking-tight">{activeTab === 'plugins' ? 'Connected' : 'Local skills'}</span>
             <span className="text-[10px] font-mono text-[var(--text-faint)]">
               {activeTab === 'plugins' ? installedPlugins.length : '—'}
             </span>
@@ -374,7 +338,7 @@ export const IntegrationsView: React.FC = () => {
           <div className="flex flex-col gap-1">
             {activeTab === 'plugins' ? (
               installedPlugins.length === 0 ? (
-                <span className="text-xs text-[var(--text-faint)] py-1 px-1">No plugins installed yet</span>
+                <span className="text-xs text-[var(--text-faint)] py-1 px-1">No connections yet</span>
               ) : (
                 installedPlugins.map((plugin) => (
                   <div
@@ -423,90 +387,9 @@ export const IntegrationsView: React.FC = () => {
 
       </div>
 
-      {selectedServiceId && <div className="absolute inset-0 z-40 bg-black/30 flex justify-end" onClick={() => setSelectedServiceId(null)}><div role="dialog" aria-modal="true" aria-label="Integration details" className="w-full max-w-lg h-full overflow-y-auto bg-[var(--bg-panel)] border-l border-[var(--border-subtle)] p-6 shadow-2xl" onClick={event => event.stopPropagation()}><PluginDetailCanvas key={selectedServiceId} serviceId={selectedServiceId} onBack={() => setSelectedServiceId(null)} /></div></div>}
+      {selectedServiceId && <div className="absolute inset-0 z-40 bg-black/30 flex justify-end" onClick={() => setSelectedServiceId(null)}><div role="dialog" aria-modal="true" aria-label="Integration details" className="w-full max-w-lg h-full overflow-y-auto bg-[var(--bg-panel)] p-6 shadow-2xl" onClick={event => event.stopPropagation()}><PluginDetailCanvas workspaceRoot={workspaceRoot} key={selectedServiceId} serviceId={selectedServiceId} onBack={() => setSelectedServiceId(null)} /></div></div>}
 
-      {/* CREATE PLUGIN / CREATE MCP MODAL */}
-      {creationModalType && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md bg-[#121316] border border-white/[0.1] rounded-2xl shadow-2xl p-6 flex flex-col gap-4 font-sans select-none">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2">
-                {creationModalType === 'plugin' ? (
-                  <Blocks className="w-4 h-4 text-[var(--text-muted)]" />
-                ) : (
-                  <McpLogo size={16} className="text-[var(--text-muted)]" />
-                )}
-                <h3 className="text-sm font-semibold text-[var(--text-main)]">
-                  {creationModalType === 'plugin' ? 'Create Custom Plugin' : 'Create MCP Server'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setCreationModalType(null)}
-                className="text-[var(--text-faint)] hover:text-[var(--text-main)] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                  Name
-                </label>
-                <input
-                  type="text"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder={creationModalType === 'plugin' ? 'my-custom-plugin' : 'my-mcp-server'}
-                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  value={customDesc}
-                  onChange={(e) => setCustomDesc(e.target.value)}
-                  placeholder="Short description of capabilities"
-                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-[var(--text-muted)] mb-1">
-                  Command or Entrypoint
-                </label>
-                <input
-                  type="text"
-                  value={customCommand}
-                  onChange={(e) => setCustomCommand(e.target.value)}
-                  placeholder="npx -y @my-org/mcp-server"
-                  className="w-full h-8 px-3 rounded-lg bg-[var(--bg-surface)] border border-white/[0.08] focus:border-white/25 text-xs text-[var(--text-main)] font-mono outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
-              <button
-                onClick={() => setCreationModalType(null)}
-                className="px-3 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--text-main)]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateCustom}
-                disabled={!customName.trim()}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-black hover:bg-white/90 disabled:opacity-40 transition-all"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

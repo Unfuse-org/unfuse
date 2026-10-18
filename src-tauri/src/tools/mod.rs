@@ -1,19 +1,24 @@
 pub mod bash;
-pub mod file_ops;
+pub mod read;
+pub mod write;
+pub mod edit;
+mod mutation;
 pub mod guardrails;
+pub mod search;
+pub mod web;
 
 use std::path::Path;
 use serde_json::{json, Value};
 
-/// Generates the standard JSON schemas for the 4 core developer tools.
+/// Tool schemas supplied to the agent for this workspace.
 /// These schemas are sent to Ollama / OpenAI-compatible models during function calling.
 pub fn get_tool_definitions() -> Vec<Value> {
-    vec![
+    let mut definitions = vec![
         json!({
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a file within the workspace.",
+                "description": "Read UTF-8 text with 1-based line numbers. Output is bounded; follow continuation offsets. Read existing files in this session before editing or overwriting. Binary files and media are unsupported by this text tool.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -23,11 +28,11 @@ pub fn get_tool_definitions() -> Vec<Value> {
                         },
                         "offset": {
                             "type": "integer",
-                            "description": "Optional 1-indexed start line number"
+                            "description": "Optional 1-indexed start line number", "minimum": 1
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "Optional maximum number of lines to read"
+                            "description": "Maximum lines to read (default 2000)", "minimum": 1, "maximum": 2000
                         }
                     },
                     "required": ["path"]
@@ -38,7 +43,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "Create a new file or completely overwrite an existing file with new content. Parent directories will be created automatically.",
+                "description": "Create a file or replace its entire UTF-8 contents (10 MiB maximum). Read an existing file first in this session; stale replacements are rejected. Missing parent directories are created. Use edit_file for partial changes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -74,9 +79,17 @@ pub fn get_tool_definitions() -> Vec<Value> {
                         "new_text": {
                             "type": "string",
                             "description": "The new replacement text"
+                        },
+                        "edits": {
+                            "type": "array", "minItems": 1, "maxItems": 100,
+                            "description": "Multiple disjoint replacements against the same original file. Use instead of old_text/new_text.",
+                            "items": { "type": "object", "additionalProperties": false,
+                                "properties": { "old_text": { "type": "string", "minLength": 1 }, "new_text": { "type": "string" } },
+                                "required": ["old_text", "new_text"] }
                         }
                     },
-                    "required": ["path", "old_text", "new_text"]
+                    "required": ["path"],
+                    "oneOf": [{"required": ["edits"], "not": {"anyOf": [{"required": ["old_text"]}, {"required": ["new_text"]}]}}, {"required": ["old_text", "new_text"], "not": {"required": ["edits"]}}]
                 }
             }
         }),
@@ -84,7 +97,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "bash",
-                "description": "Execute a shell command within the workspace directory.",
+                "description": "Run a foreground sh command through SRT. Network is denied unless allowed_domains are explicitly approved; use dedicated web tools for browsing. Output is bounded with a retained log for large results; nonzero exits are errors.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -92,107 +105,22 @@ pub fn get_tool_definitions() -> Vec<Value> {
                             "type": "string",
                             "description": "Shell command to run (e.g. 'cargo test', 'npm install', 'git status')"
                         },
+                        "allowed_domains": {"type":"array","items":{"type":"string"},"maxItems":32,"description":"Network hostnames needed by this command; requires approval. Defaults to no network."},
+                        "workdir": { "type": "string", "description": "Working directory within the workspace; defaults to workspace root" },
                         "timeout_secs": {
                             "type": "integer",
-                            "description": "Optional maximum seconds before timing out (defaults to 60, hard capped at 300)"
+                            "description": "Maximum seconds before timing out (default 120)", "minimum": 1, "maximum": 1800
                         }
                     },
                     "required": ["command"]
                 }
             }
         }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "Search the web for real-time information, technical docs, or news using the best available provider (Tavily, Brave, etc.).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query to execute"
-                        },
-                        "provider": {
-                            "type": "string",
-                            "description": "Optional provider override (e.g. 'tavily', 'brave', 'exa'). If omitted, the user's default is used."
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "web_extract",
-                "description": "Extract full-page content as clean Markdown from a specific URL using Firecrawl.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL of the page to scrape"
-                        }
-                    },
-                    "required": ["url"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "knowledge_search",
-                "description": "Search and retrieve internal knowledge base pages (e.g. from Notion).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "action": {
-                            "type": "string",
-                            "enum": ["read", "write"],
-                            "description": "Whether to read a page or append content to one."
-                        },
-                        "page_id": {
-                            "type": "string",
-                            "description": "The ID of the page to interact with"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "Content to append (required if action is 'write')"
-                        }
-                    },
-                    "required": ["action", "page_id"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "dev_ops",
-                "description": "Manage external development tools (GitHub, Linear, Sentry, Datadog). Use this for issue triaging, PR management, or checking metrics.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "service": {
-                            "type": "string",
-                            "enum": ["github", "linear", "sentry", "datadog"],
-                            "description": "The service to interact with"
-                        },
-                        "action": {
-                            "type": "string",
-                            "enum": ["read", "write"],
-                            "description": "Whether to fetch data or perform a modification"
-                        },
-                        "params": {
-                            "type": "object",
-                            "description": "Service-specific parameters (e.g. { 'endpoint': '/repos/owner/repo/issues' } for GitHub read, or { 'query': '...' } for Datadog)"
-                        }
-                    },
-                    "required": ["service", "action", "params"]
-                }
-            }
-        })
-    ]
+
+    ];
+    definitions.extend(search::definitions());
+    definitions.extend(web::definitions());
+    definitions
 }
 
 /// Canonicalizes tool aliases to their primary definition name.
@@ -202,10 +130,6 @@ pub fn canonical_tool_name(name: &str) -> &str {
         "write" | "write_file" => "write_file",
         "edit" | "edit_file" => "edit_file",
         "bash" | "execute_bash" => "bash",
-        "search" | "web_search" => "web_search",
-        "extract" | "web_extract" => "web_extract",
-        "knowledge" | "knowledge_search" => "knowledge_search",
-        "ops" | "dev_ops" => "dev_ops",
         other => other,
     }
 }
@@ -251,23 +175,13 @@ pub enum ToolActionType {
 pub fn get_tool_action_type(tool_name: &str, arguments_json: &str) -> (ToolActionType, &'static str) {
     let canon = canonical_tool_name(tool_name);
     match canon {
-        "read_file" => (ToolActionType::ReadOnly, "read"),
-        "web_search" => (ToolActionType::ReadOnly, "read"),
-        "web_extract" => (ToolActionType::ReadOnly, "read"),
+        "read_file" | "read_pipeline_record" | "glob" | "grep" => (ToolActionType::ReadOnly, "read"),
         "write_file" => (ToolActionType::WriteFile, "write"),
         "edit_file" => (ToolActionType::EditFile, "edit"),
+        "bash" if serde_json::from_str::<Value>(arguments_json).ok().is_some_and(|args| args["allowed_domains"].as_array().is_some_and(|d| !d.is_empty())) => (ToolActionType::MutateExternal, "bash"),
         "bash" => (ToolActionType::ExecuteBash, "bash"),
-        "knowledge_search" | "dev_ops" => {
-            if let Ok(val) = serde_json::from_str::<Value>(arguments_json) {
-                if val.get("action").and_then(|a| a.as_str()) == Some("write") {
-                    (ToolActionType::MutateExternal, "write")
-                } else {
-                    (ToolActionType::ReadOnly, "read")
-                }
-            } else {
-                (ToolActionType::MutateExternal, "write")
-            }
-        }
+        "web_search" | "web_fetch" => (ToolActionType::MutateExternal, "web"),
+        name if name.starts_with("mcp__") => (ToolActionType::MutateExternal, "external"),
         _ => (ToolActionType::MutateExternal, "unknown"),
     }
 }
@@ -305,19 +219,41 @@ pub fn execute_tool_with_context<F>(
 where
     F: FnOnce(u32),
 {
+    execute_tool_with_context_and_output(workspace_root, session_id, tool_name, arguments_json, on_pid, None)
+}
+
+pub fn execute_tool_with_context_and_output<F>(
+    workspace_root: &Path,
+    session_id: Option<&str>,
+    tool_name: &str,
+    arguments_json: &str,
+    on_pid: Option<F>,
+    on_output: Option<&mut dyn FnMut(&str)>,
+) -> Result<String, String>
+where F: FnOnce(u32),
+{
     let args: Value = serde_json::from_str(arguments_json)
         .map_err(|e| format!("Invalid JSON arguments for tool '{}': {}", tool_name, e))?;
 
     let canon = canonical_tool_name(tool_name);
+    validate_core_arguments(canon, &args)?;
+    let cancelled = session_id.map(|id| crate::agent::get_or_create_session(id).lock().unwrap().cancelled.clone());
+    if cancelled.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst)) { return Err("Tool execution cancelled".into()); }
     match canon {
+        "glob" | "grep" => search::execute(workspace_root, canon, &args, cancelled.as_deref()),
+        "web_search" | "web_fetch" => web::execute(canon, &args, cancelled.unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)))),
         "read_file" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'path'".to_string())?;
-            let offset = args["offset"].as_u64().map(|v| v as usize);
-            let limit = args["limit"].as_u64().map(|v| v as usize);
+            let integer = |name: &str| -> Result<Option<usize>, String> {
+                args.get(name).map(|value| value.as_u64().and_then(|v| usize::try_from(v).ok())
+                    .ok_or_else(|| format!("{name} must be a positive integer"))).transpose()
+            };
+            let offset = integer("offset")?;
+            let limit = integer("limit")?;
 
-            file_ops::read_file(workspace_root, path, offset, limit)
+            read::read_file(workspace_root, session_id.unwrap_or("direct"), path, offset, limit, cancelled.as_deref())
         }
         "write_file" => {
             let path = args["path"]
@@ -327,12 +263,15 @@ where
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'content'".to_string())?;
 
-            file_ops::write_file(workspace_root, path, content)
+            write::write_file(workspace_root, session_id.unwrap_or("direct"), path, content, cancelled.as_deref())
         }
         "edit_file" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'path'".to_string())?;
+            let replacements = if let Some(edits) = args.get("edits") {
+                serde_json::from_value::<Vec<edit::Replacement>>(edits.clone()).map_err(|e| format!("Invalid edits: {e}"))?
+            } else {
             let old_text = args["old_text"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'old_text'".to_string())?;
@@ -340,68 +279,44 @@ where
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'new_text'".to_string())?;
 
-            file_ops::edit_file(workspace_root, path, old_text, new_text)
+                vec![edit::Replacement { old_text: old_text.into(), new_text: new_text.into() }]
+            };
+            edit::edit_file(workspace_root, session_id.unwrap_or("direct"), path, &replacements, cancelled.as_deref())
         }
         "bash" => {
             let command = args["command"]
                 .as_str()
                 .ok_or_else(|| "Missing required parameter 'command'".to_string())?;
-            let timeout = args["timeout_secs"].as_u64();
+            let timeout = args.get("timeout_secs").map(|value| value.as_u64().ok_or("timeout_secs must be an integer")).transpose()?;
 
-            let res = bash::execute_bash_with_pid_callback(workspace_root, command, timeout, on_pid)?;
-            if res.timed_out {
+            let res = bash::execute_bash_with_options(workspace_root, args["workdir"].as_str(), command, timeout, &serde_json::from_value::<Vec<String>>(args.get("allowed_domains").cloned().unwrap_or_else(|| json!([]))).map_err(|_| "allowed_domains must be a string array")?, on_pid, on_output)?;
+            if res.timed_out || res.exit_code != Some(0) {
                 Err(res.output)
             } else {
                 Ok(res.output)
             }
         }
-        "web_search" => {
-            let provider_id = args["provider"].as_str().unwrap_or("tavily").to_string();
+        "read_pipeline_record" => crate::orchestrator::read_record(workspace_root,session_id.ok_or("Session ID is required")?,&args),
+        mcp_tool if mcp_tool.starts_with("mcp__") => {
+            let parts: Vec<&str> = mcp_tool.splitn(3, "__").collect();
+            if parts.len() != 3 {
+                return Err(format!("Malformed MCP tool call format: '{}'", mcp_tool));
+            }
+            let server_id = parts[1];
+            let actual_tool_name = parts[2];
+
             let active_sess_id = session_id.unwrap_or("current_turn");
             let session = crate::agent::get_or_create_session(active_sess_id);
-            let guard = session.lock().unwrap();
-            let config = guard.integrations.get(&provider_id)
-                .ok_or_else(|| format!("Search provider '{}' not configured for this session", provider_id))?;
+            let server_config = {
+                let guard = session.lock().unwrap();
+                guard.mcp_servers.iter().find(|s| s.id == server_id).cloned()
+            };
 
-            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(&provider_id, args, config)?;
-            Ok(res.to_agent_string())
-        }
-        "web_extract" => {
-            let active_sess_id = session_id.unwrap_or("current_turn");
-            let config = {
-                let session = crate::agent::get_or_create_session(active_sess_id);
-                let guard = session.lock().unwrap();
-                guard.integrations.get("firecrawl")
-                    .cloned()
-                    .ok_or_else(|| "Firecrawl integration not configured for this session".to_string())?
-            };
-            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("firecrawl", args, &config)?;
-            Ok(res.to_agent_string())
-        }
-        "knowledge_search" => {
-            let active_sess_id = session_id.unwrap_or("current_turn");
-            let config = {
-                let session = crate::agent::get_or_create_session(active_sess_id);
-                let guard = session.lock().unwrap();
-                guard.integrations.get("notion")
-                    .cloned()
-                    .ok_or_else(|| "Notion integration not configured for this session".to_string())?
-            };
-            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool("notion", args, &config)?;
-            Ok(res.to_agent_string())
-        }
-        "dev_ops" => {
-            let service = args["service"].as_str().ok_or("Missing 'service' parameter")?;
-            let active_sess_id = session_id.unwrap_or("current_turn");
-            let config = {
-                let session = crate::agent::get_or_create_session(active_sess_id);
-                let guard = session.lock().unwrap();
-                guard.integrations.get(service)
-                    .cloned()
-                    .ok_or_else(|| format!("Service '{}' not configured for this session", service))?
-            };
-            let res = crate::integrations::INTEGRATION_MANAGER.execute_tool(service, args["params"].clone(), &config)?;
-            Ok(res.to_agent_string())
+            let config = server_config.ok_or_else(|| {
+                format!("MCP server '{}' not configured for this session", server_id)
+            })?;
+
+            crate::mcp::call(&config, workspace_root.to_str().ok_or("Workspace path must be UTF-8")?, actual_tool_name, args, cancelled.unwrap_or_else(|| std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false))))
         }
         unknown => Err(format!("Unrecognized tool: '{}'", unknown)),
     }
@@ -470,16 +385,56 @@ mod tests {
     #[test]
     fn test_get_tool_action_type() {
         assert_eq!(get_tool_action_type("read_file", "{}"), (ToolActionType::ReadOnly, "read"));
-        assert_eq!(get_tool_action_type("web_search", "{}"), (ToolActionType::ReadOnly, "read"));
-        assert_eq!(get_tool_action_type("web_extract", "{}"), (ToolActionType::ReadOnly, "read"));
         assert_eq!(get_tool_action_type("write_file", "{}"), (ToolActionType::WriteFile, "write"));
         assert_eq!(get_tool_action_type("edit_file", "{}"), (ToolActionType::EditFile, "edit"));
         assert_eq!(get_tool_action_type("bash", "{}"), (ToolActionType::ExecuteBash, "bash"));
+        assert_eq!(get_tool_action_type("bash", r#"{"allowed_domains":["example.com"]}"#), (ToolActionType::MutateExternal, "bash"));
 
-        // External integrations: read vs write action
-        assert_eq!(get_tool_action_type("knowledge_search", r#"{"action":"read"}"#), (ToolActionType::ReadOnly, "read"));
-        assert_eq!(get_tool_action_type("knowledge_search", r#"{"action":"write"}"#), (ToolActionType::MutateExternal, "write"));
-        assert_eq!(get_tool_action_type("dev_ops", r#"{"action":"read"}"#), (ToolActionType::ReadOnly, "read"));
-        assert_eq!(get_tool_action_type("dev_ops", r#"{"action":"write"}"#), (ToolActionType::MutateExternal, "write"));
     }
 }
+
+/// Validate core tool inputs before approval and again before dispatch.
+pub fn validate_core_arguments(name: &str, args: &Value) -> Result<(), String> {
+    let name = canonical_tool_name(name);
+    if matches!(name, "glob" | "grep") { return search::validate(name, args); }
+    if matches!(name, "web_search" | "web_fetch") { return web::validate(name, args); }
+    if !matches!(name, "read_file" | "write_file" | "edit_file" | "bash") { return Ok(()); }
+    let object = args.as_object().ok_or("Tool arguments must be an object")?;
+    let allowed: &[&str] = match name {
+        "read_file" => &["path", "offset", "limit"],
+        "write_file" => &["path", "content"],
+        "edit_file" => &["path", "old_text", "new_text", "edits"],
+        _ => &["command", "timeout_secs", "workdir", "allowed_domains"],
+    };
+    if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) { return Err(format!("Unsupported {name} parameter: {key}")); }
+    let required = if name == "bash" { "command" } else { "path" };
+    if args[required].as_str().is_none_or(|v| v.trim().is_empty()) { return Err(format!("{required} must be a nonempty string")); }
+    for (key, max) in [("offset", usize::MAX as u64), ("limit", 2000), ("timeout_secs", 1800)] {
+        if let Some(value) = args.get(key) {
+            if value.as_u64().is_none_or(|v| v == 0 || v > max) { return Err(format!("{key} must be an integer between 1 and {max}")); }
+        }
+    }
+    if let Some(domains) = args.get("allowed_domains") {
+        let domains: Vec<String> = serde_json::from_value(domains.clone()).map_err(|_| "allowed_domains must be a string array")?;
+        crate::sandbox::validate_domains(&domains)?;
+    }
+    if let Some(workdir) = args.get("workdir") {
+        if workdir.as_str().is_none_or(|s| s.trim().is_empty()) { return Err("workdir must be a nonempty string".into()); }
+    }
+    if name == "write_file" && args["content"].as_str().is_none() { return Err("content must be a string".into()); }
+    if name == "edit_file" {
+        if let Some(edits) = args.get("edits") {
+            if args.get("old_text").is_some() || args.get("new_text").is_some() { return Err("Use edits OR old_text/new_text, not both".into()); }
+            let edits: Vec<edit::Replacement> = serde_json::from_value(edits.clone()).map_err(|e| e.to_string())?;
+            if edits.is_empty() || edits.len() > 100 || edits.iter().any(|e| e.old_text.is_empty()) { return Err("Provide 1..100 nonempty replacements".into()); }
+        } else if args["old_text"].as_str().is_none_or(str::is_empty) || args["new_text"].as_str().is_none() {
+            return Err("old_text must be nonempty and new_text must be a string".into());
+        }
+    }
+    Ok(())
+}
+
+pub fn forget_file_observations(session_id: &str) { mutation::forget_session(session_id); }
+
+#[cfg(test)]
+mod core_tests;

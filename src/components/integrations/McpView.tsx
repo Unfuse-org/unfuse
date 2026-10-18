@@ -1,550 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Plus,
-  Trash2,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-} from 'lucide-react';
-import { McpServerConfig, TestResult } from './types';
-import {
-  getMcpServers,
-  saveMcpServer,
-  deleteMcpServer,
-  toggleMcpServer,
-  testMcpServerConnection,
-  subscribeIntegrations,
-} from './integrationStore';
+import { useState } from 'react';
+import { Plus, Server, Trash2, Unplug, Pencil } from 'lucide-react';
+import { McpLogo } from './IntegrationLogos';
+import type { McpServerConfig } from './types';
+import { getCustomMcpServers, saveCustomMcpServer, connectCustomMcpServer, disconnectCustomMcpServer } from './integrationStore';
 
-export const McpView: React.FC = () => {
-  const [servers, setServers] = useState<McpServerConfig[]>(getMcpServers());
-  const [selectedId, setSelectedId] = useState<string>(servers[0]?.id || '');
-  const [isAdding, setIsAdding] = useState(false);
+const field = 'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-app)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]';
+function stringMap(text:string):Record<string,string>{
+  const value:unknown=JSON.parse(text);
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.values(value).some(item=>typeof item!=='string'))throw new Error('Environment and headers must contain string values.');
+  return value as Record<string,string>;
+}
 
-  // Form state for creating/editing server
-  const [formName, setFormName] = useState('');
-  const [formTransport, setFormTransport] = useState<'stdio' | 'sse'>('stdio');
-  const [formCommand, setFormCommand] = useState('npx');
-  const [formArgs, setFormArgs] = useState('-y @modelcontextprotocol/server-filesystem ./');
-  const [formUrl, setFormUrl] = useState('http://localhost:8080/sse');
-  const [formCwd, setFormCwd] = useState('');
-  const [formAutoApprove, setFormAutoApprove] = useState('');
-  const [formTimeout, setFormTimeout] = useState('');
-  const [formHeaders, setFormHeaders] = useState('');
-  const [formEnv, setFormEnv] = useState('');
+export function McpView({workspaceRoot}:{workspaceRoot:string}) {
+  const [servers,setServers]=useState(getCustomMcpServers);
+  const [editing,setEditing]=useState<string|null>(null);
+  const [name,setName]=useState('');
+  const [transport,setTransport]=useState<McpServerConfig['transport']>('stdio');
+  const [command,setCommand]=useState('');
+  const [args,setArgs]=useState('[]');
+  const [cwd,setCwd]=useState(workspaceRoot);
+  const [domains,setDomains]=useState('[]');
+  const [environment,setEnvironment]=useState('{}');
+  const [url,setUrl]=useState('');
+  const [headers,setHeaders]=useState('{}');
+  const [busy,setBusy]=useState<string|null>(null);
+  const [error,setError]=useState('');
 
-  // Testing feedback
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<TestResult | null>(null);
-
-  useEffect(() => {
-    setServers(getMcpServers());
-    const unsub = subscribeIntegrations(() => {
-      setServers(getMcpServers());
-    });
-    return unsub;
-  }, []);
-
-  const selectedServer = servers.find((s) => s.id === selectedId) || servers[0];
-
-  useEffect(() => {
-    if (selectedServer && !isAdding) {
-      setFormName(selectedServer.name);
-      setFormTransport(selectedServer.transport === 'sse' ? 'sse' : 'stdio');
-      setFormCommand(selectedServer.command || 'npx');
-      setFormArgs(selectedServer.args?.join(' ') || '');
-      setFormUrl(selectedServer.url || '');
-      setFormCwd(selectedServer.cwd || '');
-      setFormAutoApprove(selectedServer.autoApprove?.join(', ') || '');
-      setFormTimeout(selectedServer.timeout ? String(selectedServer.timeout) : '');
-      setFormHeaders(
-        selectedServer.headers && Object.keys(selectedServer.headers).length > 0
-          ? JSON.stringify(selectedServer.headers, null, 2)
-          : ''
-      );
-      setFormEnv(
-        selectedServer.env && Object.keys(selectedServer.env).length > 0
-          ? JSON.stringify(selectedServer.env, null, 2)
-          : ''
-      );
-      setTestResult(null);
-    }
-  }, [selectedId, isAdding, servers]);
-
-  const handleStartAdd = () => {
-    setIsAdding(true);
-    setFormName('Custom MCP Server');
-    setFormTransport('stdio');
-    setFormCommand('npx');
-    setFormArgs('-y @modelcontextprotocol/server-fetch');
-    setFormUrl('');
-    setFormCwd('./');
-    setFormAutoApprove('');
-    setFormTimeout('60');
-    setFormHeaders('');
-    setFormEnv('');
-    setTestResult(null);
-  };
-
-  const handleSaveForm = async () => {
-    let parsedEnv: Record<string, string> = {};
-    if (formEnv.trim()) {
-      try {
-        parsedEnv = JSON.parse(formEnv);
-      } catch (err) {
-        setTestResult({
-          success: false,
-          message: 'Invalid JSON format for Environment Variables',
-          latencyMs: 0,
-        });
-        return;
-      }
-    }
-
-    let parsedHeaders: Record<string, string> = {};
-    if (formHeaders.trim()) {
-      try {
-        parsedHeaders = JSON.parse(formHeaders);
-      } catch (err) {
-        setTestResult({
-          success: false,
-          message: 'Invalid JSON format for HTTP Headers',
-          latencyMs: 0,
-        });
-        return;
-      }
-    }
-
-    const autoApproveList = formAutoApprove
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const parsedTimeout = formTimeout.trim() ? parseInt(formTimeout.trim(), 10) : undefined;
-
-    const newServer: McpServerConfig = {
-      id: isAdding ? `mcp-${Date.now().toString(36)}` : selectedServer.id,
-      name: formName.trim() || 'MCP Server',
-      transport: formTransport,
-      command: formTransport === 'stdio' ? formCommand.trim() : undefined,
-      args:
-        formTransport === 'stdio'
-          ? formArgs
-              .split(' ')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined,
-      url: formTransport === 'sse' ? formUrl.trim() : undefined,
-      headers: formTransport === 'sse' && Object.keys(parsedHeaders).length > 0 ? parsedHeaders : undefined,
-      cwd: formTransport === 'stdio' && formCwd.trim() ? formCwd.trim() : undefined,
-      autoApprove: autoApproveList.length > 0 ? autoApproveList : undefined,
-      timeout: Number.isFinite(parsedTimeout) ? parsedTimeout : undefined,
-      env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined,
-      enabled: isAdding ? true : selectedServer?.enabled ?? true,
-      toolsCount: selectedServer?.toolsCount ?? 0,
-      status: 'connected',
-    };
-
-    saveMcpServer(newServer);
-    setSelectedId(newServer.id);
-    setIsAdding(false);
-    setTestResult({
-      success: true,
-      message: 'Server configuration saved',
-      latencyMs: 0,
-    });
-  };
-
-  const handleDelete = (id: string) => {
-    deleteMcpServer(id);
-    const remaining = servers.filter((s) => s.id !== id);
-    if (remaining.length > 0) {
-      setSelectedId(remaining[0].id);
-    } else {
-      handleStartAdd();
-    }
-  };
-
-  const handleToggle = (id: string, current: boolean) => {
-    toggleMcpServer(id, !current);
-  };
-
-  const handleTestServer = async () => {
-    if (!selectedServer && !isAdding) return;
-    setIsTesting(true);
-    setTestResult(null);
+  function open(config?:McpServerConfig){
+    setEditing(config?.id??`custom-${crypto.randomUUID()}`);setName(config?.name??'');setTransport(config?.transport??'stdio');
+    setCommand(config?.command??'');setArgs(JSON.stringify(config?.args??[]));setCwd(config?.cwd??workspaceRoot);setDomains(JSON.stringify(config?.allowedDomains??[]));
+    setEnvironment(JSON.stringify(config?.env??{}));setUrl(config?.url??'');setHeaders(JSON.stringify(config?.headers??{}));setError('');
+  }
+  function save(event:React.FormEvent){
+    event.preventDefault();setError('');
     try {
-      let parsedEnv: Record<string, string> = {};
-      if (formEnv.trim()) {
-        try {
-          parsedEnv = JSON.parse(formEnv);
-        } catch {}
+      if(!editing||!name.trim())throw new Error('Name is required.');
+      const config:McpServerConfig={id:editing,name:name.trim(),transport,enabled:true};
+      if(transport==='stdio'){
+        const argv:unknown=JSON.parse(args), allowed:unknown=JSON.parse(domains);
+        if(!Array.isArray(argv)||argv.some(item=>typeof item!=='string'))throw new Error('Arguments must be a JSON array of strings.');
+        if(!Array.isArray(allowed)||allowed.some(item=>typeof item!=='string'))throw new Error('Allowed domains must be a JSON array of hostnames.');
+        if(!command.trim()||!cwd.trim())throw new Error('An installed executable and sandbox workspace are required.');
+        Object.assign(config,{command:command.trim(),args:argv,cwd:cwd.trim(),allowedDomains:allowed,env:stringMap(environment)});
+      }else{
+        const endpoint=new URL(url.trim());
+        if(!['https:','http:'].includes(endpoint.protocol))throw new Error('Use an HTTP(S) MCP endpoint.');
+        Object.assign(config,{url:endpoint.toString(),headers:stringMap(headers)});
       }
-
-      const mockConfig: McpServerConfig = {
-        id: selectedServer?.id || 'temp',
-        name: formName,
-        transport: formTransport,
-        command: formCommand,
-        args: formArgs.split(' ').filter(Boolean),
-        url: formUrl,
-        cwd: formCwd.trim() || undefined,
-        env: Object.keys(parsedEnv).length > 0 ? parsedEnv : undefined,
-        status: 'connected',
-        enabled: true,
-      };
-      const res = await testMcpServerConnection(mockConfig);
-      setTestResult(res);
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  const fullCommandPreview =
-    formTransport === 'stdio'
-      ? `${formCommand} ${formArgs}`.trim()
-      : formUrl || 'http://localhost:8080/sse';
-
-  return (
-    <div className="flex-1 flex min-h-0 overflow-hidden bg-[#18181b]">
-      {/* LEFT SIDEBAR: INSTALLED SERVERS LIST */}
-      <div className="w-44 border-r border-white/[0.06] bg-[#18181b] py-2.5 flex flex-col justify-between shrink-0">
-        <div className="overflow-y-auto popup-scroll flex-1">
-          <div className="flex items-center justify-between px-3 py-1 mb-1.5">
-            <span className="text-[10px] font-semibold text-white/40 uppercase tracking-wider">
-              Servers ({servers.length})
-            </span>
-            <button
-              type="button"
-              onClick={handleStartAdd}
-              className="flex items-center gap-1 text-[10.5px] text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] px-2 py-0.5 rounded-md border border-white/[0.06] transition-colors cursor-pointer"
-              title="Add MCP Server"
-            >
-              <Plus className="w-3 h-3" />
-              <span>Add</span>
-            </button>
-          </div>
-
-          {servers.map((srv) => {
-            const isSelected = !isAdding && selectedServer?.id === srv.id;
-            return (
-              <div
-                key={srv.id}
-                onClick={() => {
-                  setSelectedId(srv.id);
-                  setIsAdding(false);
-                }}
-                className={`w-full text-left pl-3 pr-2.5 py-2.5 flex items-center justify-between transition-all duration-150 cursor-pointer outline-none select-none relative ${
-                  isSelected
-                    ? 'border-l-2 border-white bg-white/[0.08] text-white shadow-xs'
-                    : 'border-l-2 border-transparent text-white/50 hover:text-white hover:bg-white/[0.03]'
-                }`}
-              >
-                <div className="flex flex-col min-w-0 flex-1 pl-0.5">
-                  <span className="truncate text-xs font-semibold text-white tracking-tight leading-snug">
-                    {srv.name}
-                  </span>
-                  <span className="text-[10px] font-mono text-white/40 truncate mt-0.5">
-                    {srv.transport === 'sse'
-                      ? srv.url || 'remote sse'
-                      : srv.command
-                        ? `${srv.command} ${srv.args?.[0] || ''}`.trim()
-                        : 'command'}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+      saveCustomMcpServer(config);setServers(getCustomMcpServers());setEditing(null);
+      setEnvironment('{}');setHeaders('{}');
+    }catch(failure){setError(failure instanceof SyntaxError?'Enter valid JSON in the configuration fields.':String(failure instanceof Error?failure.message:failure));}
+  }
+  async function connect(config:McpServerConfig){
+    setBusy(config.id);setError('');
+    try{const result=await connectCustomMcpServer(config);if(!result.success)setError(result.message);}catch(failure){setError(String(failure));}
+    finally{setServers(getCustomMcpServers());setBusy(null);}
+  }
+  async function disconnect(id:string,remove=false){
+    setError('');try{await disconnectCustomMcpServer(id,remove);setServers(getCustomMcpServers());}catch(failure){setError(String(failure));}
+  }
+  return <section className="h-full overflow-y-auto p-6 text-[var(--text-main)] bg-[var(--bg-app)]">
+    <div className="mx-auto max-w-3xl space-y-6">
+      <header className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><McpLogo size={28}/><h1 className="text-xl font-semibold">MCP servers</h1></div><button onClick={()=>open()} className="inline-flex items-center gap-2 rounded-lg bg-[var(--bg-active)] px-3 py-2 text-sm"><Plus size={16}/>Add server</button></header>
+      <p className="text-sm leading-6 text-[var(--text-muted)]">Connect local stdio or remote Streamable HTTP servers. Configurations and credentials stay in memory for this app session. Local servers run through SRT; tool calls require approval.</p>
+      {error&&<p role="alert" id="mcp-error" className="text-sm text-red-400 break-words">{error}</p>}
+      {editing&&<form onSubmit={save} aria-describedby={error?'mcp-error':undefined} className="space-y-4 rounded-xl bg-[var(--bg-panel)] p-5">
+        <h2 className="font-semibold">Server configuration</h2>
+        <label className="block space-y-1 text-sm"><span>Name</span><input autoFocus required value={name} onChange={event=>setName(event.target.value)} className={field}/></label>
+        <label className="block space-y-1 text-sm"><span>Transport</span><select value={transport} onChange={event=>setTransport(event.target.value as McpServerConfig['transport'])} className={field}><option value="stdio">Local command (stdio)</option><option value="streamable-http">Streamable HTTP</option></select></label>
+        {transport==='stdio'?<>
+          <label className="block space-y-1 text-sm"><span>Installed executable</span><input required value={command} onChange={event=>setCommand(event.target.value)} placeholder="Absolute executable path or command on PATH" className={field}/></label>
+          <label className="block space-y-1 text-sm"><span>Arguments (JSON array)</span><textarea value={args} onChange={event=>setArgs(event.target.value)} className={`${field} font-mono`}/></label>
+          <label className="block space-y-1 text-sm"><span>Sandbox workspace</span><input required value={cwd} onChange={event=>setCwd(event.target.value)} placeholder="Absolute project directory" className={field}/></label>
+          <label className="block space-y-1 text-sm"><span>Allowed network domains (JSON array)</span><textarea value={domains} onChange={event=>setDomains(event.target.value)} className={`${field} font-mono`}/></label>
+          <p className="text-xs text-[var(--text-muted)]">An empty domain list denies network access.</p>
+          <label className="block space-y-1 text-sm"><span>Environment (JSON object)</span><textarea value={environment} onChange={event=>setEnvironment(event.target.value)} className={`${field} font-mono`}/></label>
+        </>:<>
+          <label className="block space-y-1 text-sm"><span>MCP endpoint</span><input type="url" required value={url} onChange={event=>setUrl(event.target.value)} className={field}/></label>
+          <label className="block space-y-1 text-sm"><span>Request headers (JSON object)</span><textarea value={headers} onChange={event=>setHeaders(event.target.value)} className={`${field} font-mono`}/></label>
+        </>}
+        <div className="flex justify-end gap-2"><button type="button" onClick={()=>{setEditing(null);setEnvironment('{}');setHeaders('{}');}} className="rounded-lg px-3 py-2 text-sm hover:bg-[var(--bg-surface-hover)]">Cancel</button><button className="rounded-lg bg-[var(--bg-active)] px-3 py-2 text-sm">Save server</button></div>
+      </form>}
+      {servers.length?<ul className="divide-y divide-[var(--border-subtle)]">{servers.map(({config,result})=><li key={config.id} className="py-4">
+        <div className="flex items-center gap-3"><Server size={20} className="shrink-0 text-[var(--text-muted)]"/><div className="min-w-0 flex-1"><h2 className="truncate text-sm font-medium">{config.name}</h2><p className="truncate text-xs text-[var(--text-muted)]">{config.transport} · {config.transport==='stdio'?config.command:config.url}</p><p role="status" className="text-xs mt-1 text-[var(--text-muted)]">{busy===config.id?'Connecting…':result?.success?`Connected · ${result.toolsCount} tools`:'Not connected'}</p></div>
+          {result?.success?<button aria-label={`Disconnect ${config.name}`} onClick={()=>void disconnect(config.id)} className="p-2"><Unplug size={16}/></button>:<><button disabled={busy!==null} onClick={()=>void connect(config)} className="rounded-lg bg-[var(--bg-active)] px-3 py-2 text-xs disabled:opacity-40">Connect</button><button disabled={busy===config.id} aria-label={`Edit ${config.name}`} onClick={()=>open(config)} className="p-2 disabled:opacity-40"><Pencil size={16}/></button></>}
+          <button aria-label={`Remove ${config.name}`} onClick={()=>void disconnect(config.id,true)} className="p-2"><Trash2 size={16}/></button>
         </div>
-      </div>
-
-      {/* RIGHT PANEL: CLEAN PROFESSIONAL MCP CONFIGURATION FORM */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#18181b] popup-scroll flex flex-col justify-between">
-        <div className="space-y-3">
-            {/* LIVE COMMAND PREVIEW */}
-            <div className="rounded-xl border border-white/[0.06] bg-[#121214] px-3 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <code className="text-[11px] font-mono text-white/80 truncate">
-                  <span className="text-white/30 select-none mr-1.5">❯</span>
-                  {fullCommandPreview || '<empty>'}
-                </code>
-              </div>
-            </div>
-
-            {/* FORM INPUTS (BOLD WHITE LABELS, NO EXTRA SUBTEXT) */}
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-white mb-1.5">
-                    Server Identifier
-                  </label>
-                  <input
-                    type="text"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="e.g. filesystem, postgres, git"
-                    className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white text-[11.5px] outline-none transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-white mb-1.5">
-                    Transport Protocol
-                  </label>
-                  <div className="grid grid-cols-2 gap-1 p-0.5 bg-white/[0.02] border border-white/[0.06] rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => setFormTransport('stdio')}
-                      className={`h-7 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
-                        formTransport === 'stdio'
-                          ? 'bg-white/[0.1] text-white shadow-xs'
-                          : 'text-white/40 hover:text-white/70'
-                      }`}
-                    >
-                      stdio
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormTransport('sse')}
-                      className={`h-7 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
-                        formTransport === 'sse'
-                          ? 'bg-white/[0.1] text-white shadow-xs'
-                          : 'text-white/40 hover:text-white/70'
-                      }`}
-                    >
-                      SSE
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {formTransport === 'stdio' ? (
-                <>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Command
-                      </label>
-                      <input
-                        type="text"
-                        value={formCommand}
-                        onChange={(e) => setFormCommand(e.target.value)}
-                        placeholder="npx / uvx / node / python"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Arguments
-                      </label>
-                      <input
-                        type="text"
-                        value={formArgs}
-                        onChange={(e) => setFormArgs(e.target.value)}
-                        placeholder="-y @modelcontextprotocol/server-filesystem ./src"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2">
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Working Directory
-                      </label>
-                      <input
-                        type="text"
-                        value={formCwd}
-                        onChange={(e) => setFormCwd(e.target.value)}
-                        placeholder="./ or /Users/username/workspace"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Timeout
-                      </label>
-                      <input
-                        type="number"
-                        value={formTimeout}
-                        onChange={(e) => setFormTimeout(e.target.value)}
-                        placeholder="60"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-white mb-1.5">
-                      Auto-Approve Tools
-                    </label>
-                    <input
-                      type="text"
-                      value={formAutoApprove}
-                      onChange={(e) => setFormAutoApprove(e.target.value)}
-                      placeholder="read_file, list_dir, search_files"
-                      className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-white mb-1.5">
-                      Environment Variables
-                    </label>
-                    <textarea
-                      value={formEnv}
-                      onChange={(e) => setFormEnv(e.target.value)}
-                      placeholder={'{\n  "API_KEY": "xxx",\n  "WORKSPACE_PATH": "/Users/..."\n}'}
-                      rows={2.5}
-                      spellCheck={false}
-                      className="w-full p-2.5 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[10.5px] outline-none transition-all resize-none leading-relaxed"
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-white mb-1.5">
-                      SSE Endpoint URL
-                    </label>
-                    <input
-                      type="text"
-                      value={formUrl}
-                      onChange={(e) => setFormUrl(e.target.value)}
-                      placeholder="http://localhost:8080/sse or https://mcp.domain.com/events"
-                      className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Auto-Approve Tools
-                      </label>
-                      <input
-                        type="text"
-                        value={formAutoApprove}
-                        onChange={(e) => setFormAutoApprove(e.target.value)}
-                        placeholder="query, get_schema"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-white mb-1.5">
-                        Timeout
-                      </label>
-                      <input
-                        type="number"
-                        value={formTimeout}
-                        onChange={(e) => setFormTimeout(e.target.value)}
-                        placeholder="60"
-                        className="w-full h-8 px-3 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[11px] outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-white mb-1.5">
-                      HTTP Request Headers
-                    </label>
-                    <textarea
-                      value={formHeaders}
-                      onChange={(e) => setFormHeaders(e.target.value)}
-                      placeholder={'{\n  "Authorization": "Bearer token_xxx",\n  "X-Custom-Header": "value"\n}'}
-                      rows={2.5}
-                      spellCheck={false}
-                      className="w-full p-2.5 bg-white/[0.04] border border-white/[0.08] focus:border-white/25 rounded-lg text-white font-mono text-[10.5px] outline-none transition-all resize-none leading-relaxed"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* DIAGNOSTIC TEST RESULT */}
-            {testResult && (
-              <div
-                className={`p-2.5 rounded-xl border text-[11px] flex items-start gap-2.5 ${
-                  testResult.success
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-                    : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                }`}
-              >
-                {testResult.success ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium leading-tight">{testResult.message}</p>
-                  {testResult.latencyMs !== undefined && testResult.latencyMs > 0 && (
-                    <span className="text-[9.5px] font-mono text-white/40 block mt-0.5">
-                      Handshake Latency: {testResult.latencyMs}ms • JSON-RPC v2.0
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ACTION BUTTONS (NO DIVIDER LINE, ALIGNED AT EXACT SAME HEIGHT AS RAW JSON) */}
-          <div className="flex items-center justify-between pt-2">
-            <div>
-              {isAdding ? (
-                <button
-                  type="button"
-                  onClick={() => setIsAdding(false)}
-                  className="h-8 px-2 text-xs text-white/50 hover:text-white transition-colors cursor-pointer flex items-center"
-                >
-                  Cancel
-                </button>
-              ) : (
-                selectedServer && (
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(selectedServer.id)}
-                    className="h-8 px-2.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors font-medium cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
-                )
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {!isAdding && selectedServer && (
-                <button
-                  type="button"
-                  onClick={() => handleToggle(selectedServer.id, selectedServer.enabled ?? true)}
-                  className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs border flex items-center gap-1.5 ${
-                    selectedServer.enabled
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/20'
-                      : 'bg-zinc-800/80 text-zinc-400 border-white/[0.06] hover:text-white hover:bg-zinc-800'
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      selectedServer.enabled
-                        ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
-                        : 'bg-zinc-500'
-                    }`}
-                  />
-                  <span>{selectedServer.enabled ? 'Enabled' : 'Disabled'}</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSaveForm}
-                disabled={isTesting}
-                className="h-8 px-4 rounded-lg bg-white text-black hover:bg-white/90 active:scale-95 text-xs font-semibold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                Save Server
-              </button>
-            </div>
-          </div>
-        </div>
+        {result?.success&&<details className="mt-3 text-xs"><summary className="cursor-pointer">Discovered tools</summary><ul className="mt-2 space-y-2">{result.tools.map(tool=><li key={tool.name}><span className="font-mono">{tool.name}</span>{tool.description&&<p className="text-[var(--text-muted)] mt-1">{tool.description}</p>}</li>)}</ul></details>}
+      </li>)}</ul>:!editing&&<div className="py-14 text-center"><McpLogo size={40}/><h2 className="mt-4 font-medium">Your tools, your choice</h2><p className="mt-2 text-sm text-[var(--text-muted)]">Add a reviewed local executable or an MCP endpoint from its provider.</p><button onClick={()=>open()} className="mt-5 rounded-lg bg-[var(--bg-active)] px-4 py-2 text-sm">Add your first server</button></div>}
     </div>
-  );
-};
+  </section>;
+}

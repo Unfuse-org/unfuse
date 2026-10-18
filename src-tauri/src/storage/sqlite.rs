@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction};
-use sha2::{Digest, Sha256};
 
 use super::{compute_workspace_hash, now_epoch_ms, EventPayload, PersistedEvent, SessionSummary};
 
@@ -34,8 +33,6 @@ CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN
  SELECT RAISE(ABORT,'events are immutable'); END;
 CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN
  SELECT RAISE(ABORT,'events are immutable'); END;
-CREATE TABLE legacy_imports(source_key TEXT PRIMARY KEY NOT NULL, source_sha256 TEXT NOT NULL,
- session_id TEXT NOT NULL REFERENCES sessions(id), imported_at INTEGER NOT NULL);
 CREATE INDEX sessions_by_workspace ON sessions(workspace_id,updated_at DESC);
 "#;
 
@@ -50,15 +47,42 @@ fn error(e: impl std::fmt::Display) -> String {
     format!("SQLite storage: {e}")
 }
 
+fn private_directory(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(error)?;
+    }
+    Ok(())
+}
+
+fn private_file(path: &Path, create_new: bool) -> Result<File, String> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true);
+    if create_new {
+        options.create_new(true);
+    } else {
+        options.create(true).truncate(false);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path).map_err(error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(error)?;
+    }
+    Ok(file)
+}
+
 pub fn lock_runtime(base_dir: &Path) -> Result<File, String> {
-    fs::create_dir_all(base_dir).map_err(error)?;
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(base_dir.join("runtime.lock"))
-        .map_err(error)?;
+    private_directory(base_dir)?;
+    let file = private_file(&base_dir.join("runtime.lock"), false)?;
     file.try_lock().map_err(|e| {
         format!("Storage is already owned by another runtime, or cannot be locked: {e}")
     })?;
@@ -85,26 +109,75 @@ fn verify(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-pub fn snapshot(conn: &Connection, destination: &Path) -> Result<(), String> {
-    // Never overwrite a previous usable backup (VACUUM INTO otherwise accepts an empty file).
-    if destination.exists() {
+#[cfg(test)]
+fn snapshot(conn: &Connection, destination: &Path) -> Result<(), String> {
+    snapshot_checked(conn, destination, |path| {
+        let backup =
+            Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(error)?;
+        verify(&backup)
+    })
+}
+
+fn snapshot_checked(
+    conn: &Connection,
+    destination: &Path,
+    validate: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    if fs::symlink_metadata(destination).is_ok() {
         return Err("Backup destination already exists".into());
     }
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let temporary = parent.join(format!(
+        ".unfuse-backup-{}.db",
+        super::event::generate_event_id()
+    ));
+    let file = private_file(&temporary, true)?;
+    struct StagedBackup(PathBuf);
+    impl Drop for StagedBackup {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+    let _staged = StagedBackup(temporary.clone());
     conn.execute(
         "VACUUM INTO ?1",
-        params![destination.to_str().ok_or("Backup path is not UTF-8")?],
+        params![temporary.to_str().ok_or("Backup path is not UTF-8")?],
     )
     .map_err(error)?;
-    let backup = Connection::open_with_flags(destination, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(error)?;
-    verify(&backup)?;
-    OpenOptions::new()
-        .write(true)
-        .open(destination)
+    validate(&temporary)?;
+    file.sync_all().map_err(error)?;
+    // A link publishes the completed snapshot without replacing any existing destination.
+    fs::hard_link(&temporary, destination).map_err(error)?;
+    #[cfg(unix)]
+    File::open(parent)
         .map_err(error)?
         .sync_all()
         .map_err(error)?;
     Ok(())
+}
+
+fn decode_event(row: &rusqlite::Row<'_>) -> Result<PersistedEvent, String> {
+    let version: i64 = row.get(4).map_err(error)?;
+    if version != 1 {
+        return Err(format!("Unsupported event payload version {version}"));
+    }
+    let json: String = row.get(5).map_err(error)?;
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(error)?;
+    let kind: String = row.get(3).map_err(error)?;
+    if value["type"].as_str() != Some(&kind) {
+        return Err("Event kind/payload mismatch".into());
+    }
+    let timestamp: i64 = row.get(2).map_err(error)?;
+    Ok(PersistedEvent {
+        id: row.get(0).map_err(error)?,
+        parent_id: row.get(1).map_err(error)?,
+        session_id: row.get(6).map_err(error)?,
+        timestamp: u64::try_from(timestamp).map_err(|_| "Negative event timestamp")?,
+        payload: serde_json::from_value(value).map_err(error)?,
+    })
 }
 
 impl SessionDatabase {
@@ -115,6 +188,19 @@ impl SessionDatabase {
 
     pub fn open_locked(base_dir: &Path, runtime_lock: File) -> Result<Self, String> {
         let path = base_dir.join("sessions.db");
+        drop(private_file(&path, false)?);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for suffix in ["-wal", "-shm"] {
+                let sidecar = base_dir.join(format!("sessions.db{suffix}"));
+                match fs::set_permissions(sidecar, fs::Permissions::from_mode(0o600)) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(failure) => return Err(error(failure)),
+                }
+            }
+        }
         let mut conn = Connection::open(&path).map_err(error)?;
         // Read the version before changing any journal settings or schema.
         let has_migrations: bool = conn.query_row(
@@ -325,29 +411,81 @@ impl SessionDatabase {
                 |r| r.get(0),
             )
             .map_err(error)?;
-        let mut stmt = conn.prepare("SELECT id,parent_id,timestamp,kind,payload_version,payload_json FROM events WHERE session_id=?1 ORDER BY seq").map_err(error)?;
+        let mut stmt = conn.prepare("SELECT id,parent_id,timestamp,kind,payload_version,payload_json,session_id FROM events WHERE session_id=?1 ORDER BY seq").map_err(error)?;
         let mut rows = stmt.query(params![id]).map_err(error)?;
         let mut events = vec![];
         while let Some(row) = rows.next().map_err(error)? {
-            let version: i64 = row.get(4).map_err(error)?;
-            if version != 1 {
-                return Err(format!("Unsupported event payload version {version}"));
-            }
-            let json: String = row.get(5).map_err(error)?;
-            let value: serde_json::Value = serde_json::from_str(&json).map_err(error)?;
-            let kind: String = row.get(3).map_err(error)?;
-            if value["type"].as_str() != Some(&kind) {
-                return Err("Event kind/payload mismatch".into());
-            }
-            events.push(PersistedEvent {
-                id: row.get(0).map_err(error)?,
-                parent_id: row.get(1).map_err(error)?,
-                session_id: id.into(),
-                timestamp: row.get::<_, i64>(2).map_err(error)? as u64,
-                payload: serde_json::from_value(value).map_err(error)?,
-            });
+            events.push(decode_event(row)?);
         }
         Ok((events, leaf))
+    }
+
+    pub fn active_leaf(&self, workspace: &Path, id: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(error)?;
+        if !Self::check_workspace(&conn, workspace, id)? {
+            return Ok(None);
+        }
+        let leaf: Option<String> = conn
+            .query_row(
+                "SELECT active_leaf_id FROM sessions WHERE id=?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(error)?;
+        leaf.map(Some)
+            .ok_or_else(|| "Session has no active conversation leaf".into())
+    }
+
+    pub fn load_branch(
+        &self,
+        workspace: &Path,
+        id: &str,
+        target: Option<&str>,
+    ) -> Result<(Vec<PersistedEvent>, Option<String>), String> {
+        let conn = self.conn.lock().map_err(error)?;
+        if !Self::check_workspace(&conn, workspace, id)? {
+            return if target.is_some() {
+                Err("Active leaf does not belong to session".into())
+            } else {
+                Ok((vec![], None))
+            };
+        }
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT active_leaf_id FROM sessions WHERE id=?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(error)?;
+        let leaf = target.map(str::to_owned).or(current);
+        let leaf = leaf.ok_or("Session has no active conversation leaf")?;
+        let mut statement = conn
+            .prepare(
+                "WITH RECURSIVE branch(id,parent_id,seq) AS (
+            SELECT id,parent_id,seq FROM events WHERE session_id=?1 AND id=?2
+            UNION ALL
+            SELECT e.id,e.parent_id,e.seq FROM events e JOIN branch b ON e.id=b.parent_id
+              WHERE e.session_id=?1 AND e.seq<b.seq
+        ) SELECT e.id,e.parent_id,e.timestamp,e.kind,e.payload_version,e.payload_json,e.session_id
+          FROM branch b JOIN events e ON e.id=b.id ORDER BY b.seq",
+            )
+            .map_err(error)?;
+        let mut rows = statement.query(params![id, leaf]).map_err(error)?;
+        let mut events = Vec::new();
+        while let Some(row) = rows.next().map_err(error)? {
+            events.push(decode_event(row)?);
+        }
+        if events.is_empty() {
+            return Err("Active leaf does not belong to session".into());
+        }
+        let mut parent = None;
+        for event in &events {
+            if event.parent_id != parent {
+                return Err("Conversation branch has a missing or invalid parent".into());
+            }
+            parent = Some(event.id.clone());
+        }
+        Ok((events, Some(leaf)))
     }
 
     pub fn list(
@@ -383,8 +521,11 @@ impl SessionDatabase {
 
     pub fn backup(&self, destination: &Path) -> Result<(), String> {
         let conn = self.conn.lock().map_err(error)?;
-        snapshot(&conn, destination)?;
-        Self::verify_backup(destination)
+        Self::snapshot(&conn, destination)
+    }
+
+    pub fn snapshot(conn: &Connection, destination: &Path) -> Result<(), String> {
+        snapshot_checked(conn, destination, Self::verify_backup)
     }
 
     pub fn verify_backup(path: &Path) -> Result<(), String> {
@@ -399,119 +540,26 @@ impl SessionDatabase {
         if version != 1 {
             return Err("Unsupported backup schema".into());
         }
-        // Preparing the authoritative queries also detects an incomplete/wrong schema.
-        conn.prepare("SELECT s.next_seq,s.active_leaf_id,e.seq,e.kind,e.payload_version,e.payload_json,e.parent_id FROM sessions s LEFT JOIN events e ON e.session_id=s.id").map_err(error)?;
+        let inconsistent: bool = conn.query_row("SELECT EXISTS(
+            SELECT 1 FROM sessions s LEFT JOIN events e ON e.session_id=s.id GROUP BY s.id
+            HAVING count(e.id)=0 OR min(e.seq)!=1 OR count(e.id)!=max(e.seq) OR s.next_seq!=max(e.seq)+1 OR s.active_leaf_id IS NULL
+        )", [], |row| row.get(0)).map_err(error)?;
+        if inconsistent {
+            return Err("Backup has inconsistent event sequences or session state".into());
+        }
+        let invalid_parent: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM events child JOIN events parent ON parent.id=child.parent_id
+            WHERE parent.session_id!=child.session_id OR parent.seq>=child.seq)", [], |row| row.get(0)).map_err(error)?;
+        if invalid_parent {
+            return Err("Backup has invalid conversation ancestry".into());
+        }
+        let mut statement = conn.prepare("SELECT id,parent_id,timestamp,kind,payload_version,payload_json,session_id FROM events ORDER BY session_id,seq").map_err(error)?;
+        let mut rows = statement.query([]).map_err(error)?;
+        while let Some(row) = rows.next().map_err(error)? {
+            decode_event(row)?;
+        }
         Ok(())
     }
 
-    pub fn needs_import(&self, source_key: &str, contents: &[u8]) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(error)?;
-        let previous: Option<String> = conn
-            .query_row(
-                "SELECT source_sha256 FROM legacy_imports WHERE source_key=?1",
-                params![source_key],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(error)?;
-        match previous {
-            None => Ok(true),
-            Some(hash) if hash == format!("{:x}", Sha256::digest(contents)) => Ok(false),
-            Some(_) => Err(format!(
-                "Previously imported legacy file {source_key} changed; review required"
-            )),
-        }
-    }
-
-    pub fn import_file(&self, source_key: &str, contents: &[u8]) -> Result<bool, String> {
-        let digest = format!("{:x}", Sha256::digest(contents));
-        let mut conn = self.conn.lock().map_err(error)?;
-        let tx = conn.transaction().map_err(error)?;
-        let previous: Option<String> = tx
-            .query_row(
-                "SELECT source_sha256 FROM legacy_imports WHERE source_key=?1",
-                params![source_key],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(error)?;
-        if let Some(previous) = previous {
-            return if previous == digest {
-                Ok(false)
-            } else {
-                Err("Previously imported legacy file changed; review required".into())
-            };
-        }
-        // Unlike the historical reader, import never silently discards a malformed trailing line.
-        let text = std::str::from_utf8(contents).map_err(error)?;
-        let events = text
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(serde_json::from_str::<PersistedEvent>)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(error)?;
-        let first = events.first().ok_or("Empty legacy session")?;
-        let (workspace_path, title) = match &first.payload {
-            EventPayload::SessionMetadata {
-                workspace_path,
-                title,
-                ..
-            } => (workspace_path, title),
-            _ => return Err("Legacy session has no initial metadata".into()),
-        };
-        let workspace = Path::new(workspace_path);
-        let hash = compute_workspace_hash(workspace);
-        tx.execute(
-            "INSERT INTO workspaces VALUES(?1,?2) ON CONFLICT(id) DO NOTHING",
-            params![hash, workspace_path],
-        )
-        .map_err(error)?;
-        let existing_path: String = tx
-            .query_row(
-                "SELECT canonical_path FROM workspaces WHERE id=?1",
-                params![hash],
-                |r| r.get(0),
-            )
-            .map_err(error)?;
-        if existing_path != *workspace_path {
-            return Err("Workspace identity collision during import".into());
-        }
-        tx.execute("INSERT INTO sessions(id,workspace_id,title,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)",params![first.session_id,hash,title,first.timestamp as i64]).map_err(error)?;
-        for event in &events {
-            if event.session_id != first.session_id {
-                return Err("Mixed session identities in legacy file".into());
-            }
-            Self::insert_event(&tx, event)?;
-        }
-        if let Some((index, leaf)) =
-            events
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(|(i, e)| match &e.payload {
-                    EventPayload::ActiveLeaf { leaf_id } => Some((i, leaf_id)),
-                    _ => None,
-                })
-        {
-            if index != events.len() - 1 {
-                return Err(
-                    "Legacy branch selection has later events; active leaf requires review".into(),
-                );
-            }
-            tx.execute(
-                "UPDATE sessions SET active_leaf_id=?2 WHERE id=?1",
-                params![first.session_id, leaf],
-            )
-            .map_err(error)?;
-        }
-        tx.execute(
-            "INSERT INTO legacy_imports VALUES(?1,?2,?3,?4)",
-            params![source_key, digest, first.session_id, now_epoch_ms() as i64],
-        )
-        .map_err(error)?;
-        tx.commit().map_err(error)?;
-        Ok(true)
-    }
 }
 
 #[cfg(test)]
@@ -550,7 +598,7 @@ mod tests {
         let first = &events[0];
         let conn = db.conn.lock().unwrap();
         let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|r|r.get(0)).unwrap();
-        assert_eq!(tables, 5);
+        assert_eq!(tables, 4);
         assert!(conn
             .execute("UPDATE events SET kind='changed'", [])
             .is_err());
@@ -645,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn branch_continuation_survives_reopen_without_jsonl() {
+    fn branch_continuation_survives_reopen() {
         let root = directory();
         let storage = StorageManager::with_base_dir(root.clone()).unwrap();
         let s = storage.create_session(&root, "s", None).unwrap();
@@ -656,7 +704,7 @@ mod tests {
         storage.switch_active_leaf(&root, "s", &a.id).unwrap();
         let c = user("s", Some(a.id.clone()));
         storage.append_event_durable(&root, &c).unwrap();
-        assert!(!storage.sessions_dir().exists());
+        assert!(!storage.base_dir().join("sessions").exists());
         drop(storage);
         let reopened = StorageManager::with_base_dir(root.clone()).unwrap();
         let ctx = reopened
@@ -701,31 +749,6 @@ mod tests {
     }
 
     #[test]
-    fn import_rejects_malformed_and_changed_logs_without_partial_session() {
-        let root = directory();
-        let db = SessionDatabase::open(&root).unwrap();
-        let meta = PersistedEvent::new(
-            "legacy",
-            None,
-            EventPayload::SessionMetadata {
-                workspace_path: root.to_string_lossy().into_owned(),
-                workspace_hash: compute_workspace_hash(&root),
-                title: "old".into(),
-            },
-        );
-        let valid = serde_json::to_vec(&meta).unwrap();
-        let mut malformed = valid.clone();
-        malformed.extend_from_slice(b"\n{bad");
-        assert!(db.import_file("old.jsonl", &malformed).is_err());
-        assert!(db.list(None, None).unwrap().is_empty());
-        assert!(db.import_file("old.jsonl", &valid).unwrap());
-        assert!(!db.import_file("old.jsonl", &valid).unwrap());
-        assert!(db.import_file("old.jsonl", &malformed).is_err());
-        drop(db);
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
     fn newer_schema_is_rejected_without_rewriting_it() {
         let root = directory();
         let db = SessionDatabase::open(&root).unwrap();
@@ -747,6 +770,173 @@ mod tests {
             2
         );
         drop(conn);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn active_branch_reads_preserve_siblings_without_loading_them_into_context() {
+        let root = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        let session = db.create_session(&root, "branch", None).unwrap();
+        let left = user("branch", session.active_leaf_id.clone());
+        let right = user("branch", session.active_leaf_id.clone());
+        db.append(&root, &left).unwrap();
+        db.append(&root, &right).unwrap();
+        let (branch, leaf) = db.load_branch(&root, "branch", None).unwrap();
+        assert_eq!(branch.len(), 2);
+        assert_eq!(branch.last().unwrap().id, right.id);
+        assert_eq!(leaf.as_deref(), Some(right.id.as_str()));
+        assert_eq!(db.active_leaf(&root, "branch").unwrap(), leaf);
+        assert_eq!(db.load(&root, "branch").unwrap().0.len(), 3);
+        let (branch, _) = db.load_branch(&root, "branch", Some(&left.id)).unwrap();
+        assert_eq!(branch.last().unwrap().id, left.id);
+        assert!(db.load_branch(&root, "branch", Some("unknown")).is_err());
+        assert!(db.load_branch(&root, "missing", Some(&left.id)).is_err());
+        let other = directory();
+        assert!(db.load_branch(&other, "branch", None).is_err());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(other).unwrap();
+    }
+
+    #[test]
+    fn failed_snapshot_validation_never_publishes_or_leaves_staging_files() {
+        let root = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        let destination = root.join("backup.db");
+        assert!(
+            snapshot_checked(&db.conn.lock().unwrap(), &destination, |_| Err(
+                "injected validation failure".into()
+            ))
+            .is_err()
+        );
+        assert!(!destination.exists());
+        assert!(!fs::read_dir(&root).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".unfuse-backup-")));
+        fs::write(&destination, b"").unwrap();
+        assert!(db.backup(&destination).is_err());
+        assert!(fs::read(&destination).unwrap().is_empty());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn backup_publication_does_not_replace_a_concurrent_destination() {
+        let root = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        let destination = root.join("backup.db");
+        assert!(
+            snapshot_checked(&db.conn.lock().unwrap(), &destination, |_| {
+                fs::write(&destination, b"another writer's file").unwrap();
+                Ok(())
+            })
+            .is_err()
+        );
+        assert_eq!(fs::read(&destination).unwrap(), b"another writer's file");
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn backup_and_restore_reject_structurally_valid_but_unreadable_event_payloads() {
+        let root = directory();
+        let restore = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch("DROP TRIGGER events_no_update;")
+                .unwrap();
+            conn.execute(
+                "UPDATE events SET kind='UserTurn',payload_json=?1",
+                params![r#"{"type":"UserTurn","data":{"prompt":42,"attached_files":[]}}"#],
+            )
+            .unwrap();
+            verify(&conn).unwrap();
+            let foreign_backup = root.join("foreign.db");
+            snapshot(&conn, &foreign_backup).unwrap();
+            assert!(SessionDatabase::verify_backup(&foreign_backup).is_err());
+            assert!(StorageManager::restore_backup(&foreign_backup, restore.clone()).is_err());
+            assert!(!restore.join("sessions.db").exists());
+        }
+        let rejected = root.join("rejected.db");
+        assert!(db.backup(&rejected).is_err());
+        assert!(!rejected.exists());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(restore).unwrap();
+    }
+
+    #[test]
+    fn inconsistent_session_sequence_cannot_be_published_as_a_backup() {
+        let root = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE sessions SET next_seq=999", [])
+            .unwrap();
+        let destination = root.join("backup.db");
+        assert!(db
+            .backup(&destination)
+            .unwrap_err()
+            .contains("inconsistent"));
+        assert!(!destination.exists());
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn storage_and_exported_backups_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = directory();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        for path in [
+            &root,
+            &root.join("sessions.db"),
+            &root.join("runtime.lock"),
+            &root.join("sessions.db-wal"),
+            &root.join("sessions.db-shm"),
+        ] {
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o077,
+                0,
+                "{}",
+                path.display()
+            );
+        }
+        let destination = root.join("backup-会話.db");
+        db.backup(&destination).unwrap();
+        assert_eq!(
+            fs::metadata(destination).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        drop(db);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_missing_active_leaf_is_an_error_not_an_empty_conversation() {
+        let root = directory();
+        let db = SessionDatabase::open(&root).unwrap();
+        db.create_session(&root, "s", None).unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE sessions SET active_leaf_id=NULL", [])
+            .unwrap();
+        assert!(db.active_leaf(&root, "s").is_err());
+        assert!(db.load_branch(&root, "s", None).is_err());
+        assert!(db.backup(&root.join("backup.db")).is_err());
+        drop(db);
         fs::remove_dir_all(root).unwrap();
     }
 }

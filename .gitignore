@@ -49,3 +49,5 @@ Thumbs.db
 website/
 cli/
 
+# Generated bundled sandbox runtime
+/src-tauri/runtime/

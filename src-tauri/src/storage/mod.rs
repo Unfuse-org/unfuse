@@ -1,6 +1,5 @@
 pub mod event;
-pub mod index;
-pub mod jsonl;
+pub mod history;
 mod sqlite;
 
 use std::path::{Path, PathBuf};
@@ -9,10 +8,22 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 
 pub use event::{now_epoch_ms, truncate_tool_output, EventPayload, PersistedEvent};
-pub use index::{SessionSummary, SqliteIndex};
-pub use jsonl::{
-    ActiveContext, JsonlSessionStore, RecoveryReport, RecoveryStatus, SessionRecoveryScanner,
+pub use history::{
+    ActiveContext, SessionHistory, RecoveryReport, RecoveryStatus, SessionRecoveryScanner,
 };
+
+/// Summary metadata for a session displayed in sidebars and search results.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SessionSummary {
+    pub session_id: String,
+    pub workspace_hash: String,
+    pub workspace_path: String,
+    pub title: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub turn_count: usize,
+    pub active_leaf_id: Option<String>,
+}
 
 /// Returns home storage or an error; never falls back to /tmp.
 pub fn default_storage_dir() -> Result<PathBuf, String> {
@@ -45,7 +56,7 @@ pub fn compute_workspace_hash(workspace_path: &Path) -> String {
     format!("{:x}", result)[..16].to_string()
 }
 
-/// SQLite authority; JSONL and index.db are legacy import sources only.
+/// SQLite session storage.
 #[derive(Clone)]
 pub struct StorageManager {
     base_dir: PathBuf,
@@ -59,9 +70,7 @@ impl StorageManager {
 
     pub fn with_base_dir(base_dir: PathBuf) -> Result<Self, String> {
         let database = Arc::new(sqlite::SessionDatabase::open(&base_dir)?);
-        let storage = Self { base_dir, database };
-        storage.rebuild_index()?;
-        Ok(storage)
+        Ok(Self { base_dir, database })
     }
 
     pub fn base_dir(&self) -> &Path {
@@ -70,17 +79,6 @@ impl StorageManager {
     pub fn database_path(&self) -> &Path {
         &self.database.path
     }
-    pub fn sessions_dir(&self) -> PathBuf {
-        self.base_dir.join("sessions")
-    }
-
-    /// Legacy file location; live history is in sessions.db.
-    pub fn session_file_path(&self, workspace_path: &Path, session_id: &str) -> PathBuf {
-        self.sessions_dir()
-            .join(compute_workspace_hash(workspace_path))
-            .join(format!("{}.jsonl", session_id))
-    }
-
     pub fn create_session(
         &self,
         workspace_path: &Path,
@@ -124,14 +122,12 @@ impl StorageManager {
         session_id: &str,
         target_leaf_id: Option<&str>,
     ) -> Result<ActiveContext, String> {
-        let (events, leaf) = self.database.load(workspace_path, session_id)?;
-        let target = target_leaf_id.or(leaf.as_deref());
-        if let Some(target) = target {
-            if !events.iter().any(|e| e.id == target) {
-                return Err("Active leaf does not belong to session".into());
-            }
-        }
-        JsonlSessionStore::reconstruct_active_context(&events, target)
+        let (events, leaf) = self.database.load_branch(workspace_path, session_id, target_leaf_id)?;
+        SessionHistory::reconstruct_active_context(&events, leaf.as_deref())
+    }
+
+    pub fn active_leaf(&self, workspace_path: &Path, session_id: &str) -> Result<Option<String>, String> {
+        self.database.active_leaf(workspace_path, session_id)
     }
 
     pub fn recover_session(
@@ -188,97 +184,16 @@ impl StorageManager {
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .map_err(|e| e.to_string())?;
-        sqlite::snapshot(&input, &destination)?;
+        sqlite::SessionDatabase::snapshot(&input, &destination)?;
         sqlite::SessionDatabase::verify_backup(&destination)?;
         drop(input);
         let database = Arc::new(sqlite::SessionDatabase::open_locked(
             &base_dir,
             runtime_lock,
         )?);
-        let storage = Self { base_dir, database };
-        storage.rebuild_index()?;
-        Ok(storage)
+        Ok(Self { base_dir, database })
     }
 
-    /// IPC-compatible name: idempotent legacy import, never clears the authority.
-    pub fn rebuild_index(&self) -> Result<usize, String> {
-        let sessions_dir = self.sessions_dir();
-        if !sessions_dir.exists() {
-            return Ok(0);
-        }
-        let mut sources = Vec::new();
-        for directory in std::fs::read_dir(&sessions_dir).map_err(|e| e.to_string())? {
-            let directory = directory.map_err(|e| e.to_string())?;
-            if !directory.file_type().map_err(|e| e.to_string())?.is_dir() {
-                continue;
-            }
-            for entry in std::fs::read_dir(directory.path()).map_err(|e| e.to_string())? {
-                let entry = entry.map_err(|e| e.to_string())?;
-                if !entry.file_type().map_err(|e| e.to_string())?.is_file()
-                    || entry.path().extension().and_then(|e| e.to_str()) != Some("jsonl")
-                {
-                    continue;
-                }
-                let path = entry.path();
-                let key = path
-                    .strip_prefix(&sessions_dir)
-                    .map_err(|e| e.to_string())?
-                    .to_string_lossy()
-                    .into_owned();
-                let contents = std::fs::read(&path)
-                    .map_err(|e| format!("Cannot read legacy file {key}: {e}"))?;
-                if self.database.needs_import(&key, &contents)? {
-                    sources.push((key, contents));
-                }
-            }
-        }
-        sources.sort_by(|a, b| a.0.cmp(&b.0));
-        if sources.is_empty() {
-            return Ok(0);
-        }
-        let backup_dir = self
-            .base_dir
-            .join("backups")
-            .join(format!("legacy_{}", event::generate_event_id()));
-        std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
-        for (key, contents) in &sources {
-            let destination = backup_dir.join("sessions").join(key);
-            std::fs::create_dir_all(destination.parent().ok_or("Invalid backup path")?)
-                .map_err(|e| e.to_string())?;
-            use std::io::Write;
-            let mut file = std::fs::File::create_new(&destination).map_err(|e| e.to_string())?;
-            file.write_all(contents).map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
-            if std::fs::read(&destination).map_err(|e| e.to_string())? != *contents {
-                return Err("Legacy backup verification failed".into());
-            }
-        }
-        let old_index = self.base_dir.join("index.db");
-        if old_index.exists() {
-            let conn = rusqlite::Connection::open_with_flags(
-                &old_index,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-            )
-            .map_err(|e| e.to_string())?;
-            sqlite::snapshot(&conn, &backup_dir.join("index.db"))?;
-        }
-        let mut imported = 0;
-        let mut errors = Vec::new();
-        for (key, contents) in sources {
-            match self.database.import_file(&key, &contents) {
-                Ok(true) => imported += 1,
-                Ok(false) => {}
-                Err(e) => errors.push(format!("{key}: {e}")),
-            }
-        }
-        if !errors.is_empty() {
-            return Err(format!(
-                "Legacy import requires review (originals preserved):\n{}",
-                errors.join("\n")
-            ));
-        }
-        Ok(imported)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +258,10 @@ pub fn load_session(
         total_events: ctx.events.len(),
         events: ctx.events,
         is_interrupted: matches!(recovery.status, RecoveryStatus::Interrupted { .. }),
+        paused_run: match &recovery.status {
+            RecoveryStatus::Paused { run_id, reason } => Some(PausedRun { run_id:run_id.clone(), reason:*reason }),
+            _ => None,
+        },
         interruption_notice: recovery.ephemeral_notice,
     })
 }
@@ -364,11 +283,8 @@ pub fn search_sessions(
     storage.search_sessions(path, &query)
 }
 
-#[tauri::command]
-pub fn rebuild_index() -> Result<usize, String> {
-    let storage = get_storage()?;
-    storage.rebuild_index()
-}
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct PausedRun { pub run_id: String, pub reason: crate::agent::lifecycle::PauseReason }
 
 /// DTO returned over Tauri IPC when loading a session.
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -377,6 +293,8 @@ pub struct ActiveContextPayload {
     pub total_events: usize,
     pub events: Vec<PersistedEvent>,
     pub is_interrupted: bool,
+    #[serde(default)]
+    pub paused_run: Option<PausedRun>,
     pub interruption_notice: Option<String>,
 }
 
@@ -577,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn test_interrupted_session_recovery_without_mutating_jsonl() {
+    fn test_interrupted_session_recovery_without_mutating_history() {
         let (storage, _dir) = test_storage();
         let ws = Path::new("/tmp/test_ws");
         storage.create_session(ws, "sess-crash", None).unwrap();
@@ -611,28 +529,9 @@ mod tests {
         assert!(matches!(report.status, RecoveryStatus::Interrupted { .. }));
         assert!(report.ephemeral_notice.is_some());
 
-        // Verify JSONL is completely unmutated (original 3 events, no synthetic events written)
+        // Verify stored history is completely unmutated (original 3 events, no synthetic events written)
         let loaded = storage.load_session_events(ws, "sess-crash").unwrap();
         assert_eq!(loaded.len(), 3);
-    }
-
-    #[test]
-    fn test_legacy_import_is_idempotent_and_preserves_originals() {
-        let (storage, _dir) = test_storage();
-        let ws = Path::new("/tmp/test_ws");
-        let path = storage.session_file_path(ws,"legacy-1");
-        let metadata = PersistedEvent::new("legacy-1",None,EventPayload::SessionMetadata {
-            workspace_path:ws.to_string_lossy().into_owned(),workspace_hash:compute_workspace_hash(ws),title:"Legacy".into()
-        });
-        let user = PersistedEvent::new("legacy-1",Some(metadata.id.clone()),EventPayload::UserTurn { prompt:"hello".into(),attached_files:vec![] });
-        JsonlSessionStore::append_event(&path,&metadata).unwrap();
-        JsonlSessionStore::append_event(&path,&user).unwrap();
-        let original = std::fs::read(&path).unwrap();
-        assert_eq!(storage.rebuild_index().unwrap(),1);
-        assert_eq!(storage.rebuild_index().unwrap(),0);
-        assert_eq!(storage.load_session_events(ws,"legacy-1").unwrap(),vec![metadata,user]);
-        assert_eq!(std::fs::read(&path).unwrap(),original);
-        assert!(storage.base_dir().join("backups").is_dir());
     }
 
     #[test]
@@ -765,55 +664,4 @@ mod tests {
         assert!(truncated.contains("[UNFUSE STORAGE: Output truncated at 100000 chars"));
     }
 
-    #[test]
-    fn test_read_events_corrupted_middle_line_rejected() {
-        let (storage, _dir) = test_storage();
-        let ws = Path::new("/tmp/test_middle_corruption");
-        let file_path = storage.session_file_path(ws, "sess-corrupt");
-
-        // Create session
-        let initial = PersistedEvent::new("sess-corrupt",None,EventPayload::SessionMetadata { workspace_path:ws.to_string_lossy().into_owned(), workspace_hash:compute_workspace_hash(ws),title:"New Session".into() });
-        JsonlSessionStore::append_event(&file_path,&initial).unwrap();
-
-        // Append valid event
-        let u1 = PersistedEvent::new(
-            "sess-corrupt",
-            None,
-            EventPayload::UserTurn {
-                prompt: "Valid user turn".to_string(),
-                attached_files: vec![],
-            },
-        );
-        JsonlSessionStore::append_event(&file_path,&u1).unwrap();
-
-        // Intentionally inject corrupted JSON in the middle
-        {
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            let mut f = OpenOptions::new().append(true).open(&file_path).unwrap();
-            writeln!(f, "{{\"invalid_json_middle\": true,").unwrap(); // Corrupted middle line
-        }
-
-        // Append another valid event AFTER the corrupted line
-        {
-            let u2 = PersistedEvent::new(
-                "sess-corrupt",
-                Some(u1.id.clone()),
-                EventPayload::UserTurn {
-                    prompt: "Turn after corruption".to_string(),
-                    attached_files: vec![],
-                },
-            );
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            let mut f = OpenOptions::new().append(true).open(&file_path).unwrap();
-            writeln!(f, "{}", serde_json::to_string(&u2).unwrap()).unwrap();
-        }
-
-        // Reading must fail with corruption error rather than silently swallowing
-        let res = JsonlSessionStore::read_events(&file_path);
-        assert!(res.is_err(), "Expected error for corrupted middle line");
-        let err_msg = res.unwrap_err();
-        assert!(err_msg.contains("Corrupted session log at line 3"));
-    }
 }

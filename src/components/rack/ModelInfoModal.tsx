@@ -27,7 +27,8 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
       id: model.id,
       name: model.name,
       displayName: model.displayName,
-      quantization: model.quantization || 'Q4_K_M',
+      quantization: model.quantization ?? null,
+      contextLength: model.contextLength,
       sizeBytes: model.sizeBytes,
       family: model.family,
     },
@@ -48,7 +49,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {/* LOGO BADGE */}
             <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0 shadow-md border border-white/20">
-              {getModelLogo(model.family, model.provider, 24)}
+              {getModelLogo(model.family, model.provider, 24, model.name)}
             </div>
 
             <div className="min-w-0 flex-1">
@@ -106,7 +107,7 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
                   <tr className="border-b border-[var(--border-subtle)]">
                     <td className="py-2 px-3 text-[var(--text-muted)]">Context Limit</td>
                     <td className="py-2 px-3 text-[var(--text-main)] font-medium">
-                      {model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Auto (Model Native)'}
+                      {model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}
                     </td>
                   </tr>
                   <tr className="border-b border-[var(--border-subtle)]">

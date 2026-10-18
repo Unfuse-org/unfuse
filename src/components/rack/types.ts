@@ -5,6 +5,7 @@ export type CapabilitySource = 'Runtime' | 'Fallback';
 
 export interface ModelCapabilities {
   image_input: CapabilityStatus;
+  tool_calling: CapabilityStatus;
   source: CapabilitySource;
 }
 
@@ -21,6 +22,8 @@ export interface LocalModelBlade {
   quantization?: string;
   sizeBytes?: number;
   contextLength?: number;
+  maxContextLength?: number | null;
+  loaded?: boolean | null;
   tokensUsed: number;
   temperature?: number;
   topP?: number;
@@ -37,15 +40,17 @@ export interface AvailableProviderModel {
   id: string;
   name: string;
   displayName: string;
-  quantization: string;
-  sizeBytes?: number;
+  quantization: string | null;
+  sizeBytes?: number | null;
   family: ModelFamily;
-  contextLength?: number;
+  contextLength?: number | null;
+  maxContextLength?: number | null;
+  loaded?: boolean | null;
   tokensUsed?: number;
   description?: string;
   capabilities?: ModelCapabilities;
   apiKey?: string;
   link?: string;
   contextWindow?: string;
-  parameters?: string;
+  parameters?: string | null;
 }
