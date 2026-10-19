@@ -1,307 +1,408 @@
-# Graph Report - unfuse  (2026-10-17)
+# Graph Report - unfuse  (2026-10-15)
 
 ## Corpus Check
-- 151 files · ~407,865 words
+- 226 files · ~450,805 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 7 file(s) not represented in the graph (top: .xml 2, (none) 1, .icns 1)
+- Unclassified: 11 file(s) not represented in the graph (top: (none) 4, .xml 2, .ipynb 1)
 
 ## Summary
-- 1102 nodes · 2445 edges · 53 communities (45 shown, 8 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 100 edges (avg confidence: 0.91)
-- Token cost: 0 input · 0 output
+- 1271 nodes · 2382 edges · 170 communities (42 shown, 128 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 35 edges (avg confidence: 0.85)
+- Token cost: unavailable for semantic workers; AST uses no LLM tokens. Placeholder numeric fields are not usage measurements.
 
 ## Community Hubs (Navigation)
-- Agent Turns and Approvals
-- Dashboard and Model Discovery
-- Integration Settings and Connections
-- Platform Application Icons
-- File Tools and Guardrails
-- Persisted Event Types
-- Tool Approval Presentation
-- SQLite Transactions and Backups
-- Octopus Mascot Artwork
-- Provider Capability Discovery
-- External Tool Providers
-- Storage Decisions and Handoff
-- Model Configuration and Resolution
-- Conversation Sidebar Navigation
-- Workspace Files and Previews
-- Chat Input and Telemetry
-- Shell Execution and Timeouts
-- Tool Dispatch and Validation
-- Native Terminal Sessions
-- Workspace Session Storage API
-- Frontend Execution and Approvals
-- Application Settings and Themes
-- Legacy JSONL History
-- Syntax Highlighting and Diffs
-- Workspace Launcher Artwork
-- Tauri Desktop Configuration
-- TypeScript Compiler Configuration
-- Desktop Startup and Telemetry
-- Provider Endpoint Helpers
-- Frontend Build Packages
-- Session Persistence Regression Tests
-- Storage Initialization and Identity
+- Agent Execution Lifecycle
+- Provider Streaming Protocol
+- External Service Adapters
+- Filesystem Access Guardrails
+- Integration Configuration UI
+- SQLite Session Database
+- Chat Integration Presentation
+- Runtime Capability Discovery
+- Backend Plans and Constraints
+- MCP Client Transport
+- Storage Boundary Tests
 - Frontend Runtime Dependencies
-- Model Requests and Tool Calls
-- Streaming Content Parser Tests
-- Application Navigation and Views
-- Cancellation State Scaffolding
-- Frontend Development Dependencies
-- Multimodal Message Serialization
-- Attachment Preview Interfaces
-- Qwen Compatibility Tests
-- Linux Continuous Integration
-- Repository Change Scope Rules
-- Multimodal Content Parts
-- Frontend Package Scripts
-- Terminal Output Events
+- Model Rack Configuration
+- Provider Brand Components
+- UI Development Guidelines
+- Chat Sidebar Organization
+- Accessibility Contrast Tools
+- Native Terminal Sessions
+- Chat Message Presentation
+- Persisted Event Schema
+- Vite Development Instrumentation
+- Workspace Tools Panel
+- Legacy JSONL History
+- Themes and Settings
+- Tool Dispatch Policy
+- Shell Process Execution
+- Workspace Mascot Launcher
+- Legacy Chat Backend Client
+- Tauri Application Configuration
+- TypeScript Compiler Configuration
+- Session Storage API
+- Application Navigation Shell
+- Legacy SQLite Index
+- Reticle Setup Nudge
+- ARGUS Terminal Prototype
+- Chat Visual Renderers
+- Provider Connection Onboarding
+- Historical Backend Issues
+- Code Diff Presentation
+- Model Metadata Resolution
+- Library File Previews
+- UI Review Handoff
+- Integration Type Contracts
+- Motion Performance Guidance
+- Runtime UI Verification
+- Build Verification Workflow
 - HTML Application Entry
-- Vite Build Integration
-- Voice Input Orb
-- Image Module Type Declaration
-- Rust Package Identity
+- Package Run Scripts
+- Legacy Import Identity
+- UI Baseline Constraints
+- Image Module Types
+- Black curved triangular emblem split
+- White pixel octopus inside a
+- unfuse-desktop
+- Blue four-point star with circular
+- White pixel octopus seated at
+- White pixel octopus on black
+- White pixel octopus reaching toward
+- White pixel octopus surrounded by
+- White pixel octopus wearing a
+- White pixel octopus running beside
+- Octopus mascot holding money beside
+- Meditating octopus mascot beneath moon
+- Pixel octopus mascot seated at
+- Armored octopus mascot with a
+- Octopus mascot inside a round
+- Pixel octopus mascot drinking from
+- Microsoft four colored square mark
+- AI21 black typographic wordmark
+- AI2 pink four arm geometric
+- Aleph Alpha black curved symmetric
+- Apple black bitten apple silhouette
+- Arcee teal radiating triangular wedges
+- Aya blue leaf cluster mark
+- BAAI black outlined interlocking geometric
+- Baichuan orange vertical geometric wordmark
+- Bilibili Index black atom shaped
+- ChatGLM blue elephant inside a
+- CodeGeeX cyan and blue opposed
+- CogView multicolored parrot over a
+- Cohere green capsule with orange
+- DBRX red outlined stack of
+- Deep Cogito blue outlined triangular
+- DeepSeek blue whale silhouette
+- Dolphin black halftone jumping dolphin
+- Essential AI purple ring and
+- FLUX black triangular geometric mark
+- Gemma blue four point star
+- Hugging Face yellow smiling face
+- Hunyuan blue circular flowing wave
+- IBM black striped letter wordmark
+- InternLM gray illustrated scholarly face
+- Jina black lowercase j shaped
+- Kolors bright lime rounded loop
+- LG white face formed from
+- Liquid black angular diamond with
+- LongCat green angular arch framing
+- Meta blue continuous infinity loop
+- Microsoft four colored square mark
+- MiniMax pink to orange vertical
+- Mistral pixelated orange yellow and
+- Moonshot black striped circular mark
+- Nous Research monochrome illustrated woman
+- NVIDIA green stylized eye and
+- OpenAI black interlocking six loop
+- OpenChat blue rounded speech bubble
+- Qwen purple interlocking angular star
+- RWKV purple bird silhouette
+- SenseNova overlapping purple and green
+- Skywork blue and turquoise opposing
+- Snowflake blue six arm snowflake
+- Stability purple S with separate
+- StepFun blue angular step mark
+- TII purple letters within an
+- Upstage purple rising diagonal stack
+- Wenxin blue outlined hexagonal cube
+- Xiaomi MiMo black two line
+- Yi black branching Y shaped
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
+- White pixel octopus on a
 
 ## God Nodes (most connected - your core abstractions)
-1. `128x128.png — pixel octopus icon` - 47 edges
-2. `getModelLogo()` - 45 edges
-3. `react` - 41 edges
-4. `lucide-react` - 33 edges
-5. `renderIntegrationLogo()` - 29 edges
-6. `StorageManager` - 24 edges
-7. `PersistedEvent` - 23 edges
-8. `ChatMessage` - 21 edges
-9. `EventPayload` - 20 edges
-10. `stream_chat_completion_with_compatibility()` - 19 edges
+1. `react` - 41 edges
+2. `lucide-react` - 34 edges
+3. `renderIntegrationLogo()` - 29 edges
+4. `StorageManager` - 24 edges
+5. `PersistedEvent` - 23 edges
+6. `EventPayload` - 20 edges
+7. `ServiceConfig` - 19 edges
+8. `LocalModelBlade` - 19 edges
+9. `run_agent_loop()` - 18 edges
+10. `ChatMessage` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `macOS application icon` --semantically_similar_to--> `Unfuse octopus logo`  [INFERRED] [semantically similar]
-  macos-squircle-icon.png → src/assets/logo.png
-- `128x128@2x.png — pixel octopus icon` --semantically_similar_to--> `128x128.png — pixel octopus icon`  [INFERRED] [semantically similar]
-  src-tauri/icons/128x128@2x.png → src-tauri/icons/128x128.png
-- `32x32.png — pixel octopus icon` --semantically_similar_to--> `128x128.png — pixel octopus icon`  [INFERRED] [semantically similar]
-  src-tauri/icons/32x32.png → src-tauri/icons/128x128.png
-- `64x64.png — pixel octopus icon` --semantically_similar_to--> `128x128.png — pixel octopus icon`  [INFERRED] [semantically similar]
-  src-tauri/icons/64x64.png → src-tauri/icons/128x128.png
-- `ic_launcher_foreground.png — pixel octopus icon` --semantically_similar_to--> `128x128.png — pixel octopus icon`  [INFERRED] [semantically similar]
-  src-tauri/icons/android/mipmap-hdpi/ic_launcher_foreground.png → src-tauri/icons/128x128.png
+- `Surgical Changes` --conceptually_related_to--> `Minimal Diff`  [INFERRED]
+  .agents/skills/karpathy-guidelines/SKILL.md → AGENTS.md
+- `sync_integration_config()` --references--> `ServiceConfig`  [EXTRACTED]
+  src-tauri/src/main.rs → src-tauri/src/integrations/mod.rs
+- `import_rejects_malformed_and_changed_logs_without_partial_session()` --calls--> `compute_workspace_hash()`  [INFERRED]
+  src-tauri/src/storage/sqlite.rs → src-tauri/src/storage/mod.rs
+- `PluginDetailCanvasProps` --references--> `ServiceId`  [EXTRACTED]
+  src/components/integrations/PluginDetailCanvas.tsx → src/components/integrations/types.ts
+- `SettingsViewProps` --references--> `LocalModelBlade`  [EXTRACTED]
+  src/components/settings/SettingsView.tsx → src/components/rack/types.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (53 total, 8 thin omitted)
+## Communities (170 total, 128 thin omitted)
 
-### Community 0 - "Agent Turns and Approvals"
-Cohesion: 0.07
-Nodes (53): ActiveTurnGuard, begin_turn(), cancel_agent_turn(), cleanup_test_session(), get_or_create_session(), is_session_cancelled(), LlmConfigPayload, make_capturing_sink() (+45 more)
+### Community 0 - "Agent Execution Lifecycle"
+Cohesion: 0.05949367088607595
+Nodes (50): cancel_agent_turn(), cleanup_test_session(), get_or_create_session(), is_session_cancelled(), LlmConfigPayload, make_capturing_sink(), make_test_config(), MAX_CONTEXT_TOOL_OUTPUT_CHARS (+42 more)
 
-### Community 1 - "Dashboard and Model Discovery"
-Cohesion: 0.12
-Nodes (47): DashboardView(), LOADED_MODELS_SAMPLE, LoadedModelInfo, MessageExecutionEvent, SAMPLE_MESSAGE_EVENTS, DetectedModel, OnboardingModal(), OnboardingModalProps (+39 more)
+### Community 1 - "Provider Streaming Protocol"
+Cohesion: 0.06821480406386067
+Nodes (29): AssembledToolCall, base64_encode(), ContentPart, AudioUrl, ImageUrl, Text, VideoUrl, load_image_ref_to_data_url() (+21 more)
 
-### Community 2 - "Integration Settings and Connections"
-Cohesion: 0.12
-Nodes (42): CommandItem, IntegrationsModal(), IntegrationsModalProps, DEFAULT_STATES, deleteMcpServer(), disconnectService(), getAllServiceStates(), getDefaultWebSearchProvider() (+34 more)
+### Community 3 - "External Service Adapters"
+Cohesion: 0.12323232323232323
+Nodes (20): BraveProvider, DatadogProvider, DuckDuckGoProvider, ExaProvider, ExternalTool, FirecrawlProvider, GitHubProvider, GoogleProvider (+12 more)
 
-### Community 3 - "Platform Application Icons"
-Cohesion: 0.04
-Nodes (48): 128x128@2x.png — pixel octopus icon, 128x128.png — pixel octopus icon, 32x32.png — pixel octopus icon, 64x64.png — pixel octopus icon, ic_launcher_foreground.png — pixel octopus icon, ic_launcher.png — pixel octopus icon, ic_launcher_round.png — pixel octopus icon, ic_launcher_foreground.png — pixel octopus icon (+40 more)
-
-### Community 4 - "File Tools and Guardrails"
-Cohesion: 0.09
+### Community 4 - "Filesystem Access Guardrails"
+Cohesion: 0.08527131782945736
 Nodes (31): PromptIngestor, edit_file(), MAX_EDIT_FILE_BYTES, MAX_READ_BYTES, read_file(), test_edit_multiple_occurrences_error(), test_edit_not_found_error(), test_edit_preserves_crlf() (+23 more)
 
-### Community 5 - "Persisted Event Types"
-Cohesion: 0.07
-Nodes (20): EventPayload, ActiveLeaf, AssistantTurn, Cancellation, Compaction, Error, PermissionDecision, PipelineStageComplete (+12 more)
+### Community 5 - "Integration Configuration UI"
+Cohesion: 0.14169570267131243
+Nodes (36): IntegrationsModal(), DEFAULT_STATES, deleteMcpServer(), disconnectService(), getAllServiceStates(), getManagedMcpConfigForService(), getMcpServers(), getServiceState() (+28 more)
 
-### Community 6 - "Tool Approval Presentation"
-Cohesion: 0.16
-Nodes (34): CodebaseFileItem, COMMAND_LIST, WORKSPACE_FILES, buildPlatformReadCommand(), buildPlatformShellCommand(), extractDomain(), ParsedTool, parseToolInfo() (+26 more)
-
-### Community 7 - "SQLite Transactions and Backups"
-Cohesion: 0.12
+### Community 6 - "SQLite Session Database"
+Cohesion: 0.11522048364153627
 Nodes (14): backup_restore_includes_wal_and_preserves_previous_backup(), branch_continuation_survives_reopen_without_jsonl(), directory(), failed_append_rolls_back_event_sequence_leaf_and_title(), import_rejects_malformed_and_changed_logs_without_partial_session(), lock_runtime(), MIGRATION_1, migration_immutability_and_constraints() (+6 more)
 
-### Community 8 - "Octopus Mascot Artwork"
-Cohesion: 0.06
-Nodes (36): White pixel octopus within a dark rounded square, macOS application icon, Monochrome pixel art octopus mascot, White pixel octopus mascot, Unfuse octopus logo, Monochrome pixel art octopus mascot, Octopus reaching toward a flying butterfly, Butterfly mascot scene (+28 more)
+### Community 7 - "Chat Integration Presentation"
+Cohesion: 0.16516516516516516
+Nodes (33): CodebaseFileItem, COMMAND_LIST, WORKSPACE_FILES, buildPlatformReadCommand(), buildPlatformShellCommand(), extractDomain(), ParsedTool, parseToolInfo() (+25 more)
 
-### Community 9 - "Provider Capability Discovery"
-Cohesion: 0.14
+### Community 8 - "Runtime Capability Discovery"
+Cohesion: 0.1411764705882353
 Nodes (31): CapabilitySource, Fallback, Runtime, CapabilityStatus, Supported, Unknown, Unsupported, inspect_llamacpp_capabilities() (+23 more)
 
-### Community 10 - "External Tool Providers"
-Cohesion: 0.16
-Nodes (14): BraveProvider, DatadogProvider, ExternalTool, FirecrawlProvider, GitHubProvider, handle_api_error(), IntegrationManager, IntegrationResponse (+6 more)
+### Community 9 - "Backend Plans and Constraints"
+Cohesion: 0.0625
+Nodes (6): Karpathy Guidelines, Backend first deliverable: history baseline and contract proposal, SQLite storage implementation, StorageManager, run_agent_turn, Unfuse
 
-### Community 11 - "Storage Decisions and Handoff"
-Cohesion: 0.10
-Nodes (26): Historical backend baseline and approved minimal storage, events table, Historical Windows read-only sync defect, JSONL retained for legacy compatibility, Atomic digest-tracked legacy JSONL import, legacy_imports table, Approved migration 1, Unapproved pipeline schema and IPC proposal (+18 more)
+### Community 10 - "MCP Client Transport"
+Cohesion: 0.12043010752688173
+Nodes (9): test_mcp_server(), extract_content_text(), get_enriched_path(), McpClient, McpServerConfig, McpTestResult, McpTool, probe_mcp_server() (+1 more)
 
-### Community 12 - "Model Configuration and Resolution"
-Cohesion: 0.14
-Nodes (22): ChatPanelProps, MainChatPanelProps, BladeConfigView(), BladeConfigViewProps, ModelBladeCard(), ModelBladeCardProps, ModelInfoModal(), ModelInfoModalProps (+14 more)
+### Community 11 - "Storage Boundary Tests"
+Cohesion: 0.15402298850574714
+Nodes (17): SessionSummary, create_session(), default_storage_dir(), GLOBAL_STORAGE, list_sessions(), search_sessions(), storage_dir_from_home(), test_append_read_round_trip() (+9 more)
 
-### Community 13 - "Conversation Sidebar Navigation"
-Cohesion: 0.10
+### Community 12 - "Frontend Runtime Dependencies"
+Cohesion: 0.06436781609195402
+Nodes (30): dependencies, diff, eventsource-parser, lucide-react, prismjs, react, react-dom, react-markdown (+22 more)
+
+### Community 13 - "Model Rack Configuration"
+Cohesion: 0.1425287356321839
+Nodes (23): ChatPanelProps, MainChatPanelProps, ModelFamilyLogo(), modelLogoCatalog, DashboardView(), BladeConfigView(), BladeConfigViewProps, ModelBladeCard() (+15 more)
+
+### Community 15 - "UI Development Guidelines"
+Cohesion: 0.06896551724137931
+Nodes (7): antislop-code, antislop-copywriting, antislop-human, antislop-layoutmobile, antislop, antislop-ui, fixing-accessibility
+
+### Community 16 - "Chat Sidebar Organization"
+Cohesion: 0.09852216748768473
 Nodes (11): INITIAL_SESSIONS, SessionItem(), SessionItemProps, SidebarPanel(), SidebarPanelProps, NewChatIcon(), PinIcon(), SearchIcon() (+3 more)
 
-### Community 14 - "Workspace Files and Previews"
-Cohesion: 0.09
-Nodes (23): diff, @xterm/addon-fit, @xterm/xterm, AddPanel(), AddPanelOption, AddPanelProps, ArtifactItem, CONTROL_FLOW_KEYWORDS (+15 more)
-
-### Community 15 - "Chat Input and Telemetry"
-Cohesion: 0.14
-Nodes (22): @tauri-apps/api, BtopTelemetryPopover(), BtopTelemetryPopoverProps, ChatInput(), ChatInputProps, ChatPanel(), FALLBACK_OFFLINE_MODEL, fetchLocalOllamaModels() (+14 more)
-
-### Community 16 - "Shell Execution and Timeouts"
-Cohesion: 0.12
-Nodes (16): BashOutput, DEFAULT_TIMEOUT_SECS, execute_bash(), execute_bash_with_pid_callback(), MAX_OUTPUT_BYTES, MAX_TIMEOUT_SECS, OutputMsg, Chunk (+8 more)
-
-### Community 17 - "Tool Dispatch and Validation"
-Cohesion: 0.15
-Nodes (17): canonical_tool_name(), execute_tool(), execute_tool_with_context(), execute_tool_with_pid_callback(), get_filtered_tool_definitions(), get_tool_action_type(), get_tool_definitions(), is_tool_allowed() (+9 more)
+### Community 17 - "Accessibility Contrast Tools"
+Cohesion: 0.12962962962962962
+Nodes (18): contrast_ratio(), linearize(), luminance(), main(), parse_hex(), parse_pairing(), parse_reference_rows(), reference_doc_path() (+10 more)
 
 ### Community 18 - "Native Terminal Sessions"
-Cohesion: 0.17
-Nodes (9): Session, shell_input_resize_and_cleanup(), size(), terminal_close(), terminal_open(), terminal_resize(), terminal_write(), TerminalState (+1 more)
+Cohesion: 0.13675213675213677
+Nodes (13): Session, shell_input_resize_and_cleanup(), size(), terminal_close(), terminal_open(), terminal_resize(), terminal_write(), TerminalOutput (+5 more)
 
-### Community 19 - "Workspace Session Storage API"
-Cohesion: 0.14
-Nodes (10): ActiveContextPayload, create_session(), default_storage_dir(), get_storage(), list_sessions(), load_session(), rebuild_index(), search_sessions() (+2 more)
+### Community 19 - "Chat Message Presentation"
+Cohesion: 0.13105413105413105
+Nodes (20): @tauri-apps/api, BtopTelemetryPopover(), BtopTelemetryPopoverProps, ChatInputProps, ClarificationPanelProps, MessageItem(), MessageItemProps, PROMPT_EASTER_EGG_COLORS (+12 more)
 
-### Community 20 - "Frontend Execution and Approvals"
-Cohesion: 0.18
-Nodes (13): MainChatPanel(), starters, MessageItem(), ToolCallItemProps, ToolCall, AgentConfig, backendClient, BackendEvent (+5 more)
+### Community 20 - "Persisted Event Schema"
+Cohesion: 0.09
+Nodes (18): EventPayload, ActiveLeaf, AssistantTurn, Cancellation, Compaction, Error, PermissionDecision, PipelineStageComplete (+10 more)
 
-### Community 21 - "Application Settings and Themes"
-Cohesion: 0.16
-Nodes (16): simple-icons, detailSections, sections, SettingRow, SettingsDetails(), SettingsView(), SettingsViewProps, ThemeIcon() (+8 more)
+### Community 21 - "Vite Development Instrumentation"
+Cohesion: 0.09486166007905138
+Nodes (21): name, private, type, version, autoprefixer, eventsource-parser, postcss, @reticlehq/react (+13 more)
 
-### Community 22 - "Legacy JSONL History"
-Cohesion: 0.18
+### Community 22 - "Workspace Tools Panel"
+Cohesion: 0.1067193675889328
+Nodes (21): simple-icons, @xterm/addon-fit, @xterm/xterm, AddPanel(), AddPanelOption, AddPanelProps, ArtifactItem, CONTROL_FLOW_KEYWORDS (+13 more)
+
+### Community 23 - "Legacy JSONL History"
+Cohesion: 0.1761904761904762
 Nodes (8): PersistedEvent, ActiveContext, JsonlSessionStore, RecoveryReport, RecoveryStatus, Clean, Interrupted, SessionRecoveryScanner
 
-### Community 23 - "Syntax Highlighting and Diffs"
-Cohesion: 0.15
-Nodes (16): prismjs, react, react-markdown, remark-gfm, CodeBlock(), CodeBlockProps, CONTROL_FLOW_KEYWORDS, detectLangFromFilename() (+8 more)
+### Community 24 - "Themes and Settings"
+Cohesion: 0.17142857142857143
+Nodes (15): detailSections, sections, SettingRow, SettingsDetails(), SettingsView(), SettingsViewProps, ThemeIcon(), themeIcons (+7 more)
 
-### Community 24 - "Workspace Launcher Artwork"
-Cohesion: 0.11
+### Community 25 - "Tool Dispatch Policy"
+Cohesion: 0.1523809523809524
+Nodes (15): canonical_tool_name(), execute_tool(), execute_tool_with_context(), execute_tool_with_pid_callback(), get_filtered_tool_definitions(), get_tool_action_type(), get_tool_definitions(), is_tool_allowed() (+7 more)
+
+### Community 26 - "Shell Process Execution"
+Cohesion: 0.1695906432748538
+Nodes (15): BashOutput, DEFAULT_TIMEOUT_SECS, execute_bash(), execute_bash_with_pid_callback(), MAX_OUTPUT_BYTES, MAX_TIMEOUT_SECS, OutputMsg, Chunk (+7 more)
+
+### Community 27 - "Workspace Mascot Launcher"
+Cohesion: 0.1111111111111111
 Nodes (8): createShuffledDeck(), DEFAULT_RECENTS, MascotItem, MASCOTS, RecentProject, WORKSPACE_QUOTES, WorkspaceLauncher(), WorkspaceLauncherProps
 
-### Community 25 - "Tauri Desktop Configuration"
-Cohesion: 0.11
+### Community 28 - "Legacy Chat Backend Client"
+Cohesion: 0.15204678362573099
+Nodes (16): ChatInput(), ChatPanel(), FALLBACK_OFFLINE_MODEL, fetchLocalOllamaModels(), INITIAL_MESSAGES, LeftPanelToggleIcon(), RightPanelToggleIcon(), ClarificationPanel() (+8 more)
+
+### Community 29 - "Tauri Application Configuration"
+Cohesion: 0.10526315789473684
 Nodes (18): app, macOSPrivateApi, security, windows, build, beforeBuildCommand, beforeDevCommand, devUrl (+10 more)
 
-### Community 26 - "TypeScript Compiler Configuration"
-Cohesion: 0.11
+### Community 30 - "TypeScript Compiler Configuration"
+Cohesion: 0.1111111111111111
 Nodes (17): compilerOptions, allowImportingTsExtensions, isolatedModules, jsx, lib, module, moduleResolution, noEmit (+9 more)
 
-### Community 27 - "Desktop Startup and Telemetry"
-Cohesion: 0.13
-Nodes (7): get_system_info(), get_system_telemetry(), resolve_model_capabilities(), run_collaborative_turn(), sync_integration_config(), SystemInfo, SystemTelemetry
+### Community 31 - "Session Storage API"
+Cohesion: 0.20833333333333334
+Nodes (5): ActiveContextPayload, get_storage(), load_session(), rebuild_index(), StorageManager
 
-### Community 28 - "Provider Endpoint Helpers"
-Cohesion: 0.13
-Nodes (6): base64_encode(), chat_endpoint(), DEFAULT_MAX_REQUEST_BYTES, load_image_ref_to_data_url(), qwen_compat_accepts_complete_responses_with_unique_ids(), validate_provider_config()
+### Community 32 - "Application Navigation Shell"
+Cohesion: 0.25274725274725274
+Nodes (9): lucide-react, App(), NavigationIcon(), MainChatPanel(), starters, instructionScopes, MemoryView(), ModelLogsView() (+1 more)
 
-### Community 29 - "Frontend Build Packages"
-Cohesion: 0.12
-Nodes (16): name, private, type, version, autoprefixer, eventsource-parser, postcss, tailwindcss (+8 more)
+### Community 34 - "Reticle Setup Nudge"
+Cohesion: 0.24242424242424243
+Nodes (6): main(), needsNudge(), NUDGED_FILE, pinnedServer(), readJson(), WEB_DEPS
 
-### Community 30 - "Session Persistence Regression Tests"
-Cohesion: 0.28
-Nodes (11): test_append_read_round_trip(), test_interrupted_session_recovery_without_mutating_jsonl(), test_parent_id_traversal_and_branching(), test_search_sessions_by_title_and_prompt(), test_session_creation_and_index_listing(), test_storage(), test_tool_call_and_result_persistence(), test_turn_count_accumulation_and_title_retention() (+3 more)
+### Community 36 - "Chat Visual Renderers"
+Cohesion: 0.21212121212121213
+Nodes (6): react, CodeBlock(), CodeBlockProps, CONTROL_FLOW_KEYWORDS, LanguageIcon(), LanguageIconProps
 
-### Community 31 - "Storage Initialization and Identity"
-Cohesion: 0.17
-Nodes (6): compute_workspace_hash(), GLOBAL_STORAGE, select_workspace(), test_legacy_import_is_idempotent_and_preserves_originals(), test_read_events_corrupted_middle_line_rejected(), test_workspace_selection_requires_existing_absolute_folder()
+### Community 37 - "Provider Connection Onboarding"
+Cohesion: 0.3484848484848485
+Nodes (11): DetectedModel, OnboardingModal(), OnboardingModalProps, getProviderLogo(), LlamaCppLogo(), LMStudioLogo(), MLXLogo(), OllamaLogo() (+3 more)
 
-### Community 32 - "Frontend Runtime Dependencies"
-Cohesion: 0.12
-Nodes (16): dependencies, diff, eventsource-parser, lucide-react, prismjs, react, react-dom, react-markdown (+8 more)
+### Community 38 - "Historical Backend Issues"
+Cohesion: 0.18181818181818182
+Nodes (4): Architectural Issues & Technical Debt, events_to_chat_messages, execute_tool_with_context, run_agent_loop_multimodal
 
-### Community 33 - "Model Requests and Tool Calls"
-Cohesion: 0.30
-Nodes (10): AssembledToolCall, ChatMessage, check_context_limit(), decode_qwen_tool_response(), ProviderConfig, stream_chat_completion(), stream_chat_completion_with_compatibility(), test_tool_accumulator() (+2 more)
+### Community 39 - "Code Diff Presentation"
+Cohesion: 0.2
+Nodes (7): diff, prismjs, detectLangFromFilename(), DiffViewer(), DiffViewerProps, ChangesPanel(), ChangesPanelProps
 
-### Community 34 - "Streaming Content Parser Tests"
-Cohesion: 0.23
-Nodes (10): StreamChunk, Done, Text, Thinking, ToolCall, test_think_tag_parser_across_chunks(), test_think_tag_parser_clean_text(), test_think_tag_parser_split_across_chunks() (+2 more)
+### Community 40 - "Model Metadata Resolution"
+Cohesion: 0.2727272727272727
+Nodes (9): ModelInfoModal(), formatBytes(), formatModelSubtitle(), logoFamilies, logoNames, logoPublishers, ResolvedModelInfo, resolveModelInfo() (+1 more)
 
-### Community 35 - "Application Navigation and Views"
-Cohesion: 0.30
-Nodes (9): lucide-react, App(), NavigationIcon(), LibraryView(), MemoryView(), sections, ModelLogsView(), sources (+1 more)
+### Community 41 - "Library File Previews"
+Cohesion: 0.26666666666666666
+Nodes (8): react-dom, react-markdown, remark-gfm, AttachmentCategory, AttachmentItem, LibraryView(), PreviewItem, QuickLookPreview()
 
-### Community 37 - "Frontend Development Dependencies"
-Cohesion: 0.18
-Nodes (11): devDependencies, autoprefixer, postcss, tailwindcss, @tauri-apps/cli, @types/node, @types/react, @types/react-dom (+3 more)
+### Community 42 - "UI Review Handoff"
+Cohesion: 0.2222222222222222
+Nodes (3): Improve UI interface policy, Design plan template, Improve UI
 
-### Community 38 - "Multimodal Message Serialization"
-Cohesion: 0.24
-Nodes (4): MessageContent, Parts, Text, test_multimodal_chat_message_wire_format()
+### Community 43 - "Integration Type Contracts"
+Cohesion: 0.4
+Nodes (5): CommandItem, IntegrationsModalProps, CategorySection, ServiceConnectModalProps, ServiceId
 
-### Community 39 - "Attachment Preview Interfaces"
-Cohesion: 0.28
-Nodes (7): react-dom, AttachmentCategory, AttachmentItem, PREVIEW_EXAMPLES, SAMPLE_LIBRARY_ATTACHMENTS, PreviewItem, QuickLookPreview()
-
-### Community 40 - "Qwen Compatibility Tests"
-Cohesion: 0.25
-Nodes (7): qwen_compat_sse_fragmentation_requires_explicit_mode(), qwen_compat_sse_preserves_native_calls_and_rejects_truncation(), sse_fixture(), test_text_chat_message_wire_format(), ToolCallCompatibility, Native, QwenJson
-
-### Community 41 - "Linux Continuous Integration"
-Cohesion: 0.29
-Nodes (7): Linux frontend and Rust CI, Rust cargo check, Rust cargo test, Frontend npm build, Linux WebKitGTK and desktop dependencies, Node.js 22, Ubuntu latest runner
-
-### Community 43 - "Multimodal Content Parts"
-Cohesion: 0.33
-Nodes (6): ContentPart, AudioUrl, ImageUrl, Text, VideoUrl, MediaUrlPayload
-
-### Community 44 - "Frontend Package Scripts"
-Cohesion: 0.50
+### Community 48 - "Package Run Scripts"
+Cohesion: 0.5
 Nodes (4): scripts, build, dev, tauri
 
-### Community 45 - "Terminal Output Events"
-Cohesion: 0.50
-Nodes (4): TerminalOutput, Data, Error, Exit
-
-### Community 46 - "HTML Application Entry"
-Cohesion: 0.67
-Nodes (3): Unfuse HTML application entry, Google Fonts typography, src/main.tsx module entry
+### Community 49 - "Legacy Import Identity"
+Cohesion: 0.8333333333333334
+Nodes (3): compute_workspace_hash(), test_legacy_import_is_idempotent_and_preserves_originals(), test_read_events_corrupted_middle_line_rejected()
 
 ## Knowledge Gaps
-- **137 isolated node(s):** `@tauri-apps/plugin-shell`, `@types/diff`, `@types/prismjs`, `eventsource-parser`, `@tauri-apps/cli` (+132 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 391 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **173 isolated node(s):** `@tauri-apps/plugin-shell`, `@types/diff`, `@types/prismjs`, `eventsource-parser`, `@reticlehq/react` (+168 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 579 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **128 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `react` connect `Syntax Highlighting and Diffs` to `Dashboard and Model Discovery`, `Integration Settings and Connections`, `Application Navigation and Views`, `Tool Approval Presentation`, `Attachment Preview Interfaces`, `Model Configuration and Resolution`, `Conversation Sidebar Navigation`, `Workspace Files and Previews`, `Chat Input and Telemetry`, `Voice Input Orb`, `Frontend Execution and Approvals`, `Application Settings and Themes`, `Workspace Launcher Artwork`, `Frontend Build Packages`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
-- **Are the 47 inferred relationships involving `128x128.png — pixel octopus icon` (e.g. with `128x128@2x.png — pixel octopus icon` and `32x32.png — pixel octopus icon`) actually correct?**
-  _`128x128.png — pixel octopus icon` has 47 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `react` connect `Chat Visual Renderers` to `Application Navigation Shell`, `Integration Configuration UI`, `Provider Connection Onboarding`, `Chat Integration Presentation`, `Code Diff Presentation`, `Library File Previews`, `Model Metadata Resolution`, `Model Rack Configuration`, `Provider Brand Components`, `Chat Sidebar Organization`, `Chat Message Presentation`, `Vite Development Instrumentation`, `Workspace Tools Panel`, `Themes and Settings`, `Workspace Mascot Launcher`, `Legacy Chat Backend Client`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **What connects `@tauri-apps/plugin-shell`, `@types/diff`, `@types/prismjs` to the rest of the system?**
-  _137 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Agent Turns and Approvals` be split into smaller, more focused modules?**
-  _Cohesion score 0.07313738892686261 - nodes in this community are weakly interconnected._
-- **Why does `lucide-react` connect `Application Navigation and Views` to `Dashboard and Model Discovery`, `Integration Settings and Connections`, `Tool Approval Presentation`, `Attachment Preview Interfaces`, `Model Configuration and Resolution`, `Conversation Sidebar Navigation`, `Workspace Files and Previews`, `Chat Input and Telemetry`, `Frontend Execution and Approvals`, `Application Settings and Themes`, `Syntax Highlighting and Diffs`, `Workspace Launcher Artwork`, `Frontend Build Packages`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **Should `Dashboard and Model Discovery` be split into smaller, more focused modules?**
-  _Cohesion score 0.11607843137254902 - nodes in this community are weakly interconnected._
-- **Why does `EventPayload` connect `Persisted Event Types` to `SQLite Transactions and Backups`, `Legacy JSONL History`, `Storage Initialization and Identity`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
-## Extraction limits and provenance
+  _173 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Agent Execution Lifecycle` be split into smaller, more focused modules?**
+  _Cohesion score 0.05949367088607595 - nodes in this community are weakly interconnected._
+- **Why does `lucide-react` connect `Application Navigation Shell` to `Model Logo Catalog`, `Chat Visual Renderers`, `Integration Configuration UI`, `Provider Connection Onboarding`, `Chat Integration Presentation`, `Code Diff Presentation`, `Library File Previews`, `Model Metadata Resolution`, `Model Rack Configuration`, `Chat Sidebar Organization`, `Chat Message Presentation`, `Vite Development Instrumentation`, `Workspace Tools Panel`, `Themes and Settings`, `Workspace Mascot Launcher`, `Legacy Chat Backend Client`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **Should `Provider Streaming Protocol` be split into smaller, more focused modules?**
+  _Cohesion score 0.06821480406386067 - nodes in this community are weakly interconnected._
+- **Why does `EventPayload` connect `Persisted Event Schema` to `Legacy SQLite Index`, `Storage Boundary Tests`, `SQLite Session Database`, `Legacy JSONL History`?**
+  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+- **Should `Model Logo Catalog` be split into smaller, more focused modules?**
+  _Cohesion score 0.0392156862745098 - nodes in this community are weakly interconnected._
+## Coverage and integrity limits
 
-This graph describes the local working tree, including unfinished code and historical documentation. Graph connections do not prove code compiles or features are wired into execution.
-
-Token cost: semantic host-agent token usage is unavailable in this session. Zero values in Graphify metadata are placeholders, not a claim of zero usage. AST extraction is local and deterministic.
-
-Graph health warning: 151 dangling-endpoint edges, 59 undirected same-endpoint collapsed edges, and 2 exact duplicate edges were reported before graph building. No missing-endpoint or self-loop edges were reported. See health.json; graph navigation can be incomplete.
-
-Seven code/config files yielded no symbols, including frontend test files. File presence is not proof of complete semantic coverage. The sensitive file .npmrc was skipped.
-
-`graphify-out/` was written into the working tree and is currently untracked. No ignore configuration, source files, commits, or remote state were changed by this mapping.
+- 91 code files processed structurally; 4 yielded no symbols.
+- 20 documents and 114 images processed semantically. One PDF was excluded because pypdf is unavailable.
+- .npmrc skipped as sensitive. Unclassified formats, including notebook and CSS, were not extracted.
+- Worker token usage was not exposed: token totals shown as 0 are placeholders, not zero-cost claims. AST itself uses no LLM.
+- Integrity warning: 219 dangling-endpoint edges and 60 undirected same-endpoint relationship collapses were reported; 0 missing endpoints and 0 self-loops. See GRAPH_HEALTH.txt.
+- Semantic documentation assertions may describe historical plans; they do not verify current runtime behavior. Logo/image nodes are visual descriptions, not evidence of provider functionality.
+- graphify-out/ was written into the working tree and is currently untracked; .gitignore was not changed. See https://docs.graphify.com/guides/team-workflows.

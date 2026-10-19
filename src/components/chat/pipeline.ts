@@ -41,6 +41,7 @@ export interface PipelineState {
   next_stage: number;
   active_stage: StageExecution | null;
   results: StageResult[];
+  fingerprints: Record<string, string>;
   error: string | null;
 }
 export interface AgentEvent {
@@ -96,14 +97,30 @@ export function makePlan(text: string, tags: ModelTag[], defaultModelId: string)
     throw new Error('Give every selected model an instruction after its tag.');
   return { id: crypto.randomUUID(), request: text.trim(), stages };
 }
+function modelConfig(model: LocalModelBlade) {
+  return {
+    provider: model.provider, base_url: model.endpoint, api_key: model.apiKey || null, model: model.name,
+    temperature: model.temperature ?? null, max_tokens: model.maxTokens ?? null, timeout_secs: null, context_window: model.contextLength ?? null,
+  };
+}
 export function modelConfigs(models: LocalModelBlade[], stages: PipelineStage[]) {
   return Object.fromEntries([...new Set(stages.map(stage => stage.model_id))].map(id => {
     const model = models.find(model => model.id === id);
     if (!model)
       throw new Error('Reconnect the original rack connection before running or resuming.');
-    return [id, {
-      provider: model.provider, base_url: model.endpoint, api_key: model.apiKey || null, model: model.name,
-      temperature: model.temperature ?? null, max_tokens: model.maxTokens ?? null, timeout_secs: null, context_window: model.contextLength ?? null
-    }];
+    return [id, modelConfig(model)];
+  }));
+}
+// The backend verifies this same provider / endpoint / model fingerprint on resume.
+export async function resumeModelConfigs(models: LocalModelBlade[], state: PipelineState) {
+  const candidates = await Promise.all(models.map(async model => {
+    const identity = `${model.provider}\n${model.endpoint.replace(/\/+$/, '')}\n${model.name}`;
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
+    return { model, fingerprint: Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('') };
+  }));
+  return Object.fromEntries([...new Set(state.plan.stages.map(stage=>stage.model_id))].map(id=>{
+    const match=candidates.find(candidate=>candidate.fingerprint===state.fingerprints[id]);
+    if(!match)throw new Error('Reconnect the same provider, endpoint, and model before resuming this pipeline.');
+    return [id,modelConfig(match.model)];
   }));
 }

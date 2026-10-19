@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { ArrowLeft, ArrowRight, PanelsTopLeft, Layers3, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Grid2X2, Plug, Folder, Logs, NotebookPen, Settings } from 'lucide-react';
 import homeMascot from './assets/home-mascot.png';
@@ -19,6 +19,7 @@ import { WindowControls } from './components/WindowControls';
 import { platformHint, useDesktopMenuBar, type DesktopPlatform } from './components/DesktopMenus';
 import { McpView } from './components/integrations/McpView';
 import { McpLogo } from './components/integrations/IntegrationLogos';
+import { usePipeline } from './components/chat/usePipeline';
 
 
 function NavigationIcon({ name }: { name: 'dashboard' | 'integrations' | 'library' | 'logs' | 'memory' | 'settings' }) {
@@ -82,10 +83,20 @@ export default function App() {
     }
   };
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
-  const [activeChatId, setActiveChatId] = useState('');
+  const [activeChatId, setActiveChatId] = useState<string>(()=>crypto.randomUUID());
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
   const [workspaceRoot,setWorkspaceRoot]=useState(setup.workspaceRoot);
   const [workspaceError, setWorkspaceError] = useState('');
+  const currentWorkspace = useRef(workspaceRoot);
+  currentWorkspace.current = workspaceRoot;
+  const pipeline = usePipeline(workspaceRoot, activeChatId);
+  const refreshSessions = () => {
+    if (!workspaceRoot || !isTauri()) return;
+    const root = workspaceRoot;
+    void invoke<{session_id:string;title:string;updated_at:number;turn_count:number}[]>('list_sessions', {workspaceRoot:root}).then(sessions => {
+      if (root === currentWorkspace.current) setChatSessions(current=>sessions.map(session=>({...current.find(item=>item.id===session.session_id),id:session.session_id,title:session.title,updatedAt:new Date(session.updated_at),messageCount:session.turn_count})));
+    }).catch(error=>{if(root===currentWorkspace.current)setWorkspaceError(String(error));});
+  };
   useEffect(() => {
     let active = true;
     setWorkspaceError('');
@@ -96,6 +107,7 @@ export default function App() {
     }
     return () => { active = false; };
   }, [workspaceRoot]);
+  useEffect(() => { refreshSessions(); }, [pipeline.runs]);
   const [rackModels, setRackModels] = useState<LocalModelBlade[]>([]);
   const sidebarVisible = activeNav === 'home' && isChatSidebarOpen && !focusLayout;
   const toggleSidebar = () => {
@@ -115,7 +127,7 @@ export default function App() {
   if (showSetup) return <OnboardingView platform={platform} initial={setup} mountedModels={rackModels} onComplete={preferences => {
     setSetup(preferences);
     if (preferences.model) setRackModels(current => [preferences.model!, ...current.filter(model => model.provider !== preferences.model!.provider)]);
-    if (preferences.workspaceRoot !== workspaceRoot) { setActiveChatId(''); setChatSessions([]); }
+    if (preferences.workspaceRoot !== workspaceRoot) { setActiveChatId(crypto.randomUUID()); setChatSessions([]); }
     setWorkspaceRoot(preferences.workspaceRoot);
     setShowSetup(false);
     setNavigation({entries:['home'],index:0});
@@ -272,8 +284,7 @@ export default function App() {
         <div className="workspace-frames flex-1 h-full flex flex-row min-w-0" style={{ backgroundColor: 'var(--bg-header)' }}>
           {/* MAIN CANVAS CONTENT */}
           <div className="workspace-canvas flex-1 h-full overflow-hidden flex flex-col min-w-0 rounded-tl-[14px]">
-            {activeNav === 'home' && (
-              <div className="workspace-home flex-1 h-full flex flex-row min-w-0" style={{ backgroundColor: 'var(--bg-header)' }}>
+              <div className={`workspace-home flex-1 h-full flex-row min-w-0 ${activeNav === 'home' ? 'flex' : 'hidden'}`}>
                 {/* CHAT PANEL */}
                 <aside
                   aria-hidden={!isChatSidebarOpen}
@@ -286,33 +297,30 @@ export default function App() {
                   }}
                 >
                   <div className="w-72 h-full"><SidebarPanel sessions={chatSessions} activeSessionId={activeChatId}
-                    onSelectSession={setActiveChatId} onUpdateSessions={setChatSessions} /></div>
+                    onSelectSession={setActiveChatId} onUpdateSessions={setChatSessions} onNewChat={()=>setActiveChatId(crypto.randomUUID())} workspaceRoot={workspaceRoot} /></div>
                 </aside>
 
                 {/* MAIN PANEL */}
                 <MainChatPanel
                   key={workspaceRoot}
                   sessionId={activeChatId}
+                  pipeline={pipeline}
                   models={rackModels}
                   onOpenRack={() => setActiveRightPanel('rack')}
                   workspaceRoot={workspaceRoot}
                   workspaceError={workspaceError}
                   onWorkspaceChange={path=>{
-                    if (path !== workspaceRoot) { setActiveChatId(''); setChatSessions([]); }
+                    if (path !== workspaceRoot) { setActiveChatId(crypto.randomUUID()); setChatSessions([]); }
                     setWorkspaceRoot(path);
                   }}
-                  onSessionStarted={(id,title)=>{
-                    setActiveChatId(id);
-                    setChatSessions(current=>current.some(session=>session.id===id)?current.map(session=>session.id===id?{...session,updatedAt:new Date(),messageCount:session.messageCount+1}:session):[{id,title,updatedAt:new Date(),messageCount:1},...current]);
-                  }}
+                  onSessionStarted={refreshSessions}
                 />
               </div>
-            )}
-            {activeNav === 'dashboard' && <DashboardView models={rackModels} onOpenRack={() => setActiveRightPanel('rack')} onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
+            {activeNav === 'dashboard' && <DashboardView models={rackModels} sessions={chatSessions} pipeline={pipeline} onOpenSession={id=>{setActiveChatId(id);setActiveNav('home');}} onOpenRack={() => setActiveRightPanel('rack')} onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
             {activeNav === 'integrations' && <IntegrationsView workspaceRoot={workspaceRoot} />}
             {activeNav === 'mcp' && <McpView workspaceRoot={workspaceRoot}/>}
             {activeNav === 'library' && <LibraryView />}
-            {activeNav === 'logs' && <ModelLogsView modelFilter={logModel} onClearModelFilter={() => setLogModel(null)} />}
+            {activeNav === 'logs' && <ModelLogsView models={rackModels} pipeline={pipeline} modelFilter={logModel} onClearModelFilter={() => setLogModel(null)} />}
             {activeNav === 'memory' && <MemoryView />}
             {activeNav === 'settings' && <SettingsView models={rackModels} onOpenRack={() => setActiveRightPanel('rack')} />}
           </div>

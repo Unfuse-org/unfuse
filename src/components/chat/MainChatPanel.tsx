@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUp, ArrowUpRight, Bug, ChevronDown, Compass, FileCode2, Plus, Hand, FileCheck2, Paperclip, FolderOpen, Sparkles, Search, MessageSquare, Check, X, FileText, Image as ImageIcon, Terminal, ListTodo } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Bug, ChevronDown, Compass, FileCode2, Plus, Hand, FileCheck2, Paperclip, FolderOpen, Sparkles, Search, MessageSquare, Check, X, FileText, Image as ImageIcon, Terminal, ListTodo, Square } from 'lucide-react';
 import { LocalModelBlade } from '../rack/types';
 import { isTauri } from '@tauri-apps/api/core';
 import { ModelFamilyLogo } from './ModelIdentity';
@@ -15,6 +15,7 @@ interface MainChatPanelProps {
   workspaceError: string;
   onWorkspaceChange: (path: string) => void;
   onSessionStarted: (id: string, title: string) => void;
+  pipeline: ReturnType<typeof usePipeline>;
 }
 
 
@@ -24,10 +25,8 @@ const starters = [
   { label: 'Review some code', icon: FileCode2, color: '#a78bfa', description: 'Get a fresh perspective on your code.', prompt: 'Review my code for correctness and explain any issues before suggesting changes.' },
 ];
 
-export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, onWorkspaceChange, onSessionStarted, workspaceError }: MainChatPanelProps) {
-  const freshSession=useRef(crypto.randomUUID());
-  const effectiveSession=sessionId||freshSession.current;
-  const pipeline=usePipeline(workspaceRoot,effectiveSession);
+export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, onWorkspaceChange, onSessionStarted, workspaceError, pipeline }: MainChatPanelProps) {
+  const effectiveSession=sessionId;
   const [projectPath,setProjectPath]=useState(workspaceRoot);
   const [tagsByChat,setTagsByChat]=useState<Record<string,ModelTag[]>>({});
   const [pickerAt,setPickerAt]=useState<number|null>(null);
@@ -47,7 +46,7 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
     return () => document.removeEventListener('pointerdown', closeOutside);
   }, []);
   const draft = drafts[effectiveSession] ?? '';
-  const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
+  const selectedModel = models.find((model) => model.id === selectedModelId) ?? models.find(model=>model.status==='active') ?? models[0];
   const updateDraft = (text: string) => {
     setTagsByChat(current=>({...current,[effectiveSession]:moveTags(draft,text,tags)}));
     setDrafts(current=>({...current,[effectiveSession]:text}));
@@ -65,13 +64,12 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
   };
   const send=async()=>{
     try {
-      if(pipeline.busy)return;
+      if(pipeline.busy||pipeline.loading)return;
       const plan=makePlan(draft,tags,selectedModel?.id??'');
       if(!workspaceRoot)throw new Error('Set the project directory before running.');
       if(!isTauri())throw new Error('Run this conversation in the Unfuse desktop app.');
-      onSessionStarted(effectiveSession,draft.trim().slice(0,70));
       const result=await pipeline.run(plan,null,models);
-      if(result){setDrafts(current=>({...current,[effectiveSession]:''}));setTagsByChat(current=>({...current,[effectiveSession]:[]}));}
+      if(result){onSessionStarted(effectiveSession,draft.trim().slice(0,70));setDrafts(current=>({...current,[effectiveSession]:''}));setTagsByChat(current=>({...current,[effectiveSession]:[]}));}
     }catch(error){pipeline.setError(String(error));}
   };
   useLayoutEffect(() => {
@@ -127,15 +125,15 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
               <button disabled={pipeline.busy} aria-label="Assign model task" onClick={()=>setPickerAt(inputRef.current?.selectionStart??draft.length)} className="w-8 h-8 rounded-full text-sm hover:bg-[var(--bg-surface-hover)] disabled:opacity-40">@</button>
               <details className="relative group/permissions">
                 <summary aria-label="Approval mode" className="list-none [&::-webkit-details-marker]:hidden flex items-center gap-1.5 rounded-lg px-2 py-2 text-xs cursor-pointer hover:bg-[var(--bg-surface-hover)] focus-visible:outline focus-visible:outline-[var(--accent)]" style={{ color: 'var(--text-muted)' }}>
-                  <Hand size={14} /><span>Ask for approval</span><ChevronDown size={12} className="group-open/permissions:rotate-180 transition-transform" />
+                  <Hand size={14} /><span>{pipeline.policy==='ask'?'Ask for approval':'Auto-approve edits'}</span><ChevronDown size={12} className="group-open/permissions:rotate-180 transition-transform" />
                 </summary>
                 <div className="absolute left-0 bottom-full mb-2 w-64 max-w-[calc(100vw-3rem)] rounded-xl p-2 shadow-xl z-20" style={{ backgroundColor: 'var(--bg-panel)' }}>
                   <p className="px-2 pt-1 pb-2 text-[10px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Permissions</p>
-                  <button aria-disabled="true" data-ui-only="true" className="flex gap-2.5 w-full rounded-lg p-2 text-left cursor-not-allowed" style={{ backgroundColor: 'var(--bg-surface)' }}>
+                  <button disabled={pipeline.busy} aria-pressed={pipeline.policy==='ask'} onClick={()=>pipeline.setPolicy('ask')} className="flex gap-2.5 w-full rounded-lg p-2 text-left disabled:opacity-40" style={{ backgroundColor: pipeline.policy==='ask'?'var(--bg-surface)':undefined }}>
                     <Hand size={16} className="mt-0.5 shrink-0" />
                     <span><span className="block text-xs font-medium">Ask for approval</span><span className="block mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>Ask before editing files or running commands.</span></span>
                   </button>
-                  <button aria-disabled="true" data-ui-only="true" className="flex gap-2.5 w-full rounded-lg p-2 text-left opacity-50 cursor-not-allowed">
+                  <button disabled={pipeline.busy} aria-pressed={pipeline.policy==='edits'} onClick={()=>pipeline.setPolicy('edits')} className="flex gap-2.5 w-full rounded-lg p-2 text-left disabled:opacity-40" style={{backgroundColor:pipeline.policy==='edits'?'var(--bg-surface)':undefined}}>
                     <FileCheck2 size={16} className="mt-0.5 shrink-0" />
                     <span><span className="block text-xs font-medium">Auto-approve edits</span><span className="block mt-1 text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>Allow file edits. Ask before running commands.</span></span>
                   </button>
@@ -155,8 +153,8 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
                     <span className="truncate">Select model</span><ChevronDown size={12} className="shrink-0" />
                   </button>
                 )}
-                <button onClick={()=>void send()} disabled={pipeline.busy||!draft.trim()||!models.length} aria-label="Send message" title="Run assigned models in order" className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
-                  <ArrowUp size={17} />
+                <button onClick={()=>void (pipeline.busy?pipeline.cancel():send())} disabled={!pipeline.busy&&(pipeline.loading||!draft.trim()||!models.length)} aria-label={pipeline.busy?'Stop pipeline':'Send message'} title={pipeline.busy?'Stop the current run':'Run assigned models in order'} className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
+                  {pipeline.busy?<Square size={13}/>:<ArrowUp size={17} />}
                 </button>
               </div>
             </div>
@@ -173,7 +171,8 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
       <div className="px-6 pt-3 text-xs text-[var(--text-muted)]"><label className="flex items-center gap-2"><FolderOpen size={13}/><input aria-label="Project directory" placeholder="Absolute project directory" value={projectPath} disabled={pipeline.busy} onChange={event=>setProjectPath(event.target.value)} onBlur={()=>onWorkspaceChange(projectPath.trim())} onKeyDown={event=>{if(event.key==='Enter')onWorkspaceChange(projectPath.trim());}} className="min-w-0 flex-1 bg-transparent outline-none py-1 focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"/></label></div>
       <div className={`flex-1 min-h-0 overflow-y-auto px-6 ${pipeline.runs.length?'':'flex flex-col justify-center'}`}>
         {pipeline.runs.length>0?<PipelineConversation pipeline={pipeline} models={models}/>:''}
-        {!pipeline.runs.length&&(
+        {pipeline.loading&&<p role="status" className="text-xs text-[var(--text-muted)]">Loading saved conversation…</p>}
+        {!pipeline.loading&&!pipeline.runs.length&&(
         <div className="w-full max-w-3xl mx-auto py-12">
           <h2 className="text-[clamp(28px,3.5vw,44px)] leading-[1.15] tracking-[-0.04em] font-medium max-w-lg" style={{ color: 'var(--text-main)' }}>
             What are we<br />working on?

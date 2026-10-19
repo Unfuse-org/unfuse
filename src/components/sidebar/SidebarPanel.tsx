@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { MoreHorizontal, Pencil, Archive, ArchiveRestore, Copy, Hash, Check, ArrowLeft, Eye, EyeOff, FolderInput, GitFork, Download, ChevronRight } from 'lucide-react';
 import { ChatSession } from './types';
 import {
@@ -17,6 +18,7 @@ interface SidebarPanelProps {
   onSelectSession?: (id: string) => void;
   onNewChat?: () => void;
   onUpdateSessions?: (sessions: ChatSession[]) => void;
+  workspaceRoot?: string;
 }
 
 export const SidebarPanel: React.FC<SidebarPanelProps> = ({
@@ -25,6 +27,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   onSelectSession,
   onNewChat,
   onUpdateSessions,
+  workspaceRoot = '',
 }) => {
   const [internalSessions, setInternalSessions] = useState<ChatSession[]>(INITIAL_SESSIONS);
   const sessions = propSessions || internalSessions;
@@ -36,6 +39,22 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [searchIds, setSearchIds] = useState<string[] | null>(null);
+  const [historyError, setHistoryError] = useState('');
+  React.useEffect(()=>{
+    let active=true;
+    setSearchIds(null);setHistoryError('');
+    if(!workspaceRoot||!searchQuery.trim()||!isTauri())return;
+    const timer=window.setTimeout(()=>{
+      void invoke<{session_id:string}[]>('search_sessions',{workspaceRoot,query:searchQuery}).then(results=>{if(active)setSearchIds(results.map(result=>result.session_id));}).catch(error=>{if(active)setHistoryError(String(error));});
+    },200);
+    return ()=>{active=false;window.clearTimeout(timer);};
+  },[workspaceRoot,searchQuery]);
+  const exportConversation = async (id:string) => {
+    const history=await invoke('load_session',{workspaceRoot,sessionId:id,targetLeafId:null});
+    const url=URL.createObjectURL(new Blob([JSON.stringify(history,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download=`unfuse-${id}.json`;link.click();URL.revokeObjectURL(url);
+  };
   const [activeId, setActiveId] = useState<string>(activeSessionId);
 
   React.useEffect(() => {
@@ -50,6 +69,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
   const handleCreateNew = () => {
     setShowArchived(false);
+    if(onNewChat){onNewChat();return;}
     const newSess: ChatSession = {
       id: `s-${Date.now()}`,
       title: 'New Conversation',
@@ -59,7 +79,6 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
     setSessions((prev) => [newSess, ...prev]);
     setActiveId(newSess.id);
     onSelectSession?.(newSess.id);
-    onNewChat?.();
   };
 
   const handleDeleteSession = (e: React.MouseEvent, id: string) => {
@@ -102,7 +121,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   };
 
   const filteredSessions = sessions.filter(s => Boolean(s.archived) === showArchived).filter((s) =>
-    [s.title, s.modelUsed ?? ''].join(' ').toLowerCase().includes(searchQuery.toLowerCase())
+    searchIds ? searchIds.includes(s.id) : [s.title, s.modelUsed ?? ''].join(' ').toLowerCase().includes(searchQuery.toLowerCase())
   ).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   const pinnedSessions = filteredSessions.filter((s) => s.pinned);
@@ -128,7 +147,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
           {showArchived ? 'Back to chats' : `Archived chats${sessions.some(session => session.archived) ? ` (${sessions.filter(session => session.archived).length})` : ''}`}
         </button>
         {showSearch && (
-          <input autoFocus type="search" aria-label="Search chats by title or model" placeholder="Search by title or model"
+          <input autoFocus type="search" aria-label="Search saved chats" placeholder="Search titles and messages"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { setShowSearch(false); setSearchQuery(''); } }}
             className="w-full rounded-lg border px-3 py-2 mt-2 text-xs outline-none focus:ring-1 focus:ring-current"
@@ -138,6 +157,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
       {/* 3. CHAT SESSIONS LIST */}
       <div className="flex-1 overflow-y-auto px-2 space-y-5 pb-4">
+        {historyError&&<p role="alert" className="px-3 text-xs text-red-400">{historyError}</p>}
         {filteredSessions.length === 0 && (
           <p className="text-xs opacity-60 px-3 py-5 text-center">
             {searchQuery ? 'No chats match your search.' : showArchived ? 'No archived chats.' : 'Start a new chat to begin.'}
@@ -161,6 +181,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                   onRename={handleRenameSession}
                   onToggleArchive={handleToggleArchive}
                   onToggleUnread={handleToggleUnread}
+                  onExport={workspaceRoot&&isTauri()?exportConversation:undefined}
                 />
               ))}
             </div>
@@ -184,6 +205,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                 onRename={handleRenameSession}
                   onToggleArchive={handleToggleArchive}
                   onToggleUnread={handleToggleUnread}
+                  onExport={workspaceRoot&&isTauri()?exportConversation:undefined}
               />
             ))}
           </div>
@@ -202,6 +224,7 @@ interface SessionItemProps {
   onRename: (id: string, newTitle: string) => void;
   onToggleArchive: (id: string) => void;
   onToggleUnread: (id: string) => void;
+  onExport?: (id:string) => Promise<void>;
 }
 
 const SessionItem: React.FC<SessionItemProps> = ({
@@ -213,6 +236,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
   onRename,
   onToggleArchive,
   onToggleUnread,
+  onExport,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -334,7 +358,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
             <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until workspace projects are connected" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><FolderInput size={14} /> Move to project</button>
             <div className="my-1 border-t border-[var(--border-subtle)]" />
             <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until conversation history is connected; forks must preserve the actual context" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><GitFork size={14} /> Fork conversation</button>
-            <button type="button" aria-disabled="true" data-ui-only="true" title="Unavailable until conversation messages can be loaded" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs opacity-40 cursor-not-allowed"><Download size={14} /> Export conversation</button>
+            <button type="button" disabled={!onExport} onClick={()=>void onExport?.(session.id).then(()=>setCopyNotice('Conversation exported')).catch(error=>setCopyNotice(String(error)))} title="Export saved conversation events as JSON" className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)] disabled:opacity-40 disabled:cursor-not-allowed"><Download size={14} /> Export conversation</button>
             <div className="my-1 border-t border-[var(--border-subtle)]" />
             <button type="button" aria-expanded={copyOpen} onClick={() => setCopyOpen(open => !open)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-[var(--bg-active)]"><Copy size={14} /> Copy<ChevronRight size={13} className={`ml-auto transition-transform ${copyOpen ? 'rotate-90' : ''}`} /></button>
             {copyOpen && <div className="pl-3">

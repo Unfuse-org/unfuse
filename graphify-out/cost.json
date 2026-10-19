@@ -1,13 +1,14 @@
 {
   "runs": [
     {
-      "date": "2026-10-17T15:46:28.669601+00:00",
-      "files": 151,
+      "date": "2026-10-15T10:42:52.136861+00:00",
       "input_tokens": null,
       "output_tokens": null,
-      "token_usage_available": false
+      "usage_available": false,
+      "files": 226
     }
   ],
-  "total_input_tokens": null,
-  "total_output_tokens": null
+  "total_input_tokens": 0,
+  "total_output_tokens": 0,
+  "totals_incomplete": true
 }

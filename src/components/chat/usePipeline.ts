@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getMcpServers } from '../integrations/integrationStore';
-import { AgentEvent, PipelinePlan, PipelineState, modelConfigs } from './pipeline';
+import { AgentEvent, PipelinePlan, PipelineState, modelConfigs, resumeModelConfigs } from './pipeline';
 import { LocalModelBlade } from '../rack/types';
 export interface ToolActivity {
   id: string;
@@ -41,8 +41,13 @@ export function usePipeline(workspace: string, session: string) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [policy, setPolicy] = useState<'ask' | 'edits'>('ask');
+  const policyRef = useRef(policy);
+  policyRef.current = policy;
   const mounted = useRef(true);
   const requests = useRef(new Set<string>());
+  const cancelled = useRef(new Set<string>());
   const scope = useRef({ workspace, session });
   scope.current = { workspace, session };
   const listener = useRef<Promise<() => void> | null>(null);
@@ -86,8 +91,10 @@ export function usePipeline(workspace: string, session: string) {
     setText({});
     setError('');
     setBusy(false);
+    setPolicy('ask');
+    setLoading(!!workspace && !!session && isTauri());
     if (workspace && session && isTauri()) {
-      void invoke<AgentEvent[]>('load_pipeline_activity', { workspaceRoot: workspace, sessionId: session }).then(events => {
+      const activity = invoke<AgentEvent[]>('load_pipeline_activity', { workspaceRoot: workspace, sessionId: session }).then(events => {
         if (!active)
           return;
         setTools(current => {
@@ -102,13 +109,14 @@ export function usePipeline(workspace: string, session: string) {
         if (active)
           setError(String(error));
       });
-      void invoke<PipelineState[]>('load_pipelines', { workspaceRoot: workspace, sessionId: session }).then(states => {
+      const history = invoke<PipelineState[]>('load_pipelines', { workspaceRoot: workspace, sessionId: session }).then(states => {
         if (active)
           setRuns(current => [...states.filter(state => !current.some(run => run.plan.id === state.plan.id)), ...current]);
       }).catch(error => {
         if (active)
           setError(String(error));
       });
+      void Promise.all([activity, history]).finally(()=>{if(active)setLoading(false);});
     }
     return () => { active = false; };
   }, [workspace, session]);
@@ -119,15 +127,23 @@ export function usePipeline(workspace: string, session: string) {
       throw new Error('Choose a project directory and chat first.');
     const activeScope = { workspace, session };
     const current = () => mounted.current && scope.current.workspace === activeScope.workspace && scope.current.session === activeScope.session;
-    const llmConfigs = modelConfigs(models, (plan ?? resume!.plan).stages);
     const key = JSON.stringify(activeScope);
+    const approvalPolicy = policyRef.current;
     if (requests.current.has(key))
       throw new Error('This chat already has a running request.');
     requests.current.add(key);
+    cancelled.current.delete(key);
     setError('');
     setBusy(true);
     try {
+      const llmConfigs = resume ? await resumeModelConfigs(models,resume) : modelConfigs(models,plan!.stages);
       await listener.current;
+      if (plan) {
+        const history=await invoke<{total_events:number}>('load_session',{workspaceRoot:workspace,sessionId:session,targetLeafId:null});
+        if(!history.total_events)await invoke('create_session', {workspaceRoot:workspace,sessionId:session,title:plan.request.slice(0,70)});
+      }
+      await invoke('update_session_policy', {sessionId:session,writeRequiresApproval:approvalPolicy==='ask',editRequiresApproval:approvalPolicy==='ask',bashRequiresApproval:true});
+      if(cancelled.current.has(key))throw new Error('Run cancelled before model execution.');
       const result = await invoke<PipelineState>('run_pipeline', { workspaceRoot: workspace, sessionId: session, plan, resumeId: resume?.plan.id ?? null, llmConfigs, mcpServers: getMcpServers() });
       if (current()) {
         replace(result);
@@ -149,11 +165,13 @@ export function usePipeline(workspace: string, session: string) {
     }
     finally {
       requests.current.delete(key);
+      cancelled.current.delete(key);
       if (current())
         setBusy(false);
     }
   };
   const cancel = async () => {
+    cancelled.current.add(JSON.stringify({workspace,session}));
     try {
       await invoke('cancel_agent_turn', { sessionId: session });
     }
@@ -172,5 +190,5 @@ export function usePipeline(workspace: string, session: string) {
       setError(String(error));
     }
   };
-  return { runs, text, tools, approvals, error, setError, busy: busy || runs.some(run => run.status === 'running'), run, cancel, decide };
+  return { runs, text, tools, approvals, error, setError, loading, policy, setPolicy, busy: busy || requests.current.has(JSON.stringify({workspace,session})) || runs.some(run => run.status === 'running'), run, cancel, decide };
 }
