@@ -25,14 +25,12 @@ const starters = [
   { label: 'Review some code', icon: FileCode2, color: '#a78bfa', description: 'Get a fresh perspective on your code.', prompt: 'Review my code for correctness and explain any issues before suggesting changes.' },
 ];
 
-export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, onWorkspaceChange, onSessionStarted, workspaceError, pipeline }: MainChatPanelProps) {
+export function MainChatPanel({ sessionId, models, onOpenRack, onSessionStarted, workspaceError, pipeline }: MainChatPanelProps) {
   const effectiveSession=sessionId;
-  const [projectPath,setProjectPath]=useState(workspaceRoot);
   const [tagsByChat,setTagsByChat]=useState<Record<string,ModelTag[]>>({});
   const [pickerAt,setPickerAt]=useState<number|null>(null);
   const tags=tagsByChat[effectiveSession]??[];
   useEffect(() => { setPickerAt(null); }, [effectiveSession]);
-  useEffect(() => { setProjectPath(workspaceRoot); }, [workspaceRoot]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const addMenuRef = useRef<HTMLDetailsElement>(null);
@@ -47,6 +45,7 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
   }, []);
   const draft = drafts[effectiveSession] ?? '';
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models.find(model=>model.status==='active') ?? models[0];
+  const composerError = workspaceError || (pipeline.runs[pipeline.runs.length - 1]?.error === pipeline.error ? '' : pipeline.error);
   const updateDraft = (text: string) => {
     setTagsByChat(current=>({...current,[effectiveSession]:moveTags(draft,text,tags)}));
     setDrafts(current=>({...current,[effectiveSession]:text}));
@@ -66,7 +65,6 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
     try {
       if(pipeline.busy||pipeline.loading)return;
       const plan=makePlan(draft,tags,selectedModel?.id??'');
-      if(!workspaceRoot)throw new Error('Set the project directory before running.');
       if(!isTauri())throw new Error('Run this conversation in the Unfuse desktop app.');
       const result=await pipeline.run(plan,null,models);
       if(result){onSessionStarted(effectiveSession,draft.trim().slice(0,70));setDrafts(current=>({...current,[effectiveSession]:''}));setTagsByChat(current=>({...current,[effectiveSession]:[]}));}
@@ -153,7 +151,7 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
                     <span className="truncate">Select model</span><ChevronDown size={12} className="shrink-0" />
                   </button>
                 )}
-                <button onClick={()=>void (pipeline.busy?pipeline.cancel():send())} disabled={!pipeline.busy&&(pipeline.loading||!draft.trim()||!models.length)} aria-label={pipeline.busy?'Stop pipeline':'Send message'} title={pipeline.busy?'Stop the current run':'Run assigned models in order'} className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
+                <button onClick={()=>void (pipeline.busy?pipeline.cancel():send())} disabled={!pipeline.busy&&(pipeline.loading||!draft.trim()||!models.length)} aria-label={pipeline.busy?'Stop response':'Send message'} title={pipeline.busy?'Stop response':'Send message'} className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--text-main)', color: 'var(--bg-app)' }}>
                   {pipeline.busy?<Square size={13}/>:<ArrowUp size={17} />}
                 </button>
               </div>
@@ -168,7 +166,6 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
     <main className="flex-1 h-full min-w-0 flex flex-col" style={{ backgroundColor: 'var(--bg-app)' }}>
 
 
-      <div className="px-6 pt-3 text-xs text-[var(--text-muted)]"><label className="flex items-center gap-2"><FolderOpen size={13}/><input aria-label="Project directory" placeholder="Absolute project directory" value={projectPath} disabled={pipeline.busy} onChange={event=>setProjectPath(event.target.value)} onBlur={()=>onWorkspaceChange(projectPath.trim())} onKeyDown={event=>{if(event.key==='Enter')onWorkspaceChange(projectPath.trim());}} className="min-w-0 flex-1 bg-transparent outline-none py-1 focus-visible:ring-1 focus-visible:ring-[var(--accent)] rounded"/></label></div>
       <div className={`flex-1 min-h-0 overflow-y-auto px-6 ${pipeline.runs.length?'':'flex flex-col justify-center'}`}>
         {pipeline.runs.length>0?<PipelineConversation pipeline={pipeline} models={models}/>:''}
         {pipeline.loading&&<p role="status" className="text-xs text-[var(--text-muted)]">Loading saved conversation…</p>}
@@ -191,7 +188,7 @@ export function MainChatPanel({ sessionId, models, onOpenRack, workspaceRoot, on
           </div>
         </div>)}
       </div>
-      {(pipeline.error || workspaceError)&&<p role="alert" className="max-w-3xl mx-auto w-full px-6 py-2 text-xs text-[var(--text-muted)]">{pipeline.error || workspaceError}</p>}
+      {composerError&&<p role="alert" className="max-w-3xl mx-auto w-full px-6 py-2 text-xs text-[var(--text-muted)]">{composerError}</p>}
       {composer}
 
 

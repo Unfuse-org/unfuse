@@ -105,10 +105,14 @@ export const ModelInfoModal: React.FC<ModelInfoModalProps> = ({ model, onClose }
                     <td className="py-2 px-3 text-[var(--text-main)] font-medium">{resolved.parameters}</td>
                   </tr>
                   <tr className="border-b border-[var(--border-subtle)]">
-                    <td className="py-2 px-3 text-[var(--text-muted)]">Context Limit</td>
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Active context</td>
                     <td className="py-2 px-3 text-[var(--text-main)] font-medium">
                       {model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}
                     </td>
+                  </tr>
+                  <tr className="border-b border-[var(--border-subtle)]">
+                    <td className="py-2 px-3 text-[var(--text-muted)]">Maximum context</td>
+                    <td className="py-2 px-3 text-[var(--text-main)] font-medium">{model.maxContextLength ? `${model.maxContextLength.toLocaleString()} tokens` : 'Not reported'}</td>
                   </tr>
                   <tr className="border-b border-[var(--border-subtle)]">
                     <td className="py-2 px-3 text-[var(--text-muted)]">Quantization</td>

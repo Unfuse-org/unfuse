@@ -201,6 +201,47 @@ fn lmstudio_uses_loaded_instance_ids_and_filters_embeddings() {
 }
 
 #[test]
+fn ollama_discovery_skips_retired_entries_but_keeps_other_failures() {
+    for status in [410, 401, 500] {
+        let mut exchanges = vec![
+            Exchange::get("/api/tags", json!({"models":[{"name":"retired"},{"name":"healthy"}]})),
+            Exchange::get("/api/ps", json!({"models":[]})),
+            Exchange { method: "POST", path: "/api/show", status, body: json!({"error":"unavailable"}) },
+        ];
+        if status == 410 {
+            exchanges.push(Exchange { method: "POST", path: "/api/show", status: 200, body: json!({"model_info":{"general.architecture":"qwen2","qwen2.context_length":32768},"capabilities":["completion"]}) });
+        }
+        let (url, _, task) = server(exchanges);
+        let result = tauri::async_runtime::block_on(connection::discover(Runner::Ollama, &url, None));
+        task.join().unwrap();
+        if status == 410 {
+            let models = result.unwrap();
+            assert_eq!(models.len(), 1);
+            assert_eq!(models[0].name, "healthy");
+            assert_eq!(models[0].max_context_length, Some(32768));
+            assert_eq!(models[0].context_length, None);
+        } else {
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[test]
+fn ollama_selected_retired_model_still_fails_preflight() {
+    let (url, _, task) = server(vec![
+        Exchange::get("/api/tags", json!({"models":[{"name":"exact/model:id"}]})),
+        Exchange::get("/api/ps", json!({"models":[]})),
+        Exchange { method: "POST", path: "/api/show", status: 410, body: json!({"error":"retired"}) },
+    ]);
+    let mut cfg = config(Runner::Ollama);
+    cfg.base_url = url;
+    let error = tauri::async_runtime::block_on(connection::prepare_config(cfg)).unwrap_err();
+    task.join().unwrap();
+    assert!(error.contains("exact/model:id"));
+    assert!(error.contains("410 Gone"));
+}
+
+#[test]
 fn compatible_runners_do_not_invent_capabilities_or_context() {
     for runner in [Runner::Vllm, Runner::Mlx, Runner::Unsloth] {
         let (url, _, task) = server(vec![Exchange::get(

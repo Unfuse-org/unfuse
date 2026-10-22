@@ -73,6 +73,15 @@ impl StorageManager {
         Ok(Self { base_dir, database })
     }
 
+    pub fn workspace_root(&self, selected: &str) -> Result<PathBuf, String> {
+        if !selected.trim().is_empty() {
+            return Ok(PathBuf::from(selected));
+        }
+        let root = self.base_dir.join("chats");
+        std::fs::create_dir_all(&root).map_err(|error| format!("Cannot prepare chat storage: {error}"))?;
+        Ok(root)
+    }
+
     pub fn base_dir(&self) -> &Path {
         &self.base_dir
     }
@@ -235,7 +244,7 @@ pub fn create_session(
     title: Option<String>,
 ) -> Result<SessionSummary, String> {
     let storage = get_storage()?;
-    storage.create_session(Path::new(&workspace_root), &session_id, title.as_deref())
+    storage.create_session(&storage.workspace_root(&workspace_root)?, &session_id, title.as_deref())
 }
 
 #[tauri::command]
@@ -245,13 +254,14 @@ pub fn load_session(
     target_leaf_id: Option<String>,
 ) -> Result<ActiveContextPayload, String> {
     let storage = get_storage()?;
+    let root = storage.workspace_root(&workspace_root)?;
     let ctx = storage.reconstruct_active_context(
-        Path::new(&workspace_root),
+        &root,
         &session_id,
         target_leaf_id.as_deref(),
     )?;
 
-    let recovery = storage.recover_session(Path::new(&workspace_root), &session_id)?;
+    let recovery = storage.recover_session(&root, &session_id)?;
 
     Ok(ActiveContextPayload {
         active_leaf_id: ctx.active_leaf_id,
@@ -269,8 +279,8 @@ pub fn load_session(
 #[tauri::command]
 pub fn list_sessions(workspace_root: Option<String>) -> Result<Vec<SessionSummary>, String> {
     let storage = get_storage()?;
-    let path = workspace_root.as_ref().map(Path::new);
-    storage.list_sessions(path)
+    let path = workspace_root.as_deref().map(|root| storage.workspace_root(root)).transpose()?;
+    storage.list_sessions(path.as_deref())
 }
 
 #[tauri::command]
@@ -279,8 +289,8 @@ pub fn search_sessions(
     workspace_root: Option<String>,
 ) -> Result<Vec<SessionSummary>, String> {
     let storage = get_storage()?;
-    let path = workspace_root.as_ref().map(Path::new);
-    storage.search_sessions(path, &query)
+    let path = workspace_root.as_deref().map(|root| storage.workspace_root(root)).transpose()?;
+    storage.search_sessions(path.as_deref(), &query)
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -330,6 +340,22 @@ mod tests {
         let storage = StorageManager::with_base_dir(dir.path.clone())
             .expect("Failed to initialize test storage");
         (storage, dir)
+    }
+
+    #[test]
+    fn project_free_chats_have_stable_storage_separate_from_projects() {
+        let (storage, dir) = test_storage();
+        let root = storage.workspace_root("").unwrap();
+        assert_eq!(root, dir.path.join("chats"));
+        assert!(root.is_dir());
+        assert_eq!(root, storage.workspace_root(" ").unwrap());
+        let project = dir.path.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        assert_eq!(storage.workspace_root(project.to_str().unwrap()).unwrap(), project);
+        storage.create_session(&root, "ordinary-chat", Some("Hello")).unwrap();
+        storage.create_session(&project, "project-chat", Some("Code")).unwrap();
+        assert_eq!(storage.list_sessions(Some(&root)).unwrap()[0].session_id, "ordinary-chat");
+        assert_eq!(storage.list_sessions(Some(&project)).unwrap()[0].session_id, "project-chat");
     }
 
     #[test]

@@ -45,6 +45,34 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn project_free_chat_replies_without_tools_and_cannot_execute_file_calls() {
+    let fixture = Fixture::new();
+    let count = std::sync::atomic::AtomicUsize::new(0);
+    let stream: StreamFn = Box::new(move |_, messages, definitions, emit| {
+        assert!(definitions.is_none());
+        if count.fetch_add(1, Ordering::SeqCst) == 0 {
+            Ok(CompletionResponse::from_calls(vec![AssembledToolCall {
+                id: "unexpected-file-call".into(),
+                name: "write_file".into(),
+                arguments: json!({"path":"unexpected.txt","content":"must not be written"}).to_string(),
+            }]))
+        } else {
+            assert!(messages.last().unwrap().content.as_text().contains("not permitted"));
+            emit(StreamChunk::Text("Hello!".into()));
+            Ok(CompletionResponse::from_calls(vec![]))
+        }
+    });
+    let result = run_agent_loop_scoped(
+        &fixture.root, &fixture.id, "hello", &fixture.config(), Some(&[]), None,
+        stream, Arc::new(|_, _| {}),
+    ).unwrap();
+    assert_eq!(result.last().unwrap().content.as_text(), "Hello!");
+    assert!(!fixture.root.join("unexpected.txt").exists());
+    let history = crate::storage::get_storage().unwrap().reconstruct_active_context(&fixture.root, &fixture.id, None).unwrap();
+    assert!(history.events.iter().any(|event| matches!(&event.payload, EventPayload::UserTurn { prompt, .. } if prompt == "hello")));
+}
+
+#[test]
 fn saved_checkpoint_resumes_after_registry_loss_without_replaying_completed_tools() {
     let fixture = Fixture::new();
     let storage = crate::storage::get_storage().unwrap();

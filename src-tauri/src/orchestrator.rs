@@ -8,7 +8,9 @@ use crate::storage::{EventPayload, PersistedEvent};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::{atomic::Ordering, Arc, Mutex};
 
 #[cfg(test)]
@@ -220,7 +222,7 @@ pub fn load_pipelines(
     workspace_root: String,
     session_id: String,
 ) -> Result<Vec<PipelineState>, String> {
-    let mut states = states_from_events(&events(Path::new(&workspace_root), &session_id)?)?;
+    let mut states = states_from_events(&events(&crate::storage::get_storage()?.workspace_root(&workspace_root)?, &session_id)?)?;
     let session = agent::get_or_create_session(&session_id);
     let guard = session.lock().unwrap();
     for state in &mut states {
@@ -242,7 +244,7 @@ pub fn load_pipeline_activity(
     workspace_root: String,
     session_id: String,
 ) -> Result<Vec<Value>, String> {
-    let recorded = events(Path::new(&workspace_root), &session_id)?;
+    let recorded = events(&crate::storage::get_storage()?.workspace_root(&workspace_root)?, &session_id)?;
     let session = agent::get_or_create_session(&session_id);
     let guard = session.lock().unwrap();
     let mut pending = vec![];
@@ -652,7 +654,8 @@ pub async fn run_pipeline(
     mcp_servers: Option<Vec<crate::mcp::McpServerConfig>>,
 ) -> Result<PipelineState, String> {
     use tauri::Emitter;
-    let root = PathBuf::from(workspace_root);
+    let project_free = workspace_root.trim().is_empty();
+    let root = crate::storage::get_storage()?.workspace_root(&workspace_root)?;
     if !root.is_absolute() || !root.is_dir() {
         return Err("Choose an existing absolute project directory".into());
     }
@@ -707,6 +710,11 @@ pub async fn run_pipeline(
         );
     }
     let mut state = state;
+    if project_free {
+        for stage in &mut state.plan.stages {
+            stage.allowed_tools = Some(vec![]);
+        }
+    }
     if state.fingerprints.is_empty() {
         state.fingerprints = configs
             .iter()
@@ -752,7 +760,7 @@ pub async fn run_pipeline(
             &session_id,
             state,
             &configs,
-            mcp_servers.unwrap_or_default(),
+            if project_free { vec![] } else { mcp_servers.unwrap_or_default() },
             sink,
             &mut runner,
             Some(lease),

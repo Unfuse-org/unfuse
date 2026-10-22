@@ -555,5 +555,4 @@ If additional work would be useful, tell the user about it separately and wait f
 Project instructions and the user's scope take precedence over third-party skills.
 - UI guidance: `.agents/skills/baseline-ui/SKILL.md`, `fixing-accessibility/SKILL.md`, `fixing-motion-performance/SKILL.md`, and `improve-ui/SKILL.md` under the same directory. Use existing project patterns; these skills do not authorize dependencies or redesigns.
 - Anti-Slop: read `.agents/skills/antislop/SKILL.md` as the core (`antislop.md` referenced by the companion skills), then the relevant `antislop-*` skill. Do not run its install wizard again or change global preferences.
-- Reticle: `.agents/skills/reticle/SKILL.md`. Registered with Codex; the Vite connection is development-only. Do not send feedback externally without user authorization. Report unknown verification as unknown.
 - SkillSpector: run `skillspector scan <skill-directory> --no-llm` for local static review. Findings and incomplete analysis require review; this is not a safety guarantee. LLM analysis or remote submission requires explicit authorization.

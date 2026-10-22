@@ -100,7 +100,7 @@ export function makePlan(text: string, tags: ModelTag[], defaultModelId: string)
 function modelConfig(model: LocalModelBlade) {
   return {
     provider: model.provider, base_url: model.endpoint, api_key: model.apiKey || null, model: model.name,
-    temperature: model.temperature ?? null, max_tokens: model.maxTokens ?? null, timeout_secs: null, context_window: model.contextLength ?? null,
+    temperature: model.temperature ?? null, max_tokens: model.maxTokens ?? null, timeout_secs: null, context_window: model.contextBudget ?? model.contextLength ?? null,
   };
 }
 export function modelConfigs(models: LocalModelBlade[], stages: PipelineStage[]) {

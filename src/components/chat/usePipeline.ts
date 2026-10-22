@@ -61,7 +61,7 @@ export function usePipeline(workspace: string, session: string) {
       return () => { mounted.current = false; };
     const listening = listen<AgentEvent>('agent_event', ({ payload: event }) => {
       const p = event.payload;
-      if (p.session_id !== scope.current.session || (p.workspace_root && p.workspace_root !== scope.current.workspace) || !p.plan_id)
+      if (p.session_id !== scope.current.session || (scope.current.workspace && p.workspace_root && p.workspace_root !== scope.current.workspace) || !p.plan_id)
         return;
       const stageId = p.stage_id ?? '';
       if (event.type === 'pipeline_state' && p.state) {
@@ -92,8 +92,8 @@ export function usePipeline(workspace: string, session: string) {
     setError('');
     setBusy(false);
     setPolicy('ask');
-    setLoading(!!workspace && !!session && isTauri());
-    if (workspace && session && isTauri()) {
+    setLoading(!!session && isTauri());
+    if (session && isTauri()) {
       const activity = invoke<AgentEvent[]>('load_pipeline_activity', { workspaceRoot: workspace, sessionId: session }).then(events => {
         if (!active)
           return;
@@ -123,8 +123,8 @@ export function usePipeline(workspace: string, session: string) {
   const run = async (plan: PipelinePlan | null, resume: PipelineState | null, models: LocalModelBlade[]) => {
     if (!isTauri())
       throw new Error('Model execution requires the Unfuse desktop app.');
-    if (!workspace.trim() || !session)
-      throw new Error('Choose a project directory and chat first.');
+    if (!session)
+      throw new Error('Choose a chat first.');
     const activeScope = { workspace, session };
     const current = () => mounted.current && scope.current.workspace === activeScope.workspace && scope.current.session === activeScope.session;
     const key = JSON.stringify(activeScope);

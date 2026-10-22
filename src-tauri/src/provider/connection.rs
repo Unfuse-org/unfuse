@@ -68,8 +68,23 @@ pub(super) fn response_error(status: reqwest::StatusCode, runner: Runner) -> Str
     match status.as_u16() {
         401 | 403 => format!("{} rejected authentication (HTTP {status}); check its API key and access settings", runner.as_str()),
         404 => format!("{} endpoint was not found (HTTP 404); check the selected runner, server URL and server version", runner.as_str()),
+        410 => format!("{} resource is no longer available (HTTP 410 Gone)", runner.as_str()),
         _ => format!("{} rejected the request (HTTP {status}); check model availability, context limits and tool-parser configuration in the runner", runner.as_str()),
     }
+}
+
+struct MetadataError {
+    status: Option<reqwest::StatusCode>,
+    message: String,
+}
+impl From<String> for MetadataError {
+    fn from(message: String) -> Self { Self { status: None, message } }
+}
+impl From<&str> for MetadataError {
+    fn from(message: &str) -> Self { message.to_string().into() }
+}
+impl From<MetadataError> for String {
+    fn from(error: MetadataError) -> Self { error.message }
 }
 
 async fn metadata(
@@ -80,7 +95,7 @@ async fn metadata(
     method: Method,
     path: &str,
     body: Option<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, MetadataError> {
     let mut request = authorize(client.request(method, endpoint(base, path)?), key)
         .timeout(Duration::from_secs(15));
     if let Some(body) = body {
@@ -94,7 +109,7 @@ async fn metadata(
         )
     })?;
     if !response.status().is_success() {
-        return Err(response_error(response.status(), runner));
+        return Err(MetadataError { status: Some(response.status()), message: format!("{}: {path}", response_error(response.status(), runner)) });
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -194,7 +209,7 @@ async fn discover_selected(
                 if selected.is_some_and(|selected| selected != name) {
                     continue;
                 }
-                let show = metadata(
+                let show = match metadata(
                     &client,
                     runner,
                     base,
@@ -203,7 +218,11 @@ async fn discover_selected(
                     "api/show",
                     Some(json!({"model":name})),
                 )
-                .await?;
+                .await {
+                    Ok(show) => show,
+                    Err(error) if selected.is_none() && error.status == Some(reqwest::StatusCode::GONE) => continue,
+                    Err(error) => return Err(format!("{name}: {}", error.message)),
+                };
                 let mut item = model(runner, name, &show);
                 item.size_bytes = tag["size"].as_u64();
                 item.parameters = text(&show["details"]["parameter_size"]);

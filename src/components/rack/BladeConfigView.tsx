@@ -18,12 +18,14 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, customI
   const [iconError, setIconError] = useState('');
   const [temperature, setTemperature] = useState(model.temperature ?? 0.0);
   const [maxTokens, setMaxTokens] = useState(model.maxTokens ?? 4096);
+  const [contextBudget, setContextBudget] = useState<number | undefined>(model.contextBudget);
+  const contextLimit = model.provider === 'ollama' ? model.maxContextLength : model.contextLength ?? model.maxContextLength;
   const [isPrimary, setIsPrimary] = useState(model.status === 'active');
   const [advanced, setAdvanced] = useState(false);
-  const valid = Number.isFinite(temperature) && temperature >= 0 && temperature <= 2 && Number.isSafeInteger(maxTokens) && maxTokens > 0 && maxTokens <= 4294967295;
+  const valid = Number.isFinite(temperature) && temperature >= 0 && temperature <= 2 && Number.isSafeInteger(maxTokens) && maxTokens > 0 && maxTokens <= 4294967295 && (contextBudget === undefined || Number.isSafeInteger(contextBudget) && contextBudget > maxTokens && (!contextLimit || contextBudget <= contextLimit));
   const save = () => {
     if (!valid) return;
-    onSave({ ...model, temperature, maxTokens, status: isPrimary ? 'active' : model.status === 'active' ? 'loaded' : model.status });
+    onSave({ ...model, temperature, maxTokens, contextBudget, status: isPrimary ? 'active' : model.status === 'active' ? 'loaded' : model.status });
     onClose();
   };
   const fieldClass = 'w-24 border rounded-md px-2 py-1.5 text-xs tabular-nums outline-none focus:border-[var(--accent)]';
@@ -75,14 +77,14 @@ export const BladeConfigView: React.FC<BladeConfigViewProps> = ({ model, customI
         </section>
         <section className="border-t pt-5" style={{ borderColor: 'var(--border-subtle)' }}>
           <h3 className="text-xs font-medium flex items-center gap-2"><Server size={14} />Provider runtime</h3>
-          <dl className="text-[11px] space-y-3 mt-4"><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported tokens used</dt><dd>{(model.tokensUsed || 0).toLocaleString()}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported context capacity</dt><dd>{model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Quantization</dt><dd>{model.quantization || 'Not reported'}</dd></div></dl>
-          <div className="mt-4"><label htmlFor="model-context-slider" className="text-xs">Context allocation · Provider managed</label><input id="model-context-slider" type="range" disabled min={1} max={Math.max(1, model.contextLength || 1)} value={Math.max(1, model.contextLength || 1)} className="w-full mt-3 opacity-40 cursor-not-allowed accent-[var(--accent)]" /><p className="text-[11px] leading-5 mt-1" style={{ color: 'var(--text-muted)' }}>Uses the provider’s current configuration. Reported capacity does not necessarily mean all of it is allocated.</p></div>
-          <p className="text-[11px] leading-5 mt-4" style={{ color: 'var(--text-muted)' }}>Context allocation, GPU offload, KV cache, and loading are managed in your inference provider. Unfuse cannot change them yet.</p>
+          <dl className="text-[11px] space-y-3 mt-4"><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Reported tokens used</dt><dd>{(model.tokensUsed || 0).toLocaleString()}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Active context</dt><dd>{model.contextLength ? `${model.contextLength.toLocaleString()} tokens` : 'Not reported'}</dd></div><div className="flex justify-between gap-3"><dt style={{ color: 'var(--text-muted)' }}>Quantization</dt><dd>{model.quantization || 'Not reported'}</dd></div></dl>
+          <div className="mt-4 flex items-center justify-between gap-3 text-[11px]"><span className="text-[var(--text-muted)]">Maximum context</span><span>{model.maxContextLength ? `${model.maxContextLength.toLocaleString()} tokens` : 'Not reported'}</span></div>
+          <div className="mt-5"><label htmlFor="model-context-budget" className="text-xs">Request context budget</label><input id="model-context-budget" type="number" min={1} max={contextLimit ?? undefined} step={1} value={contextBudget === undefined || Number.isNaN(contextBudget) ? '' : contextBudget} onChange={event=>setContextBudget(event.target.value===''?undefined:Number(event.target.value))} placeholder={model.contextLength ? `Runner: ${model.contextLength.toLocaleString()}` : 'Set token budget'} className="mt-2 w-full rounded-lg border px-3 py-2 text-xs outline-none focus:border-[var(--accent)]" style={fieldStyle}/><p className="mt-2 text-[11px] leading-5 text-[var(--text-muted)]">{model.provider==='ollama'?'Sent as num_ctx to Ollama. Larger budgets use more memory.':'Limits the context sent to the model. Change the runner allocation in your provider.'}</p></div>
           <button aria-disabled="true" data-ui-only="true" className="text-xs mt-3 opacity-40 cursor-not-allowed">Unload from provider</button>
         </section>
       </div>
       <footer className="border-t p-4 shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
-        {!valid && <p role="alert" className="text-xs mb-3 text-red-400">Use a temperature from 0–2 and a positive whole-number output limit.</p>}
+        {!valid && <p role="alert" className="text-xs mb-3 text-red-400">Use temperature 0–2, a positive output limit, and a context budget above the output limit and within the reported capacity.</p>}
         <div className="flex gap-2"><button onClick={() => { onUnload(model.id); onClose(); }} title="Removes this connection; does not free provider memory" className="flex-1 flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg hover:bg-[var(--bg-active)]"><Trash2 size={14} />Remove</button><button onClick={save} disabled={!valid} className="flex-1 flex items-center justify-center gap-2 text-xs py-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: 'var(--accent)', color: 'var(--accent-fg)' }}><Save size={14} />Save to rack</button></div>
       </footer>
     </div>

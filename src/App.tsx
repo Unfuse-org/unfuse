@@ -91,7 +91,7 @@ export default function App() {
   currentWorkspace.current = workspaceRoot;
   const pipeline = usePipeline(workspaceRoot, activeChatId);
   const refreshSessions = () => {
-    if (!workspaceRoot || !isTauri()) return;
+    if (!isTauri()) return;
     const root = workspaceRoot;
     void invoke<{session_id:string;title:string;updated_at:number;turn_count:number}[]>('list_sessions', {workspaceRoot:root}).then(sessions => {
       if (root === currentWorkspace.current) setChatSessions(current=>sessions.map(session=>({...current.find(item=>item.id===session.session_id),id:session.session_id,title:session.title,updatedAt:new Date(session.updated_at),messageCount:session.turn_count})));
@@ -100,7 +100,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     setWorkspaceError('');
-    if (workspaceRoot && isTauri()) {
+    if (isTauri()) {
       void invoke<{session_id:string;title:string;updated_at:number;turn_count:number}[]>('list_sessions', { workspaceRoot }).then(sessions => {
         if (active) setChatSessions(sessions.map(session => ({ id:session.session_id, title:session.title, updatedAt:new Date(session.updated_at), messageCount:session.turn_count })));
       }).catch(error => { if (active) setWorkspaceError(String(error)); });
@@ -316,7 +316,7 @@ export default function App() {
                   onSessionStarted={refreshSessions}
                 />
               </div>
-            {activeNav === 'dashboard' && <DashboardView models={rackModels} sessions={chatSessions} pipeline={pipeline} onOpenSession={id=>{setActiveChatId(id);setActiveNav('home');}} onOpenRack={() => setActiveRightPanel('rack')} onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
+            {activeNav === 'dashboard' && <DashboardView models={rackModels} sessions={chatSessions} pipeline={pipeline} workspaceRoot={workspaceRoot} onOpenChat={()=>setActiveNav('home')} onOpenSession={id=>{setActiveChatId(id);setActiveNav('home');}} onOpenRack={() => setActiveRightPanel('rack')} onOpenLogs={(model) => { setLogModel(model); setActiveNav('logs'); }} />}
             {activeNav === 'integrations' && <IntegrationsView workspaceRoot={workspaceRoot} />}
             {activeNav === 'mcp' && <McpView workspaceRoot={workspaceRoot}/>}
             {activeNav === 'library' && <LibraryView />}

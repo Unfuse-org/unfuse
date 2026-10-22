@@ -22,6 +22,7 @@ export interface LocalModelBlade {
   quantization?: string;
   sizeBytes?: number;
   contextLength?: number;
+  contextBudget?: number;
   maxContextLength?: number | null;
   loaded?: boolean | null;
   tokensUsed: number;

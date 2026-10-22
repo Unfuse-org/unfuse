@@ -232,7 +232,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
           </div>
         ) : availableModels.length === 0 ? (
           <div className="p-4 text-center text-[var(--text-muted)] text-xs">
-            {isScanning ? 'Querying selected server…' : discoveredConnection ? 'No models reported by this runner.' : 'Connect to list available models.'}
+            {isScanning ? 'Querying selected server…' : discoveredConnection ? 'No usable models available.' : 'Connect to list available models.'}
           </div>
         ) : (
           availableModels.map((m) => {
@@ -268,7 +268,7 @@ export const MountModelView: React.FC<MountModelViewProps> = ({
                       {[
                         m.quantization && m.quantization !== 'unknown' ? m.quantization : null,
                         m.sizeBytes ? formatBytes(m.sizeBytes) : null,
-                        m.contextLength ? `${m.contextLength.toLocaleString()} ctx` : null,
+                        m.contextLength ? `${m.contextLength.toLocaleString()} active context` : m.maxContextLength ? `${m.maxContextLength.toLocaleString()} max context` : 'Context not reported',
                       m.loaded === true ? 'Loaded in runner' : m.loaded === false ? 'Not loaded in runner' : null,
                       ].filter(Boolean).join(' · ') || 'Allocation not reported'}
                     </div>

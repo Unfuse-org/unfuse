@@ -44,7 +44,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
   React.useEffect(()=>{
     let active=true;
     setSearchIds(null);setHistoryError('');
-    if(!workspaceRoot||!searchQuery.trim()||!isTauri())return;
+    if(!searchQuery.trim()||!isTauri())return;
     const timer=window.setTimeout(()=>{
       void invoke<{session_id:string}[]>('search_sessions',{workspaceRoot,query:searchQuery}).then(results=>{if(active)setSearchIds(results.map(result=>result.session_id));}).catch(error=>{if(active)setHistoryError(String(error));});
     },200);
@@ -181,7 +181,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                   onRename={handleRenameSession}
                   onToggleArchive={handleToggleArchive}
                   onToggleUnread={handleToggleUnread}
-                  onExport={workspaceRoot&&isTauri()?exportConversation:undefined}
+                  onExport={isTauri()?exportConversation:undefined}
                 />
               ))}
             </div>
@@ -205,7 +205,7 @@ export const SidebarPanel: React.FC<SidebarPanelProps> = ({
                 onRename={handleRenameSession}
                   onToggleArchive={handleToggleArchive}
                   onToggleUnread={handleToggleUnread}
-                  onExport={workspaceRoot&&isTauri()?exportConversation:undefined}
+                  onExport={isTauri()?exportConversation:undefined}
               />
             ))}
           </div>

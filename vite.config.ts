@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { reticle } from '@reticlehq/vite-plugin';
 
-export default defineConfig(({ command }) => ({
-  plugins: [...(command === 'serve' ? [reticle()] : []), react()],
+export default defineConfig({
+  plugins: [react()],
   clearScreen: false,
   server: {
     port: 1420,
@@ -16,4 +15,4 @@ export default defineConfig(({ command }) => ({
     sourcemap: !!process.env.TAURI_DEBUG,
     chunkSizeWarningLimit: 1500,
   },
-}));
+});
